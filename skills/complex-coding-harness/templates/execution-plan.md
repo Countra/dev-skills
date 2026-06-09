@@ -110,6 +110,52 @@ Temporary overrides:
 
 - 
 
+## Git Context
+
+Main branch:
+
+-
+
+Task type:
+
+-
+
+Working branch:
+
+-
+
+Branch action:
+
+- create / reuse / already-on-branch / not-applicable
+
+Sync source:
+
+-
+
+Last sync:
+
+-
+
+Commit policy:
+
+-
+
+Branch safety:
+
+- 切换前已检查工作区：
+- 不自动 stash：
+- 不自动 rebase：
+- 不自动 reset：
+
+Hotfix interruption:
+
+- 从 `harness/feature` 切换到 `harness/fix` 前，先询问是否要把 feature 合并进主分支：
+- 决策：
+
+Open issues:
+
+-
+
 ## Tooling
 
 | Tool | Purpose | Stage | Status | Risk | Alternative | User confirmation |
@@ -160,6 +206,7 @@ Changelog plan:
 | Decision recorded | pending |  |
 | Implementation stages detailed | pending |  |
 | Environment confirmed | pending |  |
+| Git context confirmed | pending |  |
 | Tooling confirmed | pending |  |
 | Validation confirmed | pending |  |
 | Documentation updates confirmed | pending |  |

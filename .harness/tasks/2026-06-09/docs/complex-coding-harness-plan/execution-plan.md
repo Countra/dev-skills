@@ -26,6 +26,8 @@
 - `skills/complex-coding-harness/references/workflow.md` 已落地。
 - `skills/complex-coding-harness/templates/environment.md`、`execution-plan.md`、`pending-decisions.md` 已落地。
 - `examples/complex-coding-harness/`、`evals/complex-coding-harness/` 和 `skill.sh` 已落地。
+- 统一 harness 工作分支策略已写入 skill 规划、workflow 和模板。
+- 从 `harness/feature` 插入 `harness/fix` 的热修复确认规则已写入。
 
 ## Context
 
@@ -162,6 +164,25 @@
 - 检查示例和 eval 覆盖 direct、managed、needs-clarification 和只读规划场景。
 - 检查 `skill.sh` 不创建 `.harness/tasks/`，只负责安装 skill 源文件。
 
+### 阶段 5：统一 harness 工作分支策略
+
+目标：
+
+- 在 skill 规划、workflow 和模板中加入统一 harness 工作分支策略。
+- 明确主分支来源、固定分支映射、切换前安全检查、merge 同步策略和禁止自动 stash/rebase/reset。
+- 明确热修复插入时，从 `harness/feature` 切到 `harness/fix` 前必须确认是否先把 feature 合并进主分支。
+
+用户批准：
+
+- 当前会话中用户要求“完成吧，然后提交代码”，视为阶段 5 实施和提交批准。
+
+本阶段验证：
+
+- 检索 Git Context、harness 分支、热修复插入和禁止自动操作等关键文本。
+- 校验 `.harness/active-task.json` JSON 可解析。
+- 校验 eval JSONL 可解析。
+- 检查 git diff，确认只包含本阶段文档和模板变更。
+
 ## Environment
 
 当前任务是文档规划任务，不需要 Python、Node、前端 dev server、数据库或外部服务运行环境。
@@ -209,6 +230,7 @@
 - 校验 `evals/complex-coding-harness/prompts.jsonl` 可逐行解析为 JSON。
 - 检索 skill、模板、示例、eval 和安装脚本，确认包含 `Plan Approval`、`Readiness Gate`、`Commit Log`、`Implementation Progress`、`Code Review`、`USER INPUT`、Chrome DevTools MCP 和 `.harness/tasks/` 创建边界。
 - 检查未创建 `skills/complex-coding-harness/scripts/`。
+- 检索新增 Git 工作分支策略，确认 `workflow.md`、`environment.md`、`execution-plan.md`、规划文档和示例计划均已覆盖。
 
 覆盖范围：
 
@@ -307,6 +329,7 @@
 | 阶段 2：skill 文档实现 | completed | 已创建 `SKILL.md`、`references/workflow.md` 和三个模板 | 已完成验证 |
 | 阶段 3：示例和 eval | completed | 已创建示例执行计划、临时决策单、eval prompts 和 expected | 已完成 JSONL 校验 |
 | 阶段 4：安装适配 | completed | 已创建 `skill.sh` 基础复制安装入口 | 未执行安装，避免写入用户 agent 目录 |
+| 阶段 5：统一 harness 工作分支策略 | completed | 已补充 Git 工作分支策略、热修复插入规则和模板字段 | 已完成验证，提交信息见最终交付 |
 
 ## Code Review
 
@@ -315,9 +338,12 @@
 | 阶段 2 | 新增 skill 文档初稿使用英文说明，不符合项目中文说明要求 | major | 已改为中文说明，保留必要英文术语 |
 | 阶段 2 | `pending-decisions.md` 模板存在 `<section>` 英文占位 | minor | 已改为中文“目标章节名称” |
 | 阶段 3 | 示例中存在英文验证说明 | minor | 已改为中文说明 |
+| 阶段 5 | 统一固定分支可能混入多个同类任务 | minor | 已要求每阶段检查 `Git Context` 和工作区；并发时暂停让用户决定 |
+| 阶段 5 | 热修复可能误把未完成 feature 带入主分支 | major | 已要求从 `harness/feature` 切到 `harness/fix` 前必须确认是否合并 feature |
 
 ## Commit Log
 
 | Stage | Repository | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | 阶段 2-4 | `dev-skills` | `32f969b` | `feat(complex-coding-harness): 实现复杂任务执行 skill` | `CHANGELOG.md` 已记录 |
+| 阶段 5 | `dev-skills` | 本次提交 | `feat(complex-coding-harness): 增加统一工作分支策略` | `CHANGELOG.md` 已记录 |

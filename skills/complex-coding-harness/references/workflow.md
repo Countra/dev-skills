@@ -40,11 +40,12 @@
 5. 在提出方案前收集本地代码上下文。
 6. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
 7. 创建或更新 `execution-plan.md`。
-8. 完成 `Readiness Gate`。
-9. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
-10. 只有用户明确批准后才能实现。
-11. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
-12. 结束时给出最终 review、验证摘要、变更文件和剩余风险。
+8. 确认 `Git Context`：主分支、harness 工作分支、同步来源和提交策略。
+9. 完成 `Readiness Gate`。
+10. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
+11. 只有用户明确批准后才能实现。
+12. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
+13. 结束时给出最终 review、验证摘要、变更文件和剩余风险。
 
 ## Workspace 环境
 
@@ -60,6 +61,37 @@
 - `Dockerfile`、`compose.yaml`、`.devcontainer/`
 
 如果环境信息冲突，并会影响安装、运行、测试、验证或最终声明，必须先向用户确认。
+
+## Git 工作分支
+
+managed 任务采用统一 harness 工作分支，不按任务名创建分支：
+
+- `feature` / `feat` -> `harness/feature`
+- `fix` -> `harness/fix`
+- `refactor` -> `harness/refactor`
+- `docs` -> `harness/docs`
+- `test` -> `harness/test`
+- `chore` -> `harness/chore`
+
+主分支优先来自 `.harness/environment.md` 的 `Git` 区域。未配置时按 `dev -> main -> master -> origin/HEAD` 探测；结果不唯一或会影响提交、合并、验证时，必须停止并询问用户。
+
+切换或创建 harness 分支前必须检查：
+
+- `git status --short`
+- `git branch --show-current`
+
+如果存在用户或未知改动、未完成 merge/rebase/cherry-pick、冲突文件或不明确的当前分支，必须停止确认。不要自动 stash、reset、rebase、覆盖用户改动或删除分支。
+
+目标分支不存在时创建，已存在时切换。进入实施前，把主分支最新代码合入 harness 工作分支；默认使用 merge，不默认 rebase。优先合入 `origin/<main>`，没有远程或不能联网时合入本地 `<main>`。合并失败必须记录到 `execution-plan.md` 并停止确认。
+
+热修复插入规则：
+
+- 如果当前在 `harness/feature`，用户临时要求处理 `fix`，必须先确认 feature 代码是否要合入主分支。
+- 用户确认合并时，先切回主分支合并 `harness/feature`，再切到或创建 `harness/fix`，并让 `harness/fix` 同步主分支。
+- 用户不确认合并时，只能在工作区安全时直接切到 `harness/fix` 并同步主分支。
+- 如果 feature 有未提交改动，先询问是否提交检查点或暂停切换，不能自动带着脏工作区切换。
+
+`execution-plan.md` 必须记录 `Git Context`，至少包括主分支、任务类型、工作分支、创建或复用动作、同步来源、最近同步时间、提交策略和未解决分支问题。
 
 ## 执行计划质量
 
@@ -119,16 +151,17 @@ Custom：...
 
 1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、`pending-decisions.md`（如存在）、项目 `docs/development.md` 和 changelog。
 2. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
-3. 阅读本阶段相关代码、测试、配置、API 和文档。
-4. 在批准范围内做最小必要修改。
-5. 修复明显缺陷；小优化只能在不改变方案方向时执行。
-6. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
-7. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
-8. 按 `Validation` 和 `.harness/environment.md` 执行验证。
-9. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
-10. 更新 changelog 或项目等价变更记录。
-11. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
-12. 进入下一阶段前，重读任务记录和 changelog，确认状态没有丢失。
+3. 检查 `Git Context` 和实际 git 状态，确认当前分支、主分支同步和工作区安全。
+4. 阅读本阶段相关代码、测试、配置、API 和文档。
+5. 在批准范围内做最小必要修改。
+6. 修复明显缺陷；小优化只能在不改变方案方向时执行。
+7. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
+8. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
+9. 按 `Validation` 和 `.harness/environment.md` 执行验证。
+10. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
+11. 更新 changelog 或项目等价变更记录。
+12. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
+13. 进入下一阶段前，重读任务记录和 changelog，确认状态没有丢失。
 
 ## 验证规则
 
@@ -170,5 +203,5 @@ feat(scope): 标题
 2. 读取 `pending-decisions.md`（如存在）。
 3. 读取当前 `execution-plan.md`。
 4. 读取 `.harness/environment.md`。
-5. 检查实际文件和 git 状态。
+5. 检查 `Git Context`、实际文件和 git 状态。
 6. 继续 `next_action`，不要重新开任务。

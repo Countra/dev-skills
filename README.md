@@ -17,6 +17,7 @@
 - 用户批准前不得进入实现阶段。
 - 实施阶段按阶段执行，每阶段完成 review、验证、必要修复、记录更新和授权提交。
 - 用户可用自然语言维护各项目 `docs/development.md`，agent 负责整理 `.harness/environment.md`。
+- managed 任务使用统一 harness 工作分支，例如 `harness/feature`、`harness/fix`，并在 `execution-plan.md` 记录 `Git Context`。
 
 ## Repository Layout
 

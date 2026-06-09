@@ -2,6 +2,15 @@
 
 ## 2026-06-09
 
+### Stage 5: complex-coding-harness Git 工作分支策略
+
+- 新增统一 harness 工作分支策略，按任务类型使用 `harness/feature`、`harness/fix` 等固定分支。
+- 补充主分支来源、分支切换安全检查、merge 同步策略和禁止自动 stash/rebase/reset 的约束。
+- 增加热修复插入规则：从 feature 切到 fix 前必须确认是否先合并 feature 到主分支。
+- 更新 `environment.md` 和 `execution-plan.md` 模板，新增 Git 信息和 `Git Context`。
+- Commit: 本次提交
+- Commit message: `feat(complex-coding-harness): 增加统一工作分支策略`
+
 ### Stage 2: complex-coding-harness skill 文档实现
 
 - 新增 `skills/complex-coding-harness/SKILL.md`，定义复杂 coding 长任务的触发条件和核心执行约束。

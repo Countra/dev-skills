@@ -3,6 +3,6 @@
     "task_dir":  ".harness/tasks/2026-06-09/docs/complex-coding-harness-plan",
     "title":  "落盘 complex-coding-harness skill 规划文档",
     "status":  "completed",
-    "next_action":  "阶段 2-4 已完成；如继续推进，可做真实安装验证或前向测试",
+    "next_action":  "阶段 5 已完成；后续可做真实安装验证或前向测试",
     "updated_at":  "2026-06-09"
 }

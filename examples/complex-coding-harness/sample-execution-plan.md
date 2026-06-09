@@ -113,6 +113,36 @@ Risks and rollback:
 Workspace environment source:
 - `.harness/environment.md`
 
+## Git Context
+
+Main branch:
+- dev
+
+Task type:
+- feature
+
+Working branch:
+- harness/feature
+
+Branch action:
+- reuse
+
+Sync source:
+- origin/dev
+
+Last sync:
+- 方案批准后、实施前同步。
+
+Commit policy:
+- 已授权阶段提交。
+
+Branch safety:
+- 切换前检查工作区。
+- 不自动 stash、rebase、reset 或删除分支。
+
+Hotfix interruption:
+- 如果切到 `harness/fix`，先询问是否要把 `harness/feature` 合并进 `dev`。
+
 ## Readiness Gate
 
 Readiness result:
