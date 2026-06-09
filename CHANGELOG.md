@@ -11,4 +11,5 @@
 - 新增 `examples/complex-coding-harness/`，提供执行计划和临时决策单样例。
 - 新增 `evals/complex-coding-harness/`，提供 direct、managed、needs-clarification 和只读规划样例。
 - 新增 `skill.sh`，支持从 `skills/` 复制安装 `complex-coding-harness`。
+- Commit: `32f969b`
 - Commit message: `feat(complex-coding-harness): 实现复杂任务执行 skill`

@@ -320,4 +320,4 @@
 
 | Stage | Repository | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
-| 阶段 2-4 | `dev-skills` | pending | `feat(complex-coding-harness): 实现复杂任务执行 skill` | `CHANGELOG.md` 已记录，提交后在最终回复中给出 hash |
+| 阶段 2-4 | `dev-skills` | `32f969b` | `feat(complex-coding-harness): 实现复杂任务执行 skill` | `CHANGELOG.md` 已记录 |
