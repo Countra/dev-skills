@@ -1,0 +1,13 @@
+direct-small-fix:
+  classification: direct
+  creates_task_state: false
+managed-frontend-backend:
+  classification: managed
+  requires_plan_approval: true
+  requires_environment_inventory: true
+needs-clarification-env:
+  classification: needs-clarification
+  stops_for_user_input: true
+read-only-plan:
+  creates_task_state: false
+  reason: user explicitly requested no task state files

@@ -1,0 +1,130 @@
+# Execution Plan
+
+## Problem
+
+Goal:
+Add a new frontend filter and matching backend API support without losing task state across context compression.
+
+Non-goals:
+- Do not change authentication.
+- Do not redesign the page.
+
+Acceptance:
+- Backend API supports the new filter.
+- Frontend can select the filter.
+- Tests and browser validation pass.
+
+## Context
+
+Local code:
+- `backend/api/items.go`
+- `frontend/src/pages/Items.tsx`
+
+Local docs:
+- `backend/docs/development.md`
+- `frontend/docs/development.md`
+
+External sources:
+- Framework official docs if API or routing behavior is unclear.
+
+User constraints:
+- 使用 Chrome DevTools MCP 做前端自我验证。
+
+## Options
+
+### Option A: Add Filter To Existing Endpoint
+
+- How: Extend the current query parameter parser.
+- Pros: Minimal API surface.
+- Cons: Existing endpoint becomes slightly broader.
+- Risks: Query compatibility.
+- Validation: Backend unit tests and API smoke.
+- Rollback: Remove parser branch and frontend control.
+
+### Option B: Add Dedicated Endpoint
+
+- How: Create a new endpoint for filtered items.
+- Pros: Isolated behavior.
+- Cons: More routing and docs.
+- Risks: More maintenance.
+- Validation: New endpoint tests and frontend integration.
+- Rollback: Remove endpoint and client call.
+
+## Decision
+
+Chosen option:
+Option A.
+
+Why:
+The existing endpoint already owns item filtering, so this keeps the change minimal.
+
+## Implementation Plan
+
+### Stage 1: Backend filter support
+
+Goal:
+- API accepts the new filter.
+
+How:
+- Update parser and handler.
+- Add unit tests.
+
+Why:
+- Backend contract must exist before frontend uses it.
+
+Where:
+- `backend/api/items.go`
+- `backend/api/items_test.go`
+
+References:
+- Local handler and existing tests.
+
+Validation:
+- Run backend unit tests.
+
+Risks and rollback:
+- If compatibility breaks, revert parser branch.
+
+### Stage 2: Frontend control
+
+Goal:
+- User can select the new filter.
+
+How:
+- Add UI control and request parameter.
+
+Why:
+- Exposes approved backend behavior.
+
+Where:
+- `frontend/src/pages/Items.tsx`
+
+References:
+- Existing filter controls.
+
+Validation:
+- 运行前端检查，并使用 Chrome DevTools MCP 验证。
+
+Risks and rollback:
+- Revert UI control and request parameter.
+
+## Environment
+
+Workspace environment source:
+- `.harness/environment.md`
+
+## Readiness Gate
+
+Readiness result:
+- pass
+
+## Plan Approval
+
+Status:
+- approved
+
+Approval record:
+- User said: "按方案执行。"
+
+Commit policy:
+- Stage commits authorized.

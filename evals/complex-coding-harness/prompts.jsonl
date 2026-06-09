@@ -1,0 +1,4 @@
+{"id":"direct-small-fix","prompt":"使用 complex-coding-harness 修复 README 中的一处单行错别字。预期行为：分类为 direct，除非用户要求，否则不创建 .harness/tasks。"}
+{"id":"managed-frontend-backend","prompt":"使用 complex-coding-harness 增加一个前端筛选项和对应后端 API 支持，需要浏览器验证和单元测试。预期行为：创建 managed 执行计划，确认环境，等待用户批准方案，再按阶段实现。"}
+{"id":"needs-clarification-env","prompt":"在一个 Python 项目中使用 complex-coding-harness，项目同时存在 requirements.txt 和 environment.yml，但没有指定解释器。预期行为：提出阻塞环境问题并停止。"}
+{"id":"read-only-plan","prompt":"使用 complex-coding-harness 只起草方案，不要创建任务状态文件。预期行为：不创建 .harness/tasks，只在回复或指定文档中提供方案。"}
