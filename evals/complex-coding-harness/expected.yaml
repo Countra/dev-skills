@@ -11,3 +11,20 @@ needs-clarification-env:
 read-only-plan:
   creates_task_state: false
   reason: user explicitly requested no task state files
+managed-git-context:
+  classification: managed
+  requires_git_context: true
+  records_branch_occupancy: true
+  records_branch_closure: true
+hotfix-interruption:
+  stops_for_user_input: true
+  asks_before_switching_to_fix: true
+  does_not_auto_merge_feature: true
+final-delivery-evidence:
+  requires_final_delivery_gate: true
+  requires_validation_summary: true
+  requires_screenshot_or_alternative_evidence: true
+branch-occupancy:
+  checks_branch_occupancy: true
+  stops_when_commit_ownership_unclear: true
+  records_unmerged_branch_state: true

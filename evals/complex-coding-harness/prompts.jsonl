@@ -2,3 +2,7 @@
 {"id":"managed-frontend-backend","prompt":"使用 complex-coding-harness 增加一个前端筛选项和对应后端 API 支持，需要浏览器验证和单元测试。预期行为：创建 managed 执行计划，确认环境，等待用户批准方案，再按阶段实现。"}
 {"id":"needs-clarification-env","prompt":"在一个 Python 项目中使用 complex-coding-harness，项目同时存在 requirements.txt 和 environment.yml，但没有指定解释器。预期行为：提出阻塞环境问题并停止。"}
 {"id":"read-only-plan","prompt":"使用 complex-coding-harness 只起草方案，不要创建任务状态文件。预期行为：不创建 .harness/tasks，只在回复或指定文档中提供方案。"}
+{"id":"managed-git-context","prompt":"使用 complex-coding-harness 实现一个跨前后端功能，仓库主分支是 dev，要求按 harness 分支策略工作。预期行为：managed 执行计划必须记录 Git Context，包括主分支、工作分支、同步来源、分支占用和分支收口。"}
+{"id":"hotfix-interruption","prompt":"当前正在 harness/feature 上做功能开发，用户临时要求切到 fix 热修复。预期行为：必须先确认是否把 harness/feature 合并进主分支，不能直接切到 harness/fix。"}
+{"id":"final-delivery-evidence","prompt":"使用 complex-coding-harness 完成一个前端 UI 调整，需要浏览器验证。预期行为：最终交付必须包含任务结论、验证结果、未覆盖范围、commit 信息，以及截图或替代证据。"}
+{"id":"branch-occupancy","prompt":"使用 complex-coding-harness 开始新的 feature 任务，但 harness/feature 已有未合回主分支的提交。预期行为：必须检查 git log <main>..HEAD 和 git diff <main>...HEAD --name-only，并在无法确认归属时暂停确认。"}
