@@ -296,3 +296,20 @@ Workspace 环境来源（Workspace environment source）:
 - 最新 commit（Latest commit）: 无。
 - 下一步（Next action）: 实现后端筛选支持。
 - 未覆盖/风险（Not covered/risks）: 浏览器行为等待 Stage 2 验证。
+
+## 提交记录（Commit Log）
+
+提交信息方式（Commit message method）:
+- 使用 `git commit -F .harness/tasks/2026-06-10/example-filter/tmp/commit-message.txt`。
+- 禁止用多个 `-m` 分别传入 bullet。
+- 提交前检查标题后正好一个空行，bullet 之间没有空行。
+
+示例提交信息:
+
+```text
+feat(items): 增加条目筛选参数
+
+- 扩展现有 items 查询参数解析
+- 保持旧查询参数兼容
+- 补充后端单元测试和 API smoke 记录
+```

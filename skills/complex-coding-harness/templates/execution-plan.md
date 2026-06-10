@@ -349,6 +349,12 @@ Changelog 计划（Changelog plan）:
 
 ## 提交记录（Commit Log）
 
+提交信息方式（Commit message method）:
+
+- 使用 `git commit -F .harness/tasks/<date>/<task-slug>/tmp/commit-message.txt`。
+- 禁止用多个 `-m` 分别传入 bullet。
+- 提交前检查标题后正好一个空行，bullet 之间没有空行。
+
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 |  |  |  |  |  |

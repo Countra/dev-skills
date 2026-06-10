@@ -2,6 +2,14 @@
 
 ## 2026-06-10
 
+### Stage 16: complex-coding-harness 提交信息文件规范
+
+- 明确阶段提交必须优先使用 `git commit -F` 读取完整提交信息文件。
+- 禁止使用多个 `-m` 参数分别传入 bullet，避免分列之间产生空行。
+- 更新执行计划模板、示例和 eval fixtures，覆盖提交信息格式约束。
+- Commit: 待提交
+- Commit message: `docs(complex-coding-harness): 规范提交信息文件方式`
+
 ### Stage 15: complex-coding-harness 两阶段门禁文档收口
 
 - 在总规划文档中补充方案制定阶段和方案实施阶段的增强门禁说明。

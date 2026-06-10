@@ -49,3 +49,7 @@ scope-change-reapproval:
   stops_for_reapproval: true
   records_reapproval_trigger: true
   does_not_expand_scope_silently: true
+commit-message-file-required:
+  uses_commit_message_file: true
+  rejects_multiple_m_flags_for_bullets: true
+  preserves_no_blank_lines_between_bullets: true

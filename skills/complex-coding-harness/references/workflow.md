@@ -277,6 +277,27 @@ feat(scope): 标题
 
 标题和分列之间保留一个空行；分列之间不加空行。
 
+提交命令必须保证 bullet 之间没有空行。禁止使用多个 `-m` 分别传入每条 bullet，因为 Git 会把每个 `-m` 当成独立段落并自动插入空行。
+
+首选方式是把完整提交信息写入临时文件，然后使用 `git commit -F <commit-message-file>`：
+
+```text
+feat(scope): 标题
+
+- 重点一
+- 重点二
+- 重点三
+```
+
+提交信息临时文件应放在 `.harness/tasks/<date>/<task-slug>/tmp/commit-message.txt` 或等价的 ignored 运行时目录。提交前必须检查：
+
+- 标题后正好一个空行。
+- bullet 行之间没有空行。
+- 没有尾随空格。
+- scope、标题和 bullet 与本阶段改动一致。
+
+只有在 shell 能可靠传入完整多行字符串时，才允许使用单个 `-m` 参数包含完整提交信息；不得使用多个 `-m` 参数拆分 bullet。
+
 `Commit Log` 必须记录：
 
 - 仓库
