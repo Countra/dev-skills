@@ -1,8 +1,8 @@
 ﻿{
-    "task_id":  "2026-06-09-docs-complex-coding-harness-plan",
-    "task_dir":  ".harness/tasks/2026-06-09/docs/complex-coding-harness-plan",
-    "title":  "落盘 complex-coding-harness skill 规划文档",
-    "status":  "completed",
-    "next_action":  "阶段 6 已完成；后续可做真实安装验证或前向测试",
+    "task_id":  "2026-06-10-feature-complex-coding-harness-upgrade-plan",
+    "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-upgrade-plan",
+    "title":  "complex-coding-harness 后续优化分阶段规划",
+    "status":  "in_progress",
+    "next_action":  "阶段 0：提交升级规划文档和任务状态记录",
     "updated_at":  "2026-06-10"
 }
