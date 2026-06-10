@@ -1,8 +1,8 @@
 ﻿{
-    "task_id":  "2026-06-10-feature-complex-coding-harness-upgrade-plan",
-    "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-upgrade-plan",
-    "title":  "complex-coding-harness 后续优化分阶段规划",
-    "status":  "completed",
-    "next_action":  "所有规划阶段已完成，进行最终交付说明",
+    "task_id":  "2026-06-10-feature-complex-coding-harness-two-phase-gates",
+    "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-two-phase-gates",
+    "title":  "complex-coding-harness 两阶段门禁增强",
+    "status":  "awaiting_plan_approval",
+    "next_action":  "等待用户批准两阶段门禁增强执行计划",
     "updated_at":  "2026-06-10"
 }
