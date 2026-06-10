@@ -53,3 +53,9 @@ commit-message-file-required:
   uses_commit_message_file: true
   rejects_multiple_m_flags_for_bullets: true
   preserves_no_blank_lines_between_bullets: true
+skill-updated-reread:
+  rereads_latest_skill_files: true
+  rereads_current_harness_state: true
+  does_not_require_tag_or_version_migration: true
+  avoids_auto_migrating_existing_state: true
+  asks_before_behavior_changing_differences: true

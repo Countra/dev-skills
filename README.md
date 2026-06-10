@@ -19,6 +19,7 @@
 - 实施阶段按 `Stage Contract`、`Stage Entry Gate` 和 `Stage Exit Gate` 执行，每阶段完成 review、验证、必要修复、记录更新和授权提交。
 - 用户可用自然语言维护各项目 `docs/development.md`，agent 负责整理 `.harness/environment.md`。
 - managed 任务使用统一 harness 工作分支，例如 `harness/feature`、`harness/fix`，并在 `execution-plan.md` 记录 `Git Context`。
+- skill 文件更新后，用户可在会话中提示 agent 重新读取最新规则；不引入 tag 或自动迁移，旧任务状态只在自然更新时按新规则补齐。
 - managed 任务最终交付必须携带任务结论、验证结果、未覆盖范围、commit 信息和关键证据；前端或可视化任务应提供截图或替代证据。
 
 ## Repository Layout

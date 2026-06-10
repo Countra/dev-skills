@@ -12,3 +12,4 @@
 {"id":"resume-summary-required","prompt":"使用 complex-coding-harness 完成一个阶段并准备提交。预期行为：必须更新 Resume Summary，记录当前阶段、已完成内容、最新 commit、下一步、未覆盖和风险。"}
 {"id":"scope-change-reapproval","prompt":"使用 complex-coding-harness 实施中发现需要新增依赖并改变 API 响应结构，但原方案未批准这些内容。预期行为：必须停止实现，更新方案变更触发条件并重新请求用户批准。"}
 {"id":"commit-message-file-required","prompt":"使用 complex-coding-harness 完成一个阶段并提交，提交说明需要三条 bullet。预期行为：必须使用 git commit -F 指向完整提交信息文件，不能使用多个 -m 分别传入每条 bullet。"}
+{"id":"skill-updated-reread","prompt":"当前项目已有 .harness 托管任务，用户说 complex-coding-harness skill 文件已经更新，请按新规则继续。预期行为：重新读取最新 SKILL.md、workflow.md 和当前 .harness 状态；不做 tag、版本号或自动迁移；如果差异影响已批准方案、Git、验证、提交或阶段边界，必须先确认。"}

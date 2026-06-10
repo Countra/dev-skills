@@ -47,6 +47,24 @@
 12. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
 13. 完成最终交付门禁，给出任务结论、验证摘要、关键证据、commit 信息和剩余风险。
 
+## Skill 更新后的继续工作
+
+如果用户提示 `complex-coding-harness` 已更新，不做 Git tag、schema version、workflow version 或自动迁移流程。继续当前任务前必须：
+
+1. 重新读取最新 `SKILL.md` 和 `references/workflow.md`。
+2. 重新读取 `.harness/active-task.json`、`.harness/environment.md`（如存在）和当前任务的 `execution-plan.md`。
+3. 对照新规则和旧任务状态，只说明会影响当前工作的差异。
+4. 不自动大范围重写旧状态，不删除旧字段，不迁移已批准方案。
+
+低风险差异可以在后续自然更新任务记录时补齐，例如新增空检查项、补充说明字段或按新模板追加记录区。
+
+以下差异必须先向用户确认，不能直接继续实现：
+
+- 改变已批准方案、阶段拆分或阶段边界。
+- 改变 Git 分支、同步、合并或提交策略。
+- 改变验证工具、验证命令、证据要求或最终声明范围。
+- 改变公共接口、数据结构、依赖、权限或运行环境。
+
 ## Workspace 环境
 
 用户可以用自然语言维护各项目 `docs/development.md`。agent 负责整理为 `.harness/environment.md`。

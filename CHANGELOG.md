@@ -2,6 +2,14 @@
 
 ## 2026-06-10
 
+### Stage 17: complex-coding-harness skill 更新继续规则
+
+- 增加用户提示 skill 已更新后的重新读取规则。
+- 明确不引入 Git tag、版本号或自动迁移流程，避免轻量 harness 变重。
+- 补充 eval fixture，约束旧任务状态只在自然更新时按新规则补齐。
+- Commit: 待提交
+- Commit message: `docs(complex-coding-harness): 增加 skill 更新继续规则`
+
 ### Stage 16: complex-coding-harness 提交信息文件规范
 
 - 明确阶段提交必须优先使用 `git commit -F` 读取完整提交信息文件。
