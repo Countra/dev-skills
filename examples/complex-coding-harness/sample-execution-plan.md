@@ -109,6 +109,15 @@
 风险和回滚（Risks and rollback）:
 - 如果兼容性破坏，回滚解析分支。
 
+阶段契约（Stage Contract）:
+- 范围（Scope）: 后端查询参数解析和 handler 支持。
+- 允许修改（Allowed changes）: `backend/api/items.go`、`backend/api/items_test.go`。
+- 禁止修改（Forbidden changes）: 认证、数据库 schema、前端页面。
+- 进入条件（Entry checks）: 工作区干净，当前分支为 `harness/feature`，后端测试命令可用。
+- 退出条件（Exit checks）: 后端单元测试通过，API smoke 结果已记录。
+- 必需验证（Required validation）: 后端单元测试和 API smoke。
+- 是否预期提交（Commit expected）: 是。
+
 ### 阶段 2（Stage 2）：前端控件
 
 目标（Goal）:
@@ -131,6 +140,15 @@
 
 风险和回滚（Risks and rollback）:
 - 回滚 UI 控件和请求参数。
+
+阶段契约（Stage Contract）:
+- 范围（Scope）: 前端筛选控件和请求参数。
+- 允许修改（Allowed changes）: `frontend/src/pages/Items.tsx`。
+- 禁止修改（Forbidden changes）: 后端接口契约、全局样式重构。
+- 进入条件（Entry checks）: Stage 1 已提交，前端依赖和 dev server 命令可用。
+- 退出条件（Exit checks）: 前端检查通过，Chrome DevTools MCP 验证记录完成。
+- 必需验证（Required validation）: 前端检查、浏览器 console/network 和截图。
+- 是否预期提交（Commit expected）: 是。
 
 ## 环境（Environment）
 
@@ -243,3 +261,16 @@ Workspace 环境来源（Workspace environment source）:
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 | Stage 1 | pending | 后端筛选支持 | 后端单元测试 | 测试输出 | 开始实施 |
+
+## 阶段进入门禁（Stage Entry Gate）
+
+| 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 范围匹配（Scope match） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- |
+| Stage 1 | pass，`harness/feature` 且工作区干净 | pass，无遗留 | pass，后端测试命令已确认 | pass，仅后端范围 | pass |
+| Stage 2 | pending | pending | pending | pending | pending |
+
+## 阶段退出门禁（Stage Exit Gate）
+
+| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- | --- |
+| Stage 1 | pending | pending | pending | pending | pending | pending |

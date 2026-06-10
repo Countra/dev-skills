@@ -118,6 +118,16 @@
 
 - 
 
+阶段契约（Stage Contract）:
+
+- 范围（Scope）:
+- 允许修改（Allowed changes）:
+- 禁止修改（Forbidden changes）:
+- 进入条件（Entry checks）:
+- 退出条件（Exit checks）:
+- 必需验证（Required validation）:
+- 是否预期提交（Commit expected）:
+
 ## 环境（Environment）
 
 Workspace 环境来源（Workspace environment source）:
@@ -304,6 +314,18 @@ Changelog 计划（Changelog plan）:
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
+
+## 阶段进入门禁（Stage Entry Gate）
+
+| 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 范围匹配（Scope match） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending |
+
+## 阶段退出门禁（Stage Exit Gate）
+
+| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending | pending |
 
 ## 代码审查（Code Review）
 

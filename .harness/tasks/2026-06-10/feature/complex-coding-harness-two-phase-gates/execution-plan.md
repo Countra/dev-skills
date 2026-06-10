@@ -450,6 +450,9 @@ Workspace 环境来源（Workspace environment source）:
 - Stage 1 `Plan Quality Gate`、影响面矩阵、证据等级、方案变更触发条件和批准摘要检索：通过。
 - Stage 1 `.harness/active-task.json` JSON 解析：通过。
 - Stage 1 `git diff --check`：通过。
+- Stage 2 `Stage Contract`、`Stage Entry Gate`、`Stage Exit Gate`、允许修改和禁止修改检索：通过。
+- Stage 2 `.harness/active-task.json` JSON 解析：通过。
+- Stage 2 `git diff --check`：通过。
 
 可选验证（Optional）:
 
@@ -535,8 +538,8 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- |
 | Stage 0 | completed | 创建 harness 托管任务计划 | JSON 解析、关键字段检索和 diff check 通过 | `.harness` 当前任务文件 | 提交规划 |
 | Stage 1 | completed | 规划阶段质量门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 1 提交 |
-| Stage 2 | pending | 阶段执行契约和进入/退出门禁 | 待执行 | workflow、template、example | 等待 Stage 1 提交 |
-| Stage 3 | pending | 验证证据、审查等级和恢复摘要 | 待执行 | workflow、template、example | 等待 Stage 2 |
+| Stage 2 | completed | 阶段执行契约和进入/退出门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 2 提交 |
+| Stage 3 | pending | 验证证据、审查等级和恢复摘要 | 待执行 | workflow、template、example | 等待 Stage 2 提交 |
 | Stage 4 | pending | eval fixtures 补充 | 待执行 | evals | 等待 Stage 3 |
 | Stage 5 | pending | 总文档和变更记录 | 待执行 | docs、CHANGELOG | 等待 Stage 4 |
 
@@ -547,10 +550,12 @@ Changelog 计划（Changelog plan）:
 | Stage 0 | 新任务可能与上一轮已完成任务混淆 | minor | 使用独立 task slug，并更新 active-task 指针 |
 | Stage 0 | `harness/feature` 已有未合回提交 | minor | 已记录分支占用，确认属于同一 skill 增强链路 |
 | Stage 1 | 模板字段增加可能加重填写负担 | minor | 只新增一张影响面矩阵和一个质量门禁表，不新增独立文件 |
+| Stage 2 | 阶段门禁可能被机械填写 | minor | 同时要求 allowed/forbidden changes 和 entry/exit 证据，降低空填风险 |
 
 ## 提交记录（Commit Log）
 
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Stage 0 | `dev-skills` | `7a0f196` | `docs(complex-coding-harness): 托管两阶段门禁增强任务` | not updated |
-| Stage 1 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强方案质量门禁` | not updated |
+| Stage 1 | `dev-skills` | `8f0268c` | `feat(complex-coding-harness): 增强方案质量门禁` | not updated |
+| Stage 2 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强阶段执行门禁` | not updated |

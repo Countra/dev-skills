@@ -178,6 +178,33 @@ Custom：...
 
 ## 实施阶段循环
 
+每个阶段开始前必须先形成 `Stage Contract`，至少包含：
+
+- 阶段目标和范围。
+- 允许修改的文件、模块、接口、配置或文档。
+- 明确禁止修改的范围。
+- 阶段进入条件。
+- 阶段退出条件。
+- 必需验证。
+- 是否预期提交。
+
+`Stage Entry Gate` 通过前不能开始编码。必须检查：
+
+- 当前分支和工作区状态符合 `Git Context`。
+- 上一阶段没有未处理的 blocking 或 major finding。
+- 本阶段相关环境、命令、工具和权限可用，或替代策略已记录。
+- 本阶段范围没有超出已批准方案。
+- 如果存在用户或未知改动，必须暂停确认。
+
+`Stage Exit Gate` 通过前不能进入下一阶段或最终交付。必须检查：
+
+- 阶段目标已经完成，且没有超出阶段契约。
+- code review 已完成，blocking 和 major finding 已关闭。
+- 必需验证已执行；无法执行时已记录原因、影响和替代证据。
+- 明显缺陷已修复，并已重复必要 review 和验证。
+- `execution-plan.md`、changelog 或等价变更记录、`Commit Log` 已更新。
+- 如阶段提交已授权，已完成提交并记录 commit hash；未提交时已说明原因。
+
 每个已批准阶段都必须执行：
 
 1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、`pending-decisions.md`（如存在）、项目 `docs/development.md` 和 changelog。
