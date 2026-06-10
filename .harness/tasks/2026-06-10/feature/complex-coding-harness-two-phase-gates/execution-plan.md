@@ -456,6 +456,9 @@ Workspace 环境来源（Workspace environment source）:
 - Stage 3 `Resume Summary`、验证证据表、blocking、major、minor、follow-up 检索：通过。
 - Stage 3 `.harness/active-task.json` JSON 解析：通过。
 - Stage 3 `git diff --check`：通过。
+- Stage 4 JSONL 逐行解析：通过。
+- Stage 4 新增 eval id 检索：通过。
+- Stage 4 `git diff --check`：通过。
 
 可选验证（Optional）:
 
@@ -543,8 +546,8 @@ Changelog 计划（Changelog plan）:
 | Stage 1 | completed | 规划阶段质量门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 1 提交 |
 | Stage 2 | completed | 阶段执行契约和进入/退出门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 2 提交 |
 | Stage 3 | completed | 验证证据、审查等级和恢复摘要已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 3 提交 |
-| Stage 4 | pending | eval fixtures 补充 | 待执行 | evals | 等待 Stage 3 提交 |
-| Stage 5 | pending | 总文档和变更记录 | 待执行 | docs、CHANGELOG | 等待 Stage 4 |
+| Stage 4 | completed | eval fixtures 补充已完成 | JSONL 解析、关键 id 检索和 diff check 通过 | evals | 阶段 4 提交 |
+| Stage 5 | pending | 总文档和变更记录 | 待执行 | docs、CHANGELOG | 等待 Stage 4 提交 |
 
 ## 代码审查（Code Review）
 
@@ -555,6 +558,7 @@ Changelog 计划（Changelog plan）:
 | Stage 1 | 模板字段增加可能加重填写负担 | minor | 只新增一张影响面矩阵和一个质量门禁表，不新增独立文件 |
 | Stage 2 | 阶段门禁可能被机械填写 | minor | 同时要求 allowed/forbidden changes 和 entry/exit 证据，降低空填风险 |
 | Stage 3 | review severity 可能被当成形式字段 | minor | 在 workflow 中定义各等级处理规则，验证失败必须修复或停止 |
+| Stage 4 | eval fixtures 不是自动测试 | minor | README 继续声明这些是 prompt fixtures，不是自动判分测试 |
 
 ## 提交记录（Commit Log）
 
@@ -563,4 +567,5 @@ Changelog 计划（Changelog plan）:
 | Stage 0 | `dev-skills` | `7a0f196` | `docs(complex-coding-harness): 托管两阶段门禁增强任务` | not updated |
 | Stage 1 | `dev-skills` | `8f0268c` | `feat(complex-coding-harness): 增强方案质量门禁` | not updated |
 | Stage 2 | `dev-skills` | `7d32d24` | `feat(complex-coding-harness): 增强阶段执行门禁` | not updated |
-| Stage 3 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强验证和审查记录` | not updated |
+| Stage 3 | `dev-skills` | `f3d1f57` | `feat(complex-coding-harness): 增强验证和审查记录` | not updated |
+| Stage 4 | `dev-skills` | 待提交 | `test(complex-coding-harness): 补充两阶段门禁评估样例` | not updated |

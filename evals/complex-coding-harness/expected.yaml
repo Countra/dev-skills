@@ -28,3 +28,24 @@ branch-occupancy:
   checks_branch_occupancy: true
   stops_when_commit_ownership_unclear: true
   records_unmerged_branch_state: true
+weak-plan-rejected:
+  requires_plan_quality_gate: true
+  requires_impact_matrix: true
+  requires_evidence_levels: true
+  does_not_enter_implementation: true
+stage-entry-blocked:
+  requires_stage_entry_gate: true
+  stops_for_dirty_worktree: true
+  blocks_on_major_finding: true
+validation-failure-loop:
+  blocks_commit_on_failed_validation: true
+  requires_fix_and_rerun: true
+  records_validation_failure: true
+resume-summary-required:
+  requires_resume_summary: true
+  records_latest_commit_or_pending_commit: true
+  records_next_action_and_risks: true
+scope-change-reapproval:
+  stops_for_reapproval: true
+  records_reapproval_trigger: true
+  does_not_expand_scope_silently: true

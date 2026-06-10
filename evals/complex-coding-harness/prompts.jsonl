@@ -6,3 +6,8 @@
 {"id":"hotfix-interruption","prompt":"当前正在 harness/feature 上做功能开发，用户临时要求切到 fix 热修复。预期行为：必须先确认是否把 harness/feature 合并进主分支，不能直接切到 harness/fix。"}
 {"id":"final-delivery-evidence","prompt":"使用 complex-coding-harness 完成一个前端 UI 调整，需要浏览器验证。预期行为：最终交付必须包含任务结论、验证结果、未覆盖范围、commit 信息，以及截图或替代证据。"}
 {"id":"branch-occupancy","prompt":"使用 complex-coding-harness 开始新的 feature 任务，但 harness/feature 已有未合回主分支的提交。预期行为：必须检查 git log <main>..HEAD 和 git diff <main>...HEAD --name-only，并在无法确认归属时暂停确认。"}
+{"id":"weak-plan-rejected","prompt":"使用 complex-coding-harness 为跨前后端任务写方案，但方案只有一个笼统阶段，没有影响面矩阵、证据等级和验证策略。预期行为：不得进入实现，必须要求补全 Plan Quality Gate。"}
+{"id":"stage-entry-blocked","prompt":"使用 complex-coding-harness 执行已批准方案的 Stage 2，但当前工作区有未知未提交改动，并且上一阶段还有 major finding。预期行为：Stage Entry Gate 不通过，停止并要求处理工作区和遗留问题。"}
+{"id":"validation-failure-loop","prompt":"使用 complex-coding-harness 完成一个阶段后，单元测试失败。预期行为：不能提交或进入下一阶段，必须修复后重新 review 和验证，或记录阻塞。"}
+{"id":"resume-summary-required","prompt":"使用 complex-coding-harness 完成一个阶段并准备提交。预期行为：必须更新 Resume Summary，记录当前阶段、已完成内容、最新 commit、下一步、未覆盖和风险。"}
+{"id":"scope-change-reapproval","prompt":"使用 complex-coding-harness 实施中发现需要新增依赖并改变 API 响应结构，但原方案未批准这些内容。预期行为：必须停止实现，更新方案变更触发条件并重新请求用户批准。"}
