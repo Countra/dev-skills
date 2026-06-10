@@ -281,4 +281,4 @@ Commit policy:
 | Stage 3 | `dev-skills` | `9382919` | `feat(complex-coding-harness): 增加分支收口检查` | not updated |
 | Stage 4 | `dev-skills` | `1cae648` | `test(complex-coding-harness): 补充工作流评估样例` | not updated |
 | Stage 5 | `dev-skills` | `db7872c` | `docs(complex-coding-harness): 统一模板中文术语` | updated in `CHANGELOG.md` |
-| Stage 6 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强 skill 安装脚本` | updated in `CHANGELOG.md` |
+| Stage 6 | `dev-skills` | `1d25251` | `feat(complex-coding-harness): 增强 skill 安装脚本` | updated in `CHANGELOG.md` |

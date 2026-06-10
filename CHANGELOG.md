@@ -7,7 +7,7 @@
 - `skill.sh install` 增加目标目录存在检查，默认拒绝覆盖已有 `complex-coding-harness`。
 - 新增 `--force` 安装模式，只替换目标 skills 目录下的 `complex-coding-harness`，并在复制后校验 `SKILL.md`。
 - README 补充默认安装、强制替换和运行时任务文件边界。
-- Commit: 待提交
+- Commit: `1d25251`
 - Commit message: `feat(complex-coding-harness): 增强 skill 安装脚本`
 
 ### Stage 9: complex-coding-harness 模板中文术语统一
@@ -54,7 +54,7 @@
 - 补充主分支来源、分支切换安全检查、merge 同步策略和禁止自动 stash/rebase/reset 的约束。
 - 增加热修复插入规则：从 feature 切到 fix 前必须确认是否先合并 feature 到主分支。
 - 更新 `environment.md` 和 `execution-plan.md` 模板，新增 Git 信息和 `Git Context`。
-- Commit: 本次提交
+- Commit: `617b19e`
 - Commit message: `feat(complex-coding-harness): 增加统一工作分支策略`
 
 ### Stage 2: complex-coding-harness skill 文档实现
