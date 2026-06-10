@@ -220,6 +220,12 @@ Workspace 环境来源（Workspace environment source）:
 - 覆盖范围（Covers）:
 - 未覆盖（Not covered）:
 
+验证证据表（Validation Evidence）:
+
+| 阶段（Stage） | 命令/工具（Command/tool） | 结果（Result） | 覆盖内容（Covers） | 未覆盖（Not covered） | 证据/日志（Evidence/log） | 处理（Action） |
+| --- | --- | --- | --- | --- | --- | --- |
+|  |  | pending |  |  |  |  |
+
 可选验证（Optional）:
 
 - 
@@ -331,7 +337,15 @@ Changelog 计划（Changelog plan）:
 
 | 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
 | --- | --- | --- | --- |
-|  |  |  |  |
+|  |  | blocking / major / minor / follow-up |  |
+
+## 恢复摘要（Resume Summary）
+
+- 当前阶段（Current stage）:
+- 已完成（Completed）:
+- 最新 commit（Latest commit）:
+- 下一步（Next action）:
+- 未覆盖/风险（Not covered/risks）:
 
 ## 提交记录（Commit Log）
 

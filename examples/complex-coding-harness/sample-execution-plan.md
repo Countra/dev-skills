@@ -247,6 +247,13 @@ Workspace 环境来源（Workspace environment source）:
 - 覆盖范围（Covers）: 后端筛选解析器和 handler
 - 未覆盖（Not covered）: 浏览器行为
 
+验证证据表（Validation Evidence）:
+
+| 阶段（Stage） | 命令/工具（Command/tool） | 结果（Result） | 覆盖内容（Covers） | 未覆盖（Not covered） | 证据/日志（Evidence/log） | 处理（Action） |
+| --- | --- | --- | --- | --- | --- | --- |
+| Stage 1 | 后端单元测试 | pending | 查询参数解析和 handler | 前端行为 | Stage 1 后记录命令输出 | 失败则修复并重跑 |
+| Stage 2 | Chrome DevTools MCP | pending | 页面交互、console、network | 跨浏览器 | 截图和 console/network 摘要 | 失败则修复并重验 |
+
 产物（Artifacts）:
 - 截图（Screenshot）: `.harness/tasks/2026-06-10/example-filter/artifacts/stage-2-items-page.png`
 - 日志（Log）: `Implementation Progress` 中的 console/network 摘要
@@ -274,3 +281,18 @@ Workspace 环境来源（Workspace environment source）:
 | 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | pending | pending | pending | pending | pending | pending |
+
+## 代码审查（Code Review）
+
+| 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
+| --- | --- | --- | --- |
+| Stage 1 | API 查询兼容性需要回归旧参数 | major | 在单元测试中覆盖旧参数 |
+| Stage 2 | 控件文案可能过长 | minor | 浏览器验证时检查移动端宽度 |
+
+## 恢复摘要（Resume Summary）
+
+- 当前阶段（Current stage）: Stage 1 待开始。
+- 已完成（Completed）: 方案、Git Context、验证策略和门禁已记录。
+- 最新 commit（Latest commit）: 无。
+- 下一步（Next action）: 实现后端筛选支持。
+- 未覆盖/风险（Not covered/risks）: 浏览器行为等待 Stage 2 验证。
