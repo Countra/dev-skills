@@ -30,6 +30,14 @@
 用户约束（User constraints）:
 - 使用 Chrome DevTools MCP 做前端自我验证。
 
+证据等级（Evidence levels）:
+
+| 结论（Claim） | 等级（Level） | 来源（Source） | 影响（Impact） |
+| --- | --- | --- | --- |
+| 现有接口已经负责条目筛选 | read | `backend/api/items.go` | 支持扩展现有接口 |
+| 前端筛选控件已有相邻模式 | read | `frontend/src/pages/Items.tsx` | 支持复用现有交互 |
+| 浏览器验证工具必须使用 Chrome DevTools MCP | external | 用户约束 | 决定前端验证证据 |
+
 ## 候选方案（Options）
 
 ### 方案 A：扩展现有接口（Add Filter To Existing Endpoint）
@@ -57,6 +65,22 @@
 
 原因（Why）:
 现有接口已经负责条目筛选，因此该方案改动最小。
+
+方案变更触发条件（Reapproval triggers）:
+- 如果后端筛选需要新增接口或改变认证逻辑，重新请求批准。
+- 如果 Chrome DevTools MCP 不可用，记录替代验证并请求用户确认。
+
+## 影响面矩阵（Impact Matrix）
+
+| 影响对象（Surface） | 是否涉及（Involved） | 文件/模块（Files/modules） | 风险（Risk） | 验证方式（Validation） | 文档更新（Docs） |
+| --- | --- | --- | --- | --- | --- |
+| API | yes | `backend/api/items.go` | 查询兼容性 | 单元测试和 API smoke | 接口说明 |
+| 数据结构（Data model） | no |  |  |  |  |
+| 前端交互（Frontend interaction） | yes | `frontend/src/pages/Items.tsx` | 控件状态和请求参数 | Chrome DevTools MCP | 无 |
+| 配置/环境（Config/environment） | no |  |  |  |  |
+| 兼容性（Compatibility） | yes | API 查询参数 | 旧客户端行为 | 旧参数回归测试 | 接口说明 |
+| 测试（Tests） | yes | `backend/api/items_test.go` | 覆盖不足 | 单元测试和 smoke | 无 |
+| 文档（Documentation） | yes | API docs | 文档滞后 | 文档 diff review | 接口说明 |
 
 ## 实施计划（Implementation Plan）
 
@@ -163,6 +187,17 @@ Workspace 环境来源（Workspace environment source）:
 - API smoke 结果。
 - Chrome DevTools MCP 截图和 console/network 摘要。
 
+## 方案质量门禁（Plan Quality Gate）
+
+| 检查项（Check） | 状态（Status） | 证据（Evidence） |
+| --- | --- | --- |
+| 关键判断有证据等级（Evidence levels assigned） | pass | `Evidence levels` 已记录 |
+| 影响面矩阵完整（Impact matrix complete） | pass | API、前端、兼容性、测试和文档已标记 |
+| 候选方案比较充分（Options compared enough） | pass | 已比较扩展现有接口和新增专用接口 |
+| 每阶段可独立验证（Stages independently verifiable） | pass | 后端单测和前端 MCP 验证分阶段执行 |
+| 方案变更触发条件清楚（Reapproval triggers clear） | pass | `Reapproval triggers` 已记录 |
+| 用户批准摘要可记录（Approval summary ready） | pass | `Plan Approval` 已记录批准范围 |
+
 ## 方案批准（Plan Approval）
 
 状态（Status）:
@@ -170,6 +205,12 @@ Workspace 环境来源（Workspace environment source）:
 
 批准记录（Approval record）:
 - 用户说：“按方案执行。”
+
+批准摘要（Approval summary）:
+- 批准范围（Approved scope）: 扩展现有筛选接口并增加前端控件。
+- 阶段提交授权（Stage commit authorization）: 已授权。
+- 工具/MCP 授权（Tool/MCP authorization）: 使用 Chrome DevTools MCP。
+- 文档更新授权（Documentation authorization）: 更新接口说明。
 
 提交策略（Commit policy）:
 - 已授权阶段提交。

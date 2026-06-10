@@ -30,6 +30,12 @@
 
 - 
 
+证据等级（Evidence levels）:
+
+| 结论（Claim） | 等级（Level） | 来源（Source） | 影响（Impact） |
+| --- | --- | --- | --- |
+|  | read / confirmed / external / assumption |  |  |
+
 ## 候选方案（Options）
 
 ### 方案 A：最小改动（Minimal Change）
@@ -61,6 +67,22 @@
 可逆性（Reversibility）:
 
 变更条件（Change conditions）:
+
+方案变更触发条件（Reapproval triggers）:
+
+-
+
+## 影响面矩阵（Impact Matrix）
+
+| 影响对象（Surface） | 是否涉及（Involved） | 文件/模块（Files/modules） | 风险（Risk） | 验证方式（Validation） | 文档更新（Docs） |
+| --- | --- | --- | --- | --- | --- |
+| API | yes/no |  |  |  |  |
+| 数据结构（Data model） | yes/no |  |  |  |  |
+| 前端交互（Frontend interaction） | yes/no |  |  |  |  |
+| 配置/环境（Config/environment） | yes/no |  |  |  |  |
+| 兼容性（Compatibility） | yes/no |  |  |  |  |
+| 测试（Tests） | yes/no |  |  |  |  |
+| 文档（Documentation） | yes/no |  |  |  |  |
 
 ## 实施计划（Implementation Plan）
 
@@ -241,6 +263,17 @@ Changelog 计划（Changelog plan）:
 | 风险已识别（Risks identified） | pending |  |
 | 阻塞问题已关闭（Blocking questions closed） | pending |  |
 
+## 方案质量门禁（Plan Quality Gate）
+
+| 检查项（Check） | 状态（Status） | 证据（Evidence） |
+| --- | --- | --- |
+| 关键判断有证据等级（Evidence levels assigned） | pending |  |
+| 影响面矩阵完整（Impact matrix complete） | pending |  |
+| 候选方案比较充分（Options compared enough） | pending |  |
+| 每阶段可独立验证（Stages independently verifiable） | pending |  |
+| 方案变更触发条件清楚（Reapproval triggers clear） | pending |  |
+| 用户批准摘要可记录（Approval summary ready） | pending |  |
+
 就绪结论（Readiness result）:
 
 - `pending`
@@ -254,6 +287,13 @@ Changelog 计划（Changelog plan）:
 批准记录（Approval record）:
 
 - 
+
+批准摘要（Approval summary）:
+
+- 批准范围（Approved scope）:
+- 阶段提交授权（Stage commit authorization）:
+- 工具/MCP 授权（Tool/MCP authorization）:
+- 文档更新授权（Documentation authorization）:
 
 提交策略（Commit policy）:
 

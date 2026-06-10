@@ -32,7 +32,7 @@
 
 待确认项（Open uncertainties）:
 
-- 当前方案是否获用户批准进入实现。
+- 无。用户已批准进入实现。
 
 ## 上下文（Context）
 
@@ -422,7 +422,7 @@ Workspace 环境来源（Workspace environment source）:
 
 未解决问题（Open issues）:
 
-- 需要用户批准本方案后才能进入实现。
+- 无。
 
 ## 工具（Tooling）
 
@@ -447,6 +447,9 @@ Workspace 环境来源（Workspace environment source）:
 - 当前规划阶段已读取 skill、workflow、模板、eval、示例、CHANGELOG 和 Git 状态。
 - 当前工作区干净。
 - 当前分支为 `harness/feature`。
+- Stage 1 `Plan Quality Gate`、影响面矩阵、证据等级、方案变更触发条件和批准摘要检索：通过。
+- Stage 1 `.harness/active-task.json` JSON 解析：通过。
+- Stage 1 `git diff --check`：通过。
 
 可选验证（Optional）:
 
@@ -488,7 +491,7 @@ Changelog 计划（Changelog plan）:
 
 | ID | 是否阻塞（Blocking） | 状态（Status） | 问题（Question） | 决策（Decision） | 应用位置（Applied to） |
 | --- | --- | --- | --- | --- | --- |
-| D-001 | yes | open | 是否批准本执行计划并进入阶段实现？ | 待用户确认 | Plan Approval |
+| D-001 | yes | closed | 是否批准本执行计划并进入阶段实现？ | 用户已回复“按方案执行” | Plan Approval |
 
 ## 就绪门禁（Readiness Gate）
 
@@ -506,33 +509,33 @@ Changelog 计划（Changelog plan）:
 | 最终交付证据已规划（Final delivery evidence planned） | pass | 无 UI，证据为文档、验证和 commit |
 | 文档更新已确认（Documentation updates confirmed） | pass | Required updates 已列出 |
 | 风险已识别（Risks identified） | pass | 每阶段含风险和回滚 |
-| 阻塞问题已关闭（Blocking questions closed） | pending | 等待用户批准 D-001 |
+| 阻塞问题已关闭（Blocking questions closed） | pass | D-001 已关闭 |
 
 就绪结论（Readiness result）:
 
-- `awaiting_plan_approval`
+- `pass`
 
 ## 方案批准（Plan Approval）
 
 状态（Status）:
 
-- `not_requested`
+- `approved`
 
 批准记录（Approval record）:
 
-- 等待用户确认：“按方案执行”或提出修改意见。
+- 用户回复：“按方案执行”。
 
 提交策略（Commit policy）:
 
-- `not_authorized`
+- `stage_commits_authorized`
 
 ## 实施进度（Implementation Progress）
 
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 | Stage 0 | completed | 创建 harness 托管任务计划 | JSON 解析、关键字段检索和 diff check 通过 | `.harness` 当前任务文件 | 提交规划 |
-| Stage 1 | pending | 规划阶段质量门禁 | 待执行 | workflow、template、example | 等待方案批准 |
-| Stage 2 | pending | 阶段执行契约和进入/退出门禁 | 待执行 | workflow、template、example | 等待 Stage 1 |
+| Stage 1 | completed | 规划阶段质量门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 1 提交 |
+| Stage 2 | pending | 阶段执行契约和进入/退出门禁 | 待执行 | workflow、template、example | 等待 Stage 1 提交 |
 | Stage 3 | pending | 验证证据、审查等级和恢复摘要 | 待执行 | workflow、template、example | 等待 Stage 2 |
 | Stage 4 | pending | eval fixtures 补充 | 待执行 | evals | 等待 Stage 3 |
 | Stage 5 | pending | 总文档和变更记录 | 待执行 | docs、CHANGELOG | 等待 Stage 4 |
@@ -543,9 +546,11 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- |
 | Stage 0 | 新任务可能与上一轮已完成任务混淆 | minor | 使用独立 task slug，并更新 active-task 指针 |
 | Stage 0 | `harness/feature` 已有未合回提交 | minor | 已记录分支占用，确认属于同一 skill 增强链路 |
+| Stage 1 | 模板字段增加可能加重填写负担 | minor | 只新增一张影响面矩阵和一个质量门禁表，不新增独立文件 |
 
 ## 提交记录（Commit Log）
 
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
-| Stage 0 | `dev-skills` | 待提交 | `docs(complex-coding-harness): 托管两阶段门禁增强任务` | not updated |
+| Stage 0 | `dev-skills` | `7a0f196` | `docs(complex-coding-harness): 托管两阶段门禁增强任务` | not updated |
+| Stage 1 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强方案质量门禁` | not updated |
