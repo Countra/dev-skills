@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-10
+
+### Stage 6: complex-coding-harness 最终交付门禁
+
+- 新增 managed 任务最终交付门禁，要求输出任务结论、验证结果、未覆盖范围、commit 信息和关键证据。
+- 补充前端、UI 和可视化任务的截图、日志、trace 或替代证据规则。
+- 更新环境和执行计划模板，增加 evidence tools、artifact policy、Executed、Artifacts 和阶段证据字段。
+- Commit: 本次提交
+- Commit message: `feat(complex-coding-harness): 增强最终交付门禁`
+
 ## 2026-06-09
 
 ### Stage 5: complex-coding-harness Git 工作分支策略

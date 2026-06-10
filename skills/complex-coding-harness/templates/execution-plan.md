@@ -168,9 +168,24 @@ Required:
 
 - 
 
+Executed:
+
+- Command/tool:
+- Result:
+- Evidence:
+- Covers:
+- Not covered:
+
 Optional:
 
 - 
+
+Artifacts:
+
+- Screenshot:
+- Log:
+- Trace:
+- Report:
 
 Not covered:
 
@@ -209,6 +224,7 @@ Changelog plan:
 | Git context confirmed | pending |  |
 | Tooling confirmed | pending |  |
 | Validation confirmed | pending |  |
+| Final delivery evidence planned | pending |  |
 | Documentation updates confirmed | pending |  |
 | Risks identified | pending |  |
 | Blocking questions closed | pending |  |
@@ -233,9 +249,9 @@ Commit policy:
 
 ## Implementation Progress
 
-| Stage | Status | Summary | Next action |
-| --- | --- | --- |
-|  |  |  |  |
+| Stage | Status | Summary | Validation | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |
 
 ## Code Review
 

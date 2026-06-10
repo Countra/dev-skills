@@ -1038,6 +1038,7 @@ Decision:
 - 每个工具不覆盖什么。
 - 哪些验证需要用户提供环境或数据。
 - 如果验证无法执行，最终交付时能声明到什么程度。
+- 验证证据如何保存，例如截图、日志、trace、测试报告或替代证据。
 
 ### 8.20 文档更新确认规则
 
@@ -1135,7 +1136,39 @@ feat(scope): 大标题
 - `.harness/active-task.json` 必须保持 `status`、`next_action` 和当前任务目录准确。
 - 如果上下文压缩、遗忘或不确定，必须先查这些任务文档，不能凭记忆继续。
 
-### 8.23 如何保证方案做好
+### 8.23 最终交付门禁
+
+managed 任务结束前必须完成最终交付门禁。它不是新文件，也不是额外模板，而是最终回复和 `execution-plan.md` 的质量门禁。
+
+最终交付必须包含：
+
+- 任务结论：完成、部分完成、未完成或阻塞。
+- 核心改动：用户需要知道的主要修改点。
+- 验证结果：已运行命令、工具、MCP、浏览器检查和结果。
+- 未验证项或验证失败项：原因、影响和替代证据。
+- Code review 结论：blocking、major、minor finding 和处理结果。
+- 提交信息：仓库、commit hash 和 commit message。
+- 文档和任务记录更新：changelog、接口文档、README、`execution-plan.md` 等。
+- 关键产物：截图、日志、trace、测试报告、覆盖率报告或 artifact 路径。
+- 剩余风险和后续建议。
+
+前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，默认需要截图或等价视觉证据。优先使用 `.harness/environment.md` 指定的 Chrome DevTools MCP、Playwright、Cypress 或项目自带截图工具。
+
+如果无法截图，必须说明：
+
+- 截图未产出的原因。
+- 对验证声明的影响。
+- 使用了什么替代验证。
+
+artifact 规则：
+
+- 运行产物默认放在 `.harness/tasks/<date>/<task-slug>/artifacts/`。
+- artifact 默认不提交。
+- 如果截图、报告或 trace 需要作为项目文档提交，必须先获得用户确认。
+
+最终回复可简化表达，但不得缺少任务结论、验证结果、未覆盖范围、commit 信息和关键证据。
+
+### 8.24 如何保证方案做好
 
 方案质量不是靠文档长度保证，而是靠以下机制：
 
@@ -1275,12 +1308,12 @@ managed 任务阶段：
 - `Environment`：引用 `.harness/environment.md`，并记录本次任务涉及项目、采用环境和临时覆盖项。
 - `Git Context`：主分支、任务类型、harness 工作分支、同步来源、提交策略、热修复插入决策和未解决分支问题。
 - `Tooling`：MCP、skill、浏览器工具、CLI、外部服务、可用性、权限风险和替代方案。
-- `Validation`：必须执行的验证、可选验证、覆盖范围、不覆盖范围和无法执行时的声明边界。
+- `Validation`：必须执行的验证、已执行验证、可选验证、覆盖范围、不覆盖范围、artifact 和无法执行时的声明边界。
 - `Documentation`：接口文档、README、配置说明、示例、迁移说明或 changelog 更新计划。
 - `Questions And Overrides`：待用户确认项、用户已确认项、用户后续覆盖记录。
 - `Readiness Gate`：方案是否可提交用户审批的逐项检查结论。
 - `Plan Approval`：用户是否已明确批准该方案进入实现阶段。
-- `Implementation Progress`：各阶段当前状态、已完成修改、下一步和阻塞项。
+- `Implementation Progress`：各阶段当前状态、已完成修改、验证结果、证据、下一步和阻塞项。
 - `Code Review`：每阶段自审结论、发现的问题、修复情况和剩余风险。
 - `Commit Log`：每阶段提交的仓库、commit hash、提交信息和对应 changelog 记录。
 
@@ -1305,7 +1338,9 @@ Workspace 级模板。位于 `.harness/environment.md`，由 agent 从各项目 
 - 每个项目的路径、类型、语言和主要职责。
 - 每个项目的运行环境、包管理器、虚拟环境、启动命令、测试命令、构建命令和 smoke 要求。
 - 必须使用的验证工具，例如 Chrome DevTools MCP、项目 E2E、Docker、数据库 CLI。
+- 可产出交付证据的工具，例如截图、浏览器日志、网络日志、测试报告和覆盖率报告。
 - Git 主分支、harness 分支映射、主分支探测顺序和 merge 策略。
+- artifact 存放策略，运行产物默认在 `.harness/tasks/**/artifacts/`，提交 artifact 需要用户确认。
 - 未确认项、冲突项和用户覆盖记录。
 
 规则：
@@ -1427,7 +1462,7 @@ Workspace 级模板。位于 `.harness/environment.md`，由 agent 从各项目 
 - eval prompt 样例检查。
 - 方案敲定模板完整性检查。
 - `environment.md` 中多项目环境、命令、验证工具、来源和未确认项完整性检查。
-- `execution-plan.md` 中上下文来源、阶段实施细节、环境引用、工具依赖、验证策略、文档更新、用户覆盖、方案批准、阶段进度、code review 和提交记录章节完整性检查。
+- `execution-plan.md` 中上下文来源、阶段实施细节、环境引用、工具依赖、验证策略、验证证据、artifact、文档更新、用户覆盖、方案批准、阶段进度、code review 和提交记录章节完整性检查。
 - `pending-decisions.md` 按需临时决策单模板完整性检查。
 
 ## 15. 风险和取舍
@@ -1449,6 +1484,8 @@ Workspace 级模板。位于 `.harness/environment.md`，由 agent 从各项目 
 | 固定分支混入多个同类任务 | 每次进入阶段前检查 `Git Context`、当前分支和工作区；如同类任务并发，暂停让用户决定先完成当前任务还是人工拆分 |
 | 未完成 feature 被热修复带入主分支 | 从 `harness/feature` 切到 `harness/fix` 前必须询问是否先合并 feature；默认不合并 |
 | 分支同步引入冲突或误改历史 | 默认 merge 主分支，不自动 rebase；冲突时停止并记录到 `execution-plan.md` |
+| 最终交付结论缺少证据 | 通过最终交付门禁要求结论、验证、未覆盖范围、commit、artifact 和剩余风险一起输出 |
+| 前端或可视化任务没有截图证据 | 默认要求截图、浏览器日志、trace 或替代证据；无法截图时说明原因和影响 |
 | 环境不明确导致验证失败 | 通过各项目 `docs/development.md` 收集自然语言环境说明，由 `.harness/environment.md` 统一整理，`execution-plan.md` 只记录本次任务引用和覆盖项 |
 | 用户后续更改环境或验证策略 | 将用户覆盖项写入 `Questions And Overrides`，并重新通过 readiness gate |
 | 忘记更新接口或使用文档 | 通过 `execution-plan.md` 的 `Documentation` 在编码前确认文档更新范围 |

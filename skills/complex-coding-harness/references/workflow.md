@@ -45,7 +45,7 @@
 10. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
 11. 只有用户明确批准后才能实现。
 12. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
-13. 结束时给出最终 review、验证摘要、变更文件和剩余风险。
+13. 完成最终交付门禁，给出任务结论、验证摘要、关键证据、commit 信息和剩余风险。
 
 ## Workspace 环境
 
@@ -170,6 +170,26 @@ Custom：...
 - Python 工作必须使用配置的 conda、venv、解释器或包管理器。
 - 每轮大修改必须运行配置的 smoke 检查。
 - 如果某项验证无法执行，必须记录原因、影响和替代证据，不能声称通过。
+- 验证证据必须写入 `execution-plan.md`，包括命令或工具、结果、覆盖范围、未覆盖范围和 artifact。
+
+## 最终交付门禁
+
+managed 任务结束前必须完成最终交付门禁：
+
+1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、changelog 和 git 状态。
+2. 确认每个阶段都有 review、验证、缺陷处理、文档更新和提交记录。
+3. 汇总已执行验证；不能把未执行验证写成通过。
+4. 汇总未覆盖范围、失败项、剩余风险和后续建议。
+5. 汇总 commit hash、commit message、changelog 记录和关键文件。
+6. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
+7. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
+8. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、commit 信息、关键证据和剩余风险。
+
+截图和 artifact 规则：
+
+- 运行产物默认放在 `.harness/tasks/<date>/<task-slug>/artifacts/`。
+- artifact 默认不提交；如果截图或报告需要成为项目文档的一部分，必须先获得用户确认。
+- 如果无法截图或无法导出 artifact，必须说明原因、影响和替代验证。
 
 ## Commit 和 Changelog
 

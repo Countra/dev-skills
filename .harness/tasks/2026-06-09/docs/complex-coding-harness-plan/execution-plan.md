@@ -28,6 +28,7 @@
 - `examples/complex-coding-harness/`、`evals/complex-coding-harness/` 和 `skill.sh` 已落地。
 - 统一 harness 工作分支策略已写入 skill 规划、workflow 和模板。
 - 从 `harness/feature` 插入 `harness/fix` 的热修复确认规则已写入。
+- 最终交付门禁已写入 skill 规划、workflow 和模板。
 
 ## Context
 
@@ -183,6 +184,37 @@
 - 校验 eval JSONL 可解析。
 - 检查 git diff，确认只包含本阶段文档和模板变更。
 
+### 阶段 6：最终交付门禁
+
+目标：
+
+- 在 skill 规划、workflow 和模板中加入最终交付门禁。
+- 要求 managed 任务最终回复携带任务结论、验证结果、未覆盖范围、code review 结论、commit 信息、关键证据和剩余风险。
+- 明确前端、UI、可视化或浏览器任务应提供截图、日志、trace、报告或替代证据。
+- 保持少文件原则，不新增 `final-report.md` 等独立模板。
+
+Git Context：
+
+- Main branch: `master`
+- Task type: `feature`
+- Working branch: `harness/feature`
+- Branch action: created
+- Sync source: local `master`
+- Last sync: `git merge master`，结果 already up to date
+- Commit policy: 用户要求“开始实现吧，并提交”
+
+用户批准：
+
+- 当前会话中用户要求“开始实现吧，并提交”，视为阶段 6 实施和提交批准。
+
+本阶段验证：
+
+- 检索最终交付门禁、验证证据、artifact、截图和 `Final delivery evidence planned` 等关键文本。
+- 校验 `.harness/active-task.json` JSON 可解析。
+- 校验 eval JSONL 可解析。
+- 执行 `git diff --check`。
+- 检查 git diff，确认只包含本阶段文档和模板变更。
+
 ## Environment
 
 当前任务是文档规划任务，不需要 Python、Node、前端 dev server、数据库或外部服务运行环境。
@@ -231,6 +263,7 @@
 - 检索 skill、模板、示例、eval 和安装脚本，确认包含 `Plan Approval`、`Readiness Gate`、`Commit Log`、`Implementation Progress`、`Code Review`、`USER INPUT`、Chrome DevTools MCP 和 `.harness/tasks/` 创建边界。
 - 检查未创建 `skills/complex-coding-harness/scripts/`。
 - 检索新增 Git 工作分支策略，确认 `workflow.md`、`environment.md`、`execution-plan.md`、规划文档和示例计划均已覆盖。
+- 检索新增最终交付门禁，确认 `workflow.md`、`environment.md`、`execution-plan.md`、规划文档、README 和示例计划均已覆盖。
 
 覆盖范围：
 
@@ -330,6 +363,7 @@
 | 阶段 3：示例和 eval | completed | 已创建示例执行计划、临时决策单、eval prompts 和 expected | 已完成 JSONL 校验 |
 | 阶段 4：安装适配 | completed | 已创建 `skill.sh` 基础复制安装入口 | 未执行安装，避免写入用户 agent 目录 |
 | 阶段 5：统一 harness 工作分支策略 | completed | 已补充 Git 工作分支策略、热修复插入规则和模板字段 | 已完成验证，提交信息见最终交付 |
+| 阶段 6：最终交付门禁 | completed | 已补充最终交付门禁、验证证据和 artifact 规则 | 已完成验证，提交信息见最终交付 |
 
 ## Code Review
 
@@ -340,6 +374,8 @@
 | 阶段 3 | 示例中存在英文验证说明 | minor | 已改为中文说明 |
 | 阶段 5 | 统一固定分支可能混入多个同类任务 | minor | 已要求每阶段检查 `Git Context` 和工作区；并发时暂停让用户决定 |
 | 阶段 5 | 热修复可能误把未完成 feature 带入主分支 | major | 已要求从 `harness/feature` 切到 `harness/fix` 前必须确认是否合并 feature |
+| 阶段 6 | 最终交付门禁可能让小任务输出过重 | minor | 已限定为 managed 任务强制，direct 任务只做简化说明 |
+| 阶段 6 | 截图规则可能误用于非 UI 任务 | minor | 已限定前端、UI、可视化和浏览器流程默认要求截图或替代证据 |
 
 ## Commit Log
 
@@ -347,3 +383,4 @@
 | --- | --- | --- | --- | --- |
 | 阶段 2-4 | `dev-skills` | `32f969b` | `feat(complex-coding-harness): 实现复杂任务执行 skill` | `CHANGELOG.md` 已记录 |
 | 阶段 5 | `dev-skills` | 本次提交 | `feat(complex-coding-harness): 增加统一工作分支策略` | `CHANGELOG.md` 已记录 |
+| 阶段 6 | `dev-skills` | 本次提交 | `feat(complex-coding-harness): 增强最终交付门禁` | `CHANGELOG.md` 已记录 |

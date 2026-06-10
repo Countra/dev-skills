@@ -67,6 +67,16 @@ Validation tools:
 - Browser/MCP:
 - CLI:
 - External service:
+- Screenshot:
+- Browser logs:
+- Network logs:
+- Test reports:
+- Coverage reports:
+
+Artifact policy:
+
+- Runtime artifacts: `.harness/tasks/**/artifacts/`
+- Commit artifacts only with user confirmation.
 
 Rules:
 

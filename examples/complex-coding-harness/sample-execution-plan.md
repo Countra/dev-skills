@@ -148,6 +148,11 @@ Hotfix interruption:
 Readiness result:
 - pass
 
+Final delivery evidence planned:
+- Backend unit test output.
+- API smoke result.
+- Chrome DevTools MCP screenshot and console/network summary.
+
 ## Plan Approval
 
 Status:
@@ -158,3 +163,32 @@ Approval record:
 
 Commit policy:
 - Stage commits authorized.
+
+## Validation
+
+Required:
+- Backend unit tests.
+- Frontend checks.
+- Chrome DevTools MCP browser validation.
+
+Executed:
+- Command/tool: backend unit tests
+- Result: pending
+- Evidence: test output recorded after Stage 1
+- Covers: backend filter parser and handler
+- Not covered: browser behavior
+
+Artifacts:
+- Screenshot: `.harness/tasks/2026-06-10/example-filter/artifacts/stage-2-items-page.png`
+- Log: console/network summary in `Implementation Progress`
+- Trace:
+- Report:
+
+Not covered:
+- Cross-browser behavior beyond configured validation tool.
+
+## Implementation Progress
+
+| Stage | Status | Summary | Validation | Evidence | Next action |
+| --- | --- | --- | --- | --- | --- |
+| Stage 1 | pending | Backend filter support | Backend unit tests | Test output | Start implementation |
