@@ -185,6 +185,7 @@ Executed:
 - `rg` 检索规划关键项：通过，覆盖分支收口、eval、模板中文化、安装脚本、Readiness Gate、Plan Approval、Git Context、Branch occupancy 和 Branch closure。
 - `.harness/active-task.json` JSON 解析：通过。
 - `git diff --check`：通过。
+- Stage 3 `rg` 检索 branch occupancy、branch closure、`git log <main>..HEAD`、`git diff <main>...HEAD --name-only`：通过。
 
 Artifacts:
 
@@ -252,7 +253,7 @@ Commit policy:
 | --- | --- | --- | --- | --- | --- |
 | Stage 1 | completed | 已新增升级规划文档 | 文档关键项检索通过 | `docs/complex-coding-harness-upgrade-plan.md` | 阶段 0 提交 |
 | Stage 2 | completed | 已更新当前任务状态 | JSON 解析和 diff check 通过 | `.harness/active-task.json` | 阶段 0 提交 |
-| Stage 3 | pending | 分支收口和分支占用检查 | 待执行 | workflow 和模板 | 等待阶段 0 提交 |
+| Stage 3 | completed | 分支收口和分支占用检查已实现 | 关键文本检索、JSONL、JSON 和 diff check 通过 | workflow、模板、规划和示例 | 阶段 1 提交 |
 | Stage 4 | pending | 补充 eval fixtures | 待执行 | eval fixtures | 等待 Stage 3 |
 | Stage 5 | pending | 模板中文化和术语统一 | 待执行 | templates 和 examples | 等待 Stage 4 |
 | Stage 6 | pending | 安装脚本确定性增强 | 待执行 | skill.sh 和 README | 等待 Stage 5 |
@@ -263,9 +264,11 @@ Commit policy:
 | --- | --- | --- | --- |
 | Stage 1 | 规划文档可能诱导直接实现 | major | 已明确本文档只规划，实现需用户批准 |
 | Stage 2 | 当前 `harness/feature` 已有未合回提交 | minor | 已在 Git Context 中记录分支占用 |
+| Stage 3 | 分支收口规则可能增加固定分支使用成本 | minor | 仅在存在未合回提交或归属不明时暂停确认 |
 
 ## Commit Log
 
 | Stage | Repository | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Stage 1-2 | `dev-skills` | 待提交 | `docs(complex-coding-harness): 规划后续优化阶段` | not updated |
+| Stage 3 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增加分支收口检查` | not updated |

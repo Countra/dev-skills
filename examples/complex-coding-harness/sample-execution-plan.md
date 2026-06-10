@@ -133,8 +133,18 @@ Sync source:
 Last sync:
 - 方案批准后、实施前同步。
 
+Branch occupancy:
+- `git log dev..HEAD`: no unrelated commits.
+- `git diff dev...HEAD --name-only`: expected backend/frontend files only.
+- Existing commits belong to this task: yes.
+
 Commit policy:
 - 已授权阶段提交。
+
+Branch closure:
+- Merged to main branch: no.
+- If not merged, code remains on: `harness/feature`.
+- User confirmation needed before merge: yes.
 
 Branch safety:
 - 切换前检查工作区。

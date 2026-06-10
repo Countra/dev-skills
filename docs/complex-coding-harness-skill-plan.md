@@ -933,6 +933,21 @@ git merge dev
 
 如果 merge 冲突，停止并记录到 `execution-plan.md`，不能大范围猜测解决。
 
+进入 harness 分支后必须检查分支占用：
+
+```bash
+git log <main>..HEAD
+git diff <main>...HEAD --name-only
+```
+
+如果发现未合回主分支的提交：
+
+- 属于当前任务链路：记录到 `Git Context` 后继续。
+- 不属于当前任务链路：暂停确认。
+- 无法判断归属：暂停确认。
+
+不能把其他任务的提交混入当前阶段提交或最终交付。
+
 热修复插入规则：
 
 - 如果当前在 `harness/feature`，用户突然要求处理 `fix`，不能直接切到 `harness/fix`。
@@ -979,7 +994,9 @@ Decision:
 - 分支动作：创建、复用、已在目标分支或不适用。
 - 同步来源，例如 `origin/dev` 或本地 `dev`。
 - 最近同步时间和结果。
+- 分支占用检查结果。
 - 提交策略。
+- 分支收口状态：是否已合回主分支；如果未合回，代码停留在哪个 harness 分支。
 - 热修复插入决策。
 - 未解决分支问题。
 
@@ -1147,6 +1164,7 @@ managed 任务结束前必须完成最终交付门禁。它不是新文件，也
 - 验证结果：已运行命令、工具、MCP、浏览器检查和结果。
 - 未验证项或验证失败项：原因、影响和替代证据。
 - Code review 结论：blocking、major、minor finding 和处理结果。
+- Branch status：当前分支、主分支、是否已合回主分支。
 - 提交信息：仓库、commit hash 和 commit message。
 - 文档和任务记录更新：changelog、接口文档、README、`execution-plan.md` 等。
 - 关键产物：截图、日志、trace、测试报告、覆盖率报告或 artifact 路径。
@@ -1306,7 +1324,7 @@ managed 任务阶段：
 - `Decision`：最终方案、选择原因、影响、可逆性和后续修改条件。
 - `Implementation Plan`：分阶段落地计划；每个阶段必须说明目标、怎么做、为什么、在哪做、参考来源、验证、风险和回滚。
 - `Environment`：引用 `.harness/environment.md`，并记录本次任务涉及项目、采用环境和临时覆盖项。
-- `Git Context`：主分支、任务类型、harness 工作分支、同步来源、提交策略、热修复插入决策和未解决分支问题。
+- `Git Context`：主分支、任务类型、harness 工作分支、同步来源、分支占用、提交策略、分支收口、热修复插入决策和未解决分支问题。
 - `Tooling`：MCP、skill、浏览器工具、CLI、外部服务、可用性、权限风险和替代方案。
 - `Validation`：必须执行的验证、已执行验证、可选验证、覆盖范围、不覆盖范围、artifact 和无法执行时的声明边界。
 - `Documentation`：接口文档、README、配置说明、示例、迁移说明或 changelog 更新计划。
@@ -1482,6 +1500,7 @@ Workspace 级模板。位于 `.harness/environment.md`，由 agent 从各项目 
 | 阶段完成但质量未闭环 | 每阶段必须完成 code review、验证、缺陷修复、提交代码、更新 changelog 和 `execution-plan.md` 后才能进入下一阶段 |
 | 未授权提交代码 | 阶段提交必须写入 `Plan Approval` 或来自用户明确要求；否则只记录建议提交点 |
 | 固定分支混入多个同类任务 | 每次进入阶段前检查 `Git Context`、当前分支和工作区；如同类任务并发，暂停让用户决定先完成当前任务还是人工拆分 |
+| 固定分支已有未合回提交 | 进入 harness 分支后检查 `git log <main>..HEAD` 和 `git diff <main>...HEAD --name-only`，无法确认归属时暂停 |
 | 未完成 feature 被热修复带入主分支 | 从 `harness/feature` 切到 `harness/fix` 前必须询问是否先合并 feature；默认不合并 |
 | 分支同步引入冲突或误改历史 | 默认 merge 主分支，不自动 rebase；冲突时停止并记录到 `execution-plan.md` |
 | 最终交付结论缺少证据 | 通过最终交付门禁要求结论、验证、未覆盖范围、commit、artifact 和剩余风险一起输出 |

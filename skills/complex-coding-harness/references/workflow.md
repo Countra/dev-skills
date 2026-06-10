@@ -84,6 +84,13 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 
 目标分支不存在时创建，已存在时切换。进入实施前，把主分支最新代码合入 harness 工作分支；默认使用 merge，不默认 rebase。优先合入 `origin/<main>`，没有远程或不能联网时合入本地 `<main>`。合并失败必须记录到 `execution-plan.md` 并停止确认。
 
+进入 harness 分支后必须检查分支占用：
+
+- `git log <main>..HEAD`
+- `git diff <main>...HEAD --name-only`
+
+如果发现未合回主分支的提交，必须判断是否属于当前任务链路。属于当前任务链路时，记录到 `Git Context` 后继续；不属于当前任务链路或无法判断时，必须暂停确认。不要把其他任务的提交混入当前阶段提交或最终交付。
+
 热修复插入规则：
 
 - 如果当前在 `harness/feature`，用户临时要求处理 `fix`，必须先确认 feature 代码是否要合入主分支。
@@ -91,7 +98,7 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 - 用户不确认合并时，只能在工作区安全时直接切到 `harness/fix` 并同步主分支。
 - 如果 feature 有未提交改动，先询问是否提交检查点或暂停切换，不能自动带着脏工作区切换。
 
-`execution-plan.md` 必须记录 `Git Context`，至少包括主分支、任务类型、工作分支、创建或复用动作、同步来源、最近同步时间、提交策略和未解决分支问题。
+`execution-plan.md` 必须记录 `Git Context`，至少包括主分支、任务类型、工作分支、创建或复用动作、同步来源、最近同步时间、分支占用、提交策略、分支收口状态和未解决分支问题。
 
 ## 执行计划质量
 
@@ -180,10 +187,11 @@ managed 任务结束前必须完成最终交付门禁：
 2. 确认每个阶段都有 review、验证、缺陷处理、文档更新和提交记录。
 3. 汇总已执行验证；不能把未执行验证写成通过。
 4. 汇总未覆盖范围、失败项、剩余风险和后续建议。
-5. 汇总 commit hash、commit message、changelog 记录和关键文件。
-6. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
-7. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
-8. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、commit 信息、关键证据和剩余风险。
+5. 汇总 branch status：当前分支、主分支、是否已合回主分支、未合回时代码停留在哪个 harness 分支。
+6. 汇总 commit hash、commit message、changelog 记录和关键文件。
+7. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
+8. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
+9. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
 
 截图和 artifact 规则：
 

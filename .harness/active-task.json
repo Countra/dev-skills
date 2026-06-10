@@ -3,6 +3,6 @@
     "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-upgrade-plan",
     "title":  "complex-coding-harness 后续优化分阶段规划",
     "status":  "in_progress",
-    "next_action":  "阶段 0：提交升级规划文档和任务状态记录",
+    "next_action":  "阶段 1：分支收口和分支占用检查已实现，待验证并提交",
     "updated_at":  "2026-06-10"
 }

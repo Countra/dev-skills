@@ -136,9 +136,21 @@ Last sync:
 
 -
 
+Branch occupancy:
+
+- `git log <main>..HEAD`:
+- `git diff <main>...HEAD --name-only`:
+- Existing commits belong to this task:
+
 Commit policy:
 
 -
+
+Branch closure:
+
+- Merged to main branch:
+- If not merged, code remains on:
+- User confirmation needed before merge:
 
 Branch safety:
 
