@@ -1,6 +1,6 @@
-# Workspace Environment
+# Workspace 环境清单（Workspace Environment）
 
-## Sources
+## 来源（Sources）
 
 - `docs/development.md`：
 - 项目配置文件：
@@ -8,11 +8,11 @@
 
 ## Git
 
-Main branch:
+主分支（Main branch）:
 
 - <dev/main/master; 用户确认或探测结果>
 
-Harness branch policy:
+Harness 分支策略（Harness branch policy）:
 
 - feature: harness/feature
 - fix: harness/fix
@@ -21,80 +21,80 @@ Harness branch policy:
 - test: harness/test
 - chore: harness/chore
 
-Merge policy:
+合并策略（Merge policy）:
 
 - 开始实施前，将主分支最新代码合入 harness 工作分支。
 - 每个阶段提交前，检查是否需要再次同步主分支。
 - 默认使用 merge，不默认 rebase。
 - 不自动 stash、reset、覆盖用户改动或删除分支。
 
-Main branch detection:
+主分支探测（Main branch detection）:
 
 - dev -> main -> master -> origin/HEAD
 
-Git open questions:
+Git 待确认问题（Git open questions）:
 
 -
 
-## Projects
+## 项目（Projects）
 
-### <project-name>
+### <项目名称（project-name）>
 
-Path:
+路径（Path）:
 
-Type:
+类型（Type）:
 
-Language:
+语言（Language）:
 
-Runtime:
+运行时（Runtime）:
 
-Package manager:
+包管理器（Package manager）:
 
-Virtual environment:
+虚拟环境（Virtual environment）:
 
-Commands:
+命令（Commands）:
 
-- Install:
-- Dev server:
-- Unit tests:
-- Integration/API tests:
+- 安装（Install）:
+- 开发服务（Dev server）:
+- 单元测试（Unit tests）:
+- 集成/API 测试（Integration/API tests）:
 - Lint/typecheck:
-- Build:
-- Smoke:
+- 构建（Build）:
+- 冒烟测试（Smoke）:
 
-Validation tools:
+验证工具（Validation tools）:
 
-- Browser/MCP:
+- 浏览器/MCP（Browser/MCP）:
 - CLI:
-- External service:
-- Screenshot:
-- Browser logs:
-- Network logs:
-- Test reports:
-- Coverage reports:
+- 外部服务（External service）:
+- 截图（Screenshot）:
+- 浏览器日志（Browser logs）:
+- 网络日志（Network logs）:
+- 测试报告（Test reports）:
+- 覆盖率报告（Coverage reports）:
 
-Artifact policy:
+产物策略（Artifact policy）:
 
-- Runtime artifacts: `.harness/tasks/**/artifacts/`
-- Commit artifacts only with user confirmation.
+- 运行产物（Runtime artifacts）: `.harness/tasks/**/artifacts/`
+- 只有用户确认后才提交 artifact（Commit artifacts only with user confirmation）。
 
-Rules:
-
-- 
-
-Open questions:
+规则（Rules）:
 
 - 
 
-Conflicts:
+待确认问题（Open questions）:
 
 - 
 
-## User Overrides
+冲突（Conflicts）:
 
 - 
 
-## Notes
+## 用户覆盖项（User Overrides）
+
+- 
+
+## 说明（Notes）
 
 - 不要在这里保存密钥、私有 token、个人绝对路径或机器本地覆盖项。
 - 个人机器覆盖项写入 `.harness/environment.local.md`，并保持忽略。

@@ -1,278 +1,278 @@
-# Execution Plan
+# 执行计划（Execution Plan）
 
-## Problem
+## 问题定义（Problem）
 
-Goal:
+目标（Goal）:
 
-Non-goals:
+非目标（Non-goals）:
 
-Acceptance:
+验收标准（Acceptance）:
 
-Constraints:
+约束（Constraints）:
 
-Open uncertainties:
+待确认项（Open uncertainties）:
 
-## Context
+## 上下文（Context）
 
-Local code:
-
-- 
-
-Local docs:
+本地代码（Local code）:
 
 - 
 
-External sources:
+本地文档（Local docs）:
 
 - 
 
-User constraints:
+外部来源（External sources）:
 
 - 
 
-## Options
-
-### Option A: Minimal Change
-
-- How:
-- Pros:
-- Cons:
-- Risks:
-- Validation:
-- Rollback:
-
-### Option B: Structured Change
-
-- How:
-- Pros:
-- Cons:
-- Risks:
-- Validation:
-- Rollback:
-
-## Decision
-
-Chosen option:
-
-Why:
-
-Impact:
-
-Reversibility:
-
-Change conditions:
-
-## Implementation Plan
-
-### Stage 1: <stage-name>
-
-Goal:
+用户约束（User constraints）:
 
 - 
 
-How:
+## 候选方案（Options）
+
+### 方案 A：最小改动（Minimal Change）
+
+- 做法（How）:
+- 优点（Pros）:
+- 缺点（Cons）:
+- 风险（Risks）:
+- 验证（Validation）:
+- 回滚（Rollback）:
+
+### 方案 B：结构化改动（Structured Change）
+
+- 做法（How）:
+- 优点（Pros）:
+- 缺点（Cons）:
+- 风险（Risks）:
+- 验证（Validation）:
+- 回滚（Rollback）:
+
+## 决策（Decision）
+
+选择方案（Chosen option）:
+
+原因（Why）:
+
+影响（Impact）:
+
+可逆性（Reversibility）:
+
+变更条件（Change conditions）:
+
+## 实施计划（Implementation Plan）
+
+### 阶段 1（Stage 1）：<阶段名称>
+
+目标（Goal）:
 
 - 
 
-Why:
+做法（How）:
 
 - 
 
-Where:
-
-- Files/modules:
-- APIs/configs:
-- Tests/docs:
-
-References:
+原因（Why）:
 
 - 
 
-Validation:
+位置（Where）:
+
+- 文件/模块（Files/modules）:
+- API/配置（APIs/configs）:
+- 测试/文档（Tests/docs）:
+
+参考来源（References）:
 
 - 
 
-Risks and rollback:
+验证（Validation）:
 
 - 
 
-## Environment
+风险和回滚（Risks and rollback）:
 
-Workspace environment source:
+- 
+
+## 环境（Environment）
+
+Workspace 环境来源（Workspace environment source）:
 
 - `.harness/environment.md`
 
-This task uses:
+本任务使用（This task uses）:
 
 - 
 
-Temporary overrides:
+临时覆盖（Temporary overrides）:
 
 - 
 
-## Git Context
+## Git 上下文（Git Context）
 
-Main branch:
-
--
-
-Task type:
+主分支（Main branch）:
 
 -
 
-Working branch:
+任务类型（Task type）:
 
 -
 
-Branch action:
+工作分支（Working branch）:
+
+-
+
+分支动作（Branch action）:
 
 - create / reuse / already-on-branch / not-applicable
 
-Sync source:
+同步来源（Sync source）:
 
 -
 
-Last sync:
+最近同步（Last sync）:
 
 -
 
-Branch occupancy:
+分支占用（Branch occupancy）:
 
 - `git log <main>..HEAD`:
 - `git diff <main>...HEAD --name-only`:
-- Existing commits belong to this task:
+- 现有提交属于本任务（Existing commits belong to this task）:
 
-Commit policy:
+提交策略（Commit policy）:
 
 -
 
-Branch closure:
+分支收口（Branch closure）:
 
-- Merged to main branch:
-- If not merged, code remains on:
-- User confirmation needed before merge:
+- 已合回主分支（Merged to main branch）:
+- 未合回时代码停留在（If not merged, code remains on）:
+- 合并前需要用户确认（User confirmation needed before merge）:
 
-Branch safety:
+分支安全（Branch safety）:
 
 - 切换前已检查工作区：
 - 不自动 stash：
 - 不自动 rebase：
 - 不自动 reset：
 
-Hotfix interruption:
+热修复插入（Hotfix interruption）:
 
 - 从 `harness/feature` 切换到 `harness/fix` 前，先询问是否要把 feature 合并进主分支：
 - 决策：
 
-Open issues:
+未解决问题（Open issues）:
 
 -
 
-## Tooling
+## 工具（Tooling）
 
-| Tool | Purpose | Stage | Status | Risk | Alternative | User confirmation |
+| 工具（Tool） | 用途（Purpose） | 阶段（Stage） | 状态（Status） | 风险（Risk） | 替代方案（Alternative） | 用户确认（User confirmation） |
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |
 
-## Validation
+## 验证（Validation）
 
-Required:
-
-- 
-
-Executed:
-
-- Command/tool:
-- Result:
-- Evidence:
-- Covers:
-- Not covered:
-
-Optional:
+必需验证（Required）:
 
 - 
 
-Artifacts:
+已执行（Executed）:
 
-- Screenshot:
-- Log:
+- 命令/工具（Command/tool）:
+- 结果（Result）:
+- 证据（Evidence）:
+- 覆盖范围（Covers）:
+- 未覆盖（Not covered）:
+
+可选验证（Optional）:
+
+- 
+
+产物（Artifacts）:
+
+- 截图（Screenshot）:
+- 日志（Log）:
 - Trace:
-- Report:
+- 报告（Report）:
 
-Not covered:
-
-- 
-
-If unable to run:
+未覆盖（Not covered）:
 
 - 
 
-## Documentation
-
-Required updates:
+无法执行时（If unable to run）:
 
 - 
 
-Changelog plan:
+## 文档（Documentation）
+
+必需更新（Required updates）:
 
 - 
 
-## Questions And Overrides
+Changelog 计划（Changelog plan）:
 
-| ID | Blocking | Status | Question | Decision | Applied to |
+- 
+
+## 问题和覆盖项（Questions And Overrides）
+
+| ID | 是否阻塞（Blocking） | 状态（Status） | 问题（Question） | 决策（Decision） | 应用位置（Applied to） |
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
-## Readiness Gate
+## 就绪门禁（Readiness Gate）
 
-| Check | Status | Evidence |
+| 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
-| Goal and acceptance clear | pending |  |
-| Context collected | pending |  |
-| Options compared | pending |  |
-| Decision recorded | pending |  |
-| Implementation stages detailed | pending |  |
-| Environment confirmed | pending |  |
-| Git context confirmed | pending |  |
-| Tooling confirmed | pending |  |
-| Validation confirmed | pending |  |
-| Final delivery evidence planned | pending |  |
-| Documentation updates confirmed | pending |  |
-| Risks identified | pending |  |
-| Blocking questions closed | pending |  |
+| 目标和验收清楚（Goal and acceptance clear） | pending |  |
+| 上下文已收集（Context collected） | pending |  |
+| 候选方案已比较（Options compared） | pending |  |
+| 决策已记录（Decision recorded） | pending |  |
+| 实施阶段已细化（Implementation stages detailed） | pending |  |
+| 环境已确认（Environment confirmed） | pending |  |
+| Git 上下文已确认（Git context confirmed） | pending |  |
+| 工具已确认（Tooling confirmed） | pending |  |
+| 验证已确认（Validation confirmed） | pending |  |
+| 最终交付证据已规划（Final delivery evidence planned） | pending |  |
+| 文档更新已确认（Documentation updates confirmed） | pending |  |
+| 风险已识别（Risks identified） | pending |  |
+| 阻塞问题已关闭（Blocking questions closed） | pending |  |
 
-Readiness result:
+就绪结论（Readiness result）:
 
 - `pending`
 
-## Plan Approval
+## 方案批准（Plan Approval）
 
-Status:
+状态（Status）:
 
 - `not_requested`
 
-Approval record:
+批准记录（Approval record）:
 
 - 
 
-Commit policy:
+提交策略（Commit policy）:
 
 - `not_authorized`
 
-## Implementation Progress
+## 实施进度（Implementation Progress）
 
-| Stage | Status | Summary | Validation | Evidence | Next action |
+| 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
-## Code Review
+## 代码审查（Code Review）
 
-| Stage | Finding | Severity | Resolution |
+| 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
 | --- | --- | --- | --- |
 |  |  |  |  |
 
-## Commit Log
+## 提交记录（Commit Log）
 
-| Stage | Repository | Commit | Message | Changelog |
+| 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 |  |  |  |  |  |

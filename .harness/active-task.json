@@ -3,6 +3,6 @@
     "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-upgrade-plan",
     "title":  "complex-coding-harness 后续优化分阶段规划",
     "status":  "in_progress",
-    "next_action":  "阶段 2：eval fixtures 已补充，待验证并提交",
+    "next_action":  "阶段 4：安装脚本确定性增强待开始",
     "updated_at":  "2026-06-10"
 }

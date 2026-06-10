@@ -1,204 +1,204 @@
-# Execution Plan
+# 执行计划（Execution Plan）
 
-## Problem
+## 问题定义（Problem）
 
-Goal:
-Add a new frontend filter and matching backend API support without losing task state across context compression.
+目标（Goal）:
+新增一个前端筛选项和对应后端 API 支持，并确保上下文压缩后不会丢失任务状态。
 
-Non-goals:
-- Do not change authentication.
-- Do not redesign the page.
+非目标（Non-goals）:
+- 不修改认证逻辑。
+- 不重新设计页面。
 
-Acceptance:
-- Backend API supports the new filter.
-- Frontend can select the filter.
-- Tests and browser validation pass.
+验收标准（Acceptance）:
+- 后端 API 支持新的筛选项。
+- 前端可以选择该筛选项。
+- 测试和浏览器验证通过。
 
-## Context
+## 上下文（Context）
 
-Local code:
+本地代码（Local code）:
 - `backend/api/items.go`
 - `frontend/src/pages/Items.tsx`
 
-Local docs:
+本地文档（Local docs）:
 - `backend/docs/development.md`
 - `frontend/docs/development.md`
 
-External sources:
-- Framework official docs if API or routing behavior is unclear.
+外部来源（External sources）:
+- 如果 API 或路由行为不明确，查询框架官方文档。
 
-User constraints:
+用户约束（User constraints）:
 - 使用 Chrome DevTools MCP 做前端自我验证。
 
-## Options
+## 候选方案（Options）
 
-### Option A: Add Filter To Existing Endpoint
+### 方案 A：扩展现有接口（Add Filter To Existing Endpoint）
 
-- How: Extend the current query parameter parser.
-- Pros: Minimal API surface.
-- Cons: Existing endpoint becomes slightly broader.
-- Risks: Query compatibility.
-- Validation: Backend unit tests and API smoke.
-- Rollback: Remove parser branch and frontend control.
+- 做法（How）: 扩展当前查询参数解析逻辑。
+- 优点（Pros）: API 表面最小。
+- 缺点（Cons）: 现有接口职责略微变宽。
+- 风险（Risks）: 查询兼容性。
+- 验证（Validation）: 后端单元测试和 API smoke。
+- 回滚（Rollback）: 移除解析分支和前端控件。
 
-### Option B: Add Dedicated Endpoint
+### 方案 B：新增专用接口（Add Dedicated Endpoint）
 
-- How: Create a new endpoint for filtered items.
-- Pros: Isolated behavior.
-- Cons: More routing and docs.
-- Risks: More maintenance.
-- Validation: New endpoint tests and frontend integration.
-- Rollback: Remove endpoint and client call.
+- 做法（How）: 为筛选结果创建新接口。
+- 优点（Pros）: 行为隔离。
+- 缺点（Cons）: 增加路由和文档维护。
+- 风险（Risks）: 维护成本更高。
+- 验证（Validation）: 新接口测试和前端集成验证。
+- 回滚（Rollback）: 移除接口和客户端调用。
 
-## Decision
+## 决策（Decision）
 
-Chosen option:
-Option A.
+选择方案（Chosen option）:
+方案 A。
 
-Why:
-The existing endpoint already owns item filtering, so this keeps the change minimal.
+原因（Why）:
+现有接口已经负责条目筛选，因此该方案改动最小。
 
-## Implementation Plan
+## 实施计划（Implementation Plan）
 
-### Stage 1: Backend filter support
+### 阶段 1（Stage 1）：后端筛选支持
 
-Goal:
-- API accepts the new filter.
+目标（Goal）:
+- API 接受新的筛选项。
 
-How:
-- Update parser and handler.
-- Add unit tests.
+做法（How）:
+- 更新解析器和 handler。
+- 增加单元测试。
 
-Why:
-- Backend contract must exist before frontend uses it.
+原因（Why）:
+- 前端使用前必须先有后端契约。
 
-Where:
+位置（Where）:
 - `backend/api/items.go`
 - `backend/api/items_test.go`
 
-References:
-- Local handler and existing tests.
+参考来源（References）:
+- 本地 handler 和现有测试。
 
-Validation:
-- Run backend unit tests.
+验证（Validation）:
+- 运行后端单元测试。
 
-Risks and rollback:
-- If compatibility breaks, revert parser branch.
+风险和回滚（Risks and rollback）:
+- 如果兼容性破坏，回滚解析分支。
 
-### Stage 2: Frontend control
+### 阶段 2（Stage 2）：前端控件
 
-Goal:
-- User can select the new filter.
+目标（Goal）:
+- 用户可以选择新的筛选项。
 
-How:
-- Add UI control and request parameter.
+做法（How）:
+- 增加 UI 控件和请求参数。
 
-Why:
-- Exposes approved backend behavior.
+原因（Why）:
+- 暴露已批准的后端行为。
 
-Where:
+位置（Where）:
 - `frontend/src/pages/Items.tsx`
 
-References:
-- Existing filter controls.
+参考来源（References）:
+- 现有筛选控件。
 
-Validation:
+验证（Validation）:
 - 运行前端检查，并使用 Chrome DevTools MCP 验证。
 
-Risks and rollback:
-- Revert UI control and request parameter.
+风险和回滚（Risks and rollback）:
+- 回滚 UI 控件和请求参数。
 
-## Environment
+## 环境（Environment）
 
-Workspace environment source:
+Workspace 环境来源（Workspace environment source）:
 - `.harness/environment.md`
 
-## Git Context
+## Git 上下文（Git Context）
 
-Main branch:
+主分支（Main branch）:
 - dev
 
-Task type:
+任务类型（Task type）:
 - feature
 
-Working branch:
+工作分支（Working branch）:
 - harness/feature
 
-Branch action:
+分支动作（Branch action）:
 - reuse
 
-Sync source:
+同步来源（Sync source）:
 - origin/dev
 
-Last sync:
+最近同步（Last sync）:
 - 方案批准后、实施前同步。
 
-Branch occupancy:
-- `git log dev..HEAD`: no unrelated commits.
-- `git diff dev...HEAD --name-only`: expected backend/frontend files only.
-- Existing commits belong to this task: yes.
+分支占用（Branch occupancy）:
+- `git log dev..HEAD`: 无无关提交。
+- `git diff dev...HEAD --name-only`: 仅包含预期的后端和前端文件。
+- 现有提交属于本任务（Existing commits belong to this task）: 是。
 
-Commit policy:
+提交策略（Commit policy）:
 - 已授权阶段提交。
 
-Branch closure:
-- Merged to main branch: no.
-- If not merged, code remains on: `harness/feature`.
-- User confirmation needed before merge: yes.
+分支收口（Branch closure）:
+- 已合回主分支（Merged to main branch）: 否。
+- 未合回时代码停留在（If not merged, code remains on）: `harness/feature`。
+- 合并前需要用户确认（User confirmation needed before merge）: 是。
 
-Branch safety:
+分支安全（Branch safety）:
 - 切换前检查工作区。
 - 不自动 stash、rebase、reset 或删除分支。
 
-Hotfix interruption:
+热修复插入（Hotfix interruption）:
 - 如果切到 `harness/fix`，先询问是否要把 `harness/feature` 合并进 `dev`。
 
-## Readiness Gate
+## 就绪门禁（Readiness Gate）
 
-Readiness result:
+就绪结论（Readiness result）:
 - pass
 
-Final delivery evidence planned:
-- Backend unit test output.
-- API smoke result.
-- Chrome DevTools MCP screenshot and console/network summary.
+最终交付证据计划（Final delivery evidence planned）:
+- 后端单元测试输出。
+- API smoke 结果。
+- Chrome DevTools MCP 截图和 console/network 摘要。
 
-## Plan Approval
+## 方案批准（Plan Approval）
 
-Status:
+状态（Status）:
 - approved
 
-Approval record:
-- User said: "按方案执行。"
+批准记录（Approval record）:
+- 用户说：“按方案执行。”
 
-Commit policy:
-- Stage commits authorized.
+提交策略（Commit policy）:
+- 已授权阶段提交。
 
-## Validation
+## 验证（Validation）
 
-Required:
-- Backend unit tests.
-- Frontend checks.
-- Chrome DevTools MCP browser validation.
+必需验证（Required）:
+- 后端单元测试。
+- 前端检查。
+- Chrome DevTools MCP 浏览器验证。
 
-Executed:
-- Command/tool: backend unit tests
-- Result: pending
-- Evidence: test output recorded after Stage 1
-- Covers: backend filter parser and handler
-- Not covered: browser behavior
+已执行（Executed）:
+- 命令/工具（Command/tool）: 后端单元测试
+- 结果（Result）: pending
+- 证据（Evidence）: Stage 1 后记录测试输出
+- 覆盖范围（Covers）: 后端筛选解析器和 handler
+- 未覆盖（Not covered）: 浏览器行为
 
-Artifacts:
-- Screenshot: `.harness/tasks/2026-06-10/example-filter/artifacts/stage-2-items-page.png`
-- Log: console/network summary in `Implementation Progress`
+产物（Artifacts）:
+- 截图（Screenshot）: `.harness/tasks/2026-06-10/example-filter/artifacts/stage-2-items-page.png`
+- 日志（Log）: `Implementation Progress` 中的 console/network 摘要
 - Trace:
-- Report:
+- 报告（Report）:
 
-Not covered:
-- Cross-browser behavior beyond configured validation tool.
+未覆盖（Not covered）:
+- 配置验证工具之外的跨浏览器行为。
 
-## Implementation Progress
+## 实施进度（Implementation Progress）
 
-| Stage | Status | Summary | Validation | Evidence | Next action |
+| 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
-| Stage 1 | pending | Backend filter support | Backend unit tests | Test output | Start implementation |
+| Stage 1 | pending | 后端筛选支持 | 后端单元测试 | 测试输出 | 开始实施 |
