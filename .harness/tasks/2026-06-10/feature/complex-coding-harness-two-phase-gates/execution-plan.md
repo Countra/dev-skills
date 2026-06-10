@@ -459,6 +459,9 @@ Workspace 环境来源（Workspace environment source）:
 - Stage 4 JSONL 逐行解析：通过。
 - Stage 4 新增 eval id 检索：通过。
 - Stage 4 `git diff --check`：通过。
+- Stage 5 `Plan Quality Gate`、`Stage Entry Gate`、`Stage Exit Gate`、`Resume Summary` 文档检索：通过。
+- Stage 5 `.harness/active-task.json` JSON 解析和 eval JSONL 解析：通过。
+- Stage 5 `git diff --check`：通过。
 
 可选验证（Optional）:
 
@@ -547,7 +550,7 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | completed | 阶段执行契约和进入/退出门禁已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 2 提交 |
 | Stage 3 | completed | 验证证据、审查等级和恢复摘要已完成 | 关键文本检索、JSON 解析和 diff check 通过 | workflow、template、example | 阶段 3 提交 |
 | Stage 4 | completed | eval fixtures 补充已完成 | JSONL 解析、关键 id 检索和 diff check 通过 | evals | 阶段 4 提交 |
-| Stage 5 | pending | 总文档和变更记录 | 待执行 | docs、CHANGELOG | 等待 Stage 4 提交 |
+| Stage 5 | completed | 总文档和变更记录已完成 | 文档检索、JSON、JSONL 和 diff check 通过 | docs、README、CHANGELOG | 阶段 5 提交 |
 
 ## 代码审查（Code Review）
 
@@ -559,6 +562,7 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | 阶段门禁可能被机械填写 | minor | 同时要求 allowed/forbidden changes 和 entry/exit 证据，降低空填风险 |
 | Stage 3 | review severity 可能被当成形式字段 | minor | 在 workflow 中定义各等级处理规则，验证失败必须修复或停止 |
 | Stage 4 | eval fixtures 不是自动测试 | minor | README 继续声明这些是 prompt fixtures，不是自动判分测试 |
+| Stage 5 | 总规划文档可能继续膨胀 | minor | 只新增短小的 8.25 摘要，不复制 workflow 细节 |
 
 ## 提交记录（Commit Log）
 
@@ -568,4 +572,5 @@ Changelog 计划（Changelog plan）:
 | Stage 1 | `dev-skills` | `8f0268c` | `feat(complex-coding-harness): 增强方案质量门禁` | not updated |
 | Stage 2 | `dev-skills` | `7d32d24` | `feat(complex-coding-harness): 增强阶段执行门禁` | not updated |
 | Stage 3 | `dev-skills` | `f3d1f57` | `feat(complex-coding-harness): 增强验证和审查记录` | not updated |
-| Stage 4 | `dev-skills` | 待提交 | `test(complex-coding-harness): 补充两阶段门禁评估样例` | not updated |
+| Stage 4 | `dev-skills` | `c6e6419` | `test(complex-coding-harness): 补充两阶段门禁评估样例` | updated in `CHANGELOG.md` |
+| Stage 5 | `dev-skills` | 待提交 | `docs(complex-coding-harness): 记录两阶段门禁增强` | updated in `CHANGELOG.md` |

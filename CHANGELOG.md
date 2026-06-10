@@ -2,6 +2,49 @@
 
 ## 2026-06-10
 
+### Stage 15: complex-coding-harness 两阶段门禁文档收口
+
+- 在总规划文档中补充方案制定阶段和方案实施阶段的增强门禁说明。
+- README 核心约束补充 `Plan Quality Gate`、`Stage Contract`、`Stage Entry Gate` 和 `Stage Exit Gate`。
+- Commit: 待提交
+- Commit message: `docs(complex-coding-harness): 记录两阶段门禁增强`
+
+### Stage 14: complex-coding-harness 两阶段门禁评估样例
+
+- 补充弱方案拒绝、阶段进入阻塞、验证失败循环、恢复摘要和范围变更重新审批 eval fixtures。
+- 更新 `expected.yaml` 和 eval README，继续声明 fixtures 不是自动判分测试。
+- Commit: `c6e6419`
+- Commit message: `test(complex-coding-harness): 补充两阶段门禁评估样例`
+
+### Stage 13: complex-coding-harness 验证和审查记录
+
+- 增加验证证据表和验证失败后的修复重验要求。
+- 明确 `blocking`、`major`、`minor`、`follow-up` 的 review 处理规则。
+- 补充 `Resume Summary`，用于上下文压缩后的快速恢复。
+- Commit: `f3d1f57`
+- Commit message: `feat(complex-coding-harness): 增强验证和审查记录`
+
+### Stage 12: complex-coding-harness 阶段执行门禁
+
+- 增加 `Stage Contract`、`Stage Entry Gate` 和 `Stage Exit Gate` 规则。
+- 执行计划模板新增阶段进入和退出门禁表。
+- 示例执行计划补充允许修改和禁止修改范围。
+- Commit: `7d32d24`
+- Commit message: `feat(complex-coding-harness): 增强阶段执行门禁`
+
+### Stage 11: complex-coding-harness 方案质量门禁
+
+- 增加 `Plan Quality Gate`、证据等级、影响面矩阵和方案变更触发条件。
+- 执行计划模板新增批准摘要，示例同步展示方案质量记录。
+- Commit: `8f0268c`
+- Commit message: `feat(complex-coding-harness): 增强方案质量门禁`
+
+### Stage 10.5: complex-coding-harness 两阶段门禁增强任务托管
+
+- 新增 `.harness` 托管任务计划，记录两阶段门禁增强的方案、Git Context、验证策略和阶段提交规则。
+- Commit: `7a0f196`
+- Commit message: `docs(complex-coding-harness): 托管两阶段门禁增强任务`
+
 ### Stage 10: complex-coding-harness 安装脚本确定性增强
 
 - `skill.sh install` 增加目标目录存在检查，默认拒绝覆盖已有 `complex-coding-harness`。

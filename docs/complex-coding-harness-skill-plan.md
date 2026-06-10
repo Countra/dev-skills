@@ -1201,6 +1201,15 @@ artifact 规则：
 - **可恢复**：方案、决策、状态和日志都落盘，压缩后可恢复。
 - **可复盘**：如果验收失败，能回看当时为什么选这个方案，以及漏掉了什么证据。
 
+### 8.25 两阶段门禁增强
+
+当前 skill 的主体分为两个阶段：
+
+- **方案制定阶段**：通过 `Problem`、`Context`、`Options`、`Decision`、影响面矩阵、证据等级、`Plan Quality Gate`、`Readiness Gate` 和 `Plan Approval`，确认方案足够具体、可验证、可回滚，并等待用户明确批准。
+- **方案实施阶段**：通过 `Stage Contract`、`Stage Entry Gate`、`Stage Exit Gate`、验证证据表、`Code Review` 严重程度和 `Resume Summary`，确保每个阶段进入前状态安全、退出前验证和记录完整。
+
+这两组门禁仍然收敛在 `execution-plan.md` 中，不新增默认运行时文件。目标是提高可判定性，而不是增加文件数量。
+
 ## 9. Skill 触发策略
 
 ### 9.1 应触发
