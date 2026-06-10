@@ -573,4 +573,12 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | `dev-skills` | `7d32d24` | `feat(complex-coding-harness): 增强阶段执行门禁` | not updated |
 | Stage 3 | `dev-skills` | `f3d1f57` | `feat(complex-coding-harness): 增强验证和审查记录` | not updated |
 | Stage 4 | `dev-skills` | `c6e6419` | `test(complex-coding-harness): 补充两阶段门禁评估样例` | updated in `CHANGELOG.md` |
-| Stage 5 | `dev-skills` | 待提交 | `docs(complex-coding-harness): 记录两阶段门禁增强` | updated in `CHANGELOG.md` |
+| Stage 5 | `dev-skills` | `6a1423c` | `docs(complex-coding-harness): 记录两阶段门禁增强` | updated in `CHANGELOG.md` |
+
+## 恢复摘要（Resume Summary）
+
+- 当前阶段（Current stage）: 所有计划阶段已完成。
+- 已完成（Completed）: 方案质量门禁、阶段执行门禁、验证审查记录、eval fixtures、总文档和变更记录。
+- 最新 commit（Latest commit）: `6a1423c docs(complex-coding-harness): 记录两阶段门禁增强`。
+- 下一步（Next action）: 最终交付说明；是否合回 `master` 需要用户确认。
+- 未覆盖/风险（Not covered/risks）: 未做真实子 agent forward-test；当前 eval 仍是 prompt fixtures，不是自动判分测试。

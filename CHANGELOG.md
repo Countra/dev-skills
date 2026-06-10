@@ -6,7 +6,7 @@
 
 - 在总规划文档中补充方案制定阶段和方案实施阶段的增强门禁说明。
 - README 核心约束补充 `Plan Quality Gate`、`Stage Contract`、`Stage Entry Gate` 和 `Stage Exit Gate`。
-- Commit: 待提交
+- Commit: `6a1423c`
 - Commit message: `docs(complex-coding-harness): 记录两阶段门禁增强`
 
 ### Stage 14: complex-coding-harness 两阶段门禁评估样例

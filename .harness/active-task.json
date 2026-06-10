@@ -2,7 +2,7 @@
     "task_id":  "2026-06-10-feature-complex-coding-harness-two-phase-gates",
     "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-two-phase-gates",
     "title":  "complex-coding-harness 两阶段门禁增强",
-    "status":  "in_progress",
-    "next_action":  "执行阶段 5：总文档和变更记录",
+    "status":  "completed",
+    "next_action":  "所有阶段已完成，进行最终交付说明",
     "updated_at":  "2026-06-10"
 }
