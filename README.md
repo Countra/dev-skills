@@ -41,8 +41,16 @@ evals/
 
 ## Install
 
+默认安装会在目标目录已存在 `complex-coding-harness` 时停止，避免混合旧文件：
+
 ```sh
 ./skill.sh install "$HOME/.codex/skills"
+```
+
+如需明确替换已有安装，使用 `--force`。该模式只会替换目标 skills 目录下的 `complex-coding-harness`：
+
+```sh
+./skill.sh install --force "$HOME/.codex/skills"
 ```
 
 On Windows PowerShell with Git Bash, WSL, or another POSIX-compatible shell available:
@@ -51,8 +59,10 @@ On Windows PowerShell with Git Bash, WSL, or another POSIX-compatible shell avai
 sh .\skill.sh install "$env:USERPROFILE\.codex\skills"
 ```
 
+如果 `sh` 不在 PowerShell 的 `PATH` 中，请在 Git Bash、MSYS2 或 WSL 终端进入仓库后执行同样的 `./skill.sh install ...` 命令，或使用对应 shell 的完整路径启动。
+
 ## Notes
 
 - 本仓库源码使用普通 `skills/` 目录，不把主结构放进 `.agents/skills/`。
-- `skill.sh` 目前只提供基础复制安装，后续可按 Codex/Claude Code 约定继续增强。
+- `skill.sh` 只安装 skill 源文件，不写入运行时任务状态。
 - `.harness/tasks/` 是运行时任务记录，不是 skill 安装产物。

@@ -188,6 +188,8 @@ Executed:
 - Stage 3 `rg` 检索 branch occupancy、branch closure、`git log <main>..HEAD`、`git diff <main>...HEAD --name-only`：通过。
 - Stage 4 JSONL 逐行解析和新增 eval id 检索：通过。
 - Stage 5 模板中文化残留英文占位检索、JSON 解析和 diff check：通过。
+- Stage 6 安装脚本临时目录首次安装、重复安装拒绝、`--force` 替换和目标 `SKILL.md` 校验：通过。
+- Stage 6 `sh -n skill.sh` 语法检查：通过。
 
 Artifacts:
 
@@ -258,7 +260,7 @@ Commit policy:
 | Stage 3 | completed | 分支收口和分支占用检查已实现 | 关键文本检索、JSONL、JSON 和 diff check 通过 | workflow、模板、规划和示例 | 阶段 1 提交 |
 | Stage 4 | completed | 已补充 eval fixtures | JSONL、关键 id 检索和 diff check 通过 | eval fixtures | 阶段 2 提交 |
 | Stage 5 | completed | 模板中文化和术语统一已完成 | 残留英文占位检索、JSON 解析和 diff check 通过 | templates 和 examples | 阶段 3 提交 |
-| Stage 6 | pending | 安装脚本确定性增强 | 待执行 | skill.sh 和 README | 等待 Stage 5 提交 |
+| Stage 6 | completed | 安装脚本确定性增强已完成 | 临时目录安装行为、脚本语法、JSON 和 diff check 通过 | skill.sh、README 和 CHANGELOG | 阶段 4 提交 |
 
 ## Code Review
 
@@ -269,6 +271,7 @@ Commit policy:
 | Stage 3 | 分支收口规则可能增加固定分支使用成本 | minor | 仅在存在未合回提交或归属不明时暂停确认 |
 | Stage 4 | eval fixtures 可能被误认为自动化测试 | minor | README 已说明这些文件是 prompt fixtures，不是自动判分测试 |
 | Stage 5 | 纯中文字段可能影响跨 agent 识别 | minor | 保留中文加英文术语格式 |
+| Stage 6 | `--force` 涉及删除目标目录 | major | 只允许删除目标 skills 目录下的 `complex-coding-harness`，并在 README 中明确语义 |
 
 ## Commit Log
 
@@ -277,4 +280,5 @@ Commit policy:
 | Stage 1-2 | `dev-skills` | `2b7160b` | `docs(complex-coding-harness): 规划后续优化阶段` | not updated |
 | Stage 3 | `dev-skills` | `9382919` | `feat(complex-coding-harness): 增加分支收口检查` | not updated |
 | Stage 4 | `dev-skills` | `1cae648` | `test(complex-coding-harness): 补充工作流评估样例` | not updated |
-| Stage 5 | `dev-skills` | 待提交 | `docs(complex-coding-harness): 统一模板中文术语` | not updated |
+| Stage 5 | `dev-skills` | `db7872c` | `docs(complex-coding-harness): 统一模板中文术语` | updated in `CHANGELOG.md` |
+| Stage 6 | `dev-skills` | 待提交 | `feat(complex-coding-harness): 增强 skill 安装脚本` | updated in `CHANGELOG.md` |
