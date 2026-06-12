@@ -7,7 +7,7 @@
 - 将长期后台进程规则升级为 `process-manager` 存在时必须使用的强制门禁。
 - 在执行计划模板中新增 `Process Manager Gate`，并接入阶段进入、阶段退出和恢复摘要。
 - 补充 eval fixtures，覆盖 dev server、manager 离线、上下文恢复和 finite command 例外场景。
-- Commit: `pending`
+- Commit: `6a00e90`
 - Commit message: `docs(complex-coding-harness): 强化长期进程管理规则`
 
 ### Stage 30: process-manager bootstrap 空 PID 修复
