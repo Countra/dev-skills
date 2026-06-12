@@ -52,6 +52,8 @@ manager 配置描述控制面，不描述业务服务：
 - `port` 是 manager API 初始端口，默认 `18080`。
 - `portRetry.enabled` 默认 `true`。
 - `portRetry.maxSwitches` 默认 `3`，表示初始端口失败后最多再尝试 3 个递增端口。
+- `history.maxInactive` 默认 `20`，表示全局最多保留 20 条 inactive 历史记录。
+- `history.deleteRunDirs` 默认 `true`，表示被裁剪的 inactive 记录会同步删除对应精确 runDir。
 - `workspaceRoot` 必须是绝对路径。
 - `stateRoot` 必须在 workspaceRoot 内。
 - `tokenFile` 必须在 stateRoot 内。
@@ -159,6 +161,61 @@ service 配置描述长期后台进程。顶层不要写通用 `host` 或 `port`
 
 不要启动可见 cmd 或 PowerShell 窗口。
 
+## 进程历史和清理
+
+`processes.json` 不是无限历史库。manager 默认保留：
+
+- 所有 `running`。
+- 所有 `stop_timeout`。
+- 最近 `history.maxInactive` 条 inactive 记录，默认 20 条。
+
+inactive 包括 `stopped`、`exited`、`not_running` 和其他确定不再运行的终态。`running` 和 `stop_timeout` 永远不被自动裁剪。
+
+被裁剪的 inactive 记录会默认同步删除对应精确 runDir：
+
+```text
+.harness/process-manager/runs/<service>/<processId>/
+```
+
+删除前必须校验路径位于 `.harness/process-manager/runs/` 下，且必须精确到 `<service>/<processId>` 两级目录。不能删除 `runs/`、`runs/<service>/`、workspace 外部目录或任意未知路径。
+
+`pm_list.py` 默认只输出当前态：
+
+```json
+{
+  "ok": true,
+  "active": {},
+  "running": {},
+  "pruned": {}
+}
+```
+
+需要保留后的历史记录时显式使用：
+
+```powershell
+python skills/process-manager/scripts/pm_list.py --history
+```
+
+手动检查裁剪结果时使用 dry-run：
+
+```powershell
+python skills/process-manager/scripts/pm_prune.py --max-inactive 20
+```
+
+确认后实际裁剪：
+
+```powershell
+python skills/process-manager/scripts/pm_prune.py --apply --max-inactive 20
+```
+
+如果只想裁剪 `processes.json`，不删除 runDir：
+
+```powershell
+python skills/process-manager/scripts/pm_prune.py --apply --keep-runs
+```
+
+重要日志证据如果需要长期保留，应在裁剪前摘录到任务记录或复制到任务 artifacts。不要把旧 `runs/<service>/<processId>` 目录当作永久证据来源。
+
 ## 生命周期
 
 启动：
@@ -191,6 +248,18 @@ python skills/process-manager/scripts/pm_logs.py --service frontend --stream std
 python skills/process-manager/scripts/pm_stop.py --service frontend
 ```
 
+列出当前运行态：
+
+```powershell
+python skills/process-manager/scripts/pm_list.py
+```
+
+列出保留后的历史：
+
+```powershell
+python skills/process-manager/scripts/pm_list.py --history
+```
+
 ## 故障处理
 
 - manager 离线：不要尝试手写后台命令，先请求用户批准启动 manager。
@@ -199,4 +268,5 @@ python skills/process-manager/scripts/pm_stop.py --service frontend
 - 端口占用：如果占用者不是当前 manager 管理的 processKey，不要自动 kill。
 - readiness 超时：查看 stdout/stderr 日志，必要时调整 service config 后重新 validate。
 - 进程已退出：查看 `process.json`、stdout 和 stderr。
+- 历史记录过多：运行 `pm_list.py` 触发自动裁剪，或用 `pm_prune.py` 先 dry-run 再 `--apply`。
 - 状态文件损坏：备份损坏文件后重新 `pm_init.py`，不要覆盖用户服务配置。

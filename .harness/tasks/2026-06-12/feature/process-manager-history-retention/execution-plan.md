@@ -768,7 +768,7 @@ Changelog 计划（Changelog plan）:
 | planning | completed | 已完成历史保留和联动规则方案 | 文档结构待校验 | 本文件 | 等待用户确认方案 |
 | 1 | completed | 已实现 history 默认配置、旧配置兼容、inactive 裁剪核心和精确 runDir 删除 | py_compile、模板 JSON、合成状态 prune 通过 | `stage1 synthetic prune ok` | 阶段 2 |
 | 2 | completed | 已实现 `pm_list --history`、默认轻量视图和 `pm_prune.py` dry-run/apply | py_compile、help、合成 list/prune 行为通过 | `stage2 list prune behavior ok` | 阶段 3 |
-| 3 | pending | process-manager 文档、示例和 eval | pending | pending | 阶段 2 后开始 |
+| 3 | completed | 已更新 process-manager SKILL、workflow 和 eval，固化历史保留与 pm_prune 规则 | quick_validate、JSONL 解析、关键规则检索通过 | `Skill is valid!`、fixtures 9 条 | 阶段 4 |
 | 4 | pending | complex-coding-harness 联动更新 | pending | pending | 阶段 3 后开始 |
 | 5 | pending | 端到端验证和收口 | pending | pending | 阶段 4 后开始 |
 
@@ -778,7 +778,7 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | pass | none | pass | not-applicable | pass | pass |
 | 2 | pass | none | pass | not-applicable | pass | pass |
-| 3 | pending | pending | pending | not-applicable | pending | pending |
+| 3 | pass | none | pass | not-applicable | pass | pass |
 | 4 | pending | pending | pending | not-applicable | pending | pending |
 | 5 | pending | pending | pending | pending | pending | pending |
 
@@ -788,7 +788,7 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | pass | pass | pass | not-applicable | pass | pending | pass |
 | 2 | pass | pass | pass | not-applicable | pass | pending | pass |
-| 3 | pending | pending | pending | not-applicable | pending | pending | pending |
+| 3 | pass | pass | pass | not-applicable | pass | pending | pass |
 | 4 | pending | pending | pending | not-applicable | pending | pending | pending |
 | 5 | pending | pending | pending | pending | pending | pending | pending |
 
@@ -802,10 +802,10 @@ Changelog 计划（Changelog plan）:
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: 阶段 2 completed，准备提交。
-- 已完成（Completed）: 已实现 `pm_list` 默认轻量视图、`--history`、`pm_prune.py` 和 manager prune API。
-- 最新 commit（Latest commit）: `9960512` 阶段 1。
-- 下一步（Next action）: 提交阶段 2，然后进入阶段 3。
+- 当前阶段（Current stage）: 阶段 3 completed，准备提交。
+- 已完成（Completed）: 已实现并记录 process-manager 历史保留、默认视图、`pm_prune` 和 skill 规则。
+- 最新 commit（Latest commit）: `0e6afe4` 阶段 2。
+- 下一步（Next action）: 提交阶段 3，然后进入阶段 4。
 - 长期进程规则（Process manager rule）: 阶段 5 需要长期进程，必须使用 process-manager；本任务新规则要求关键证据不能只依赖可能被 prune 的 runDir。
 - 未覆盖/风险（Not covered/risks）: 实现前尚未验证路径删除；当前 Git 普通命令有 ownership 保护。
 
@@ -821,3 +821,4 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- |
 | planning | dev-skills | not committed | not authorized | pending |
 | 1 | dev-skills | `9960512` | `feat(process-manager): 增加历史裁剪核心` | pending |
+| 2 | dev-skills | `0e6afe4` | `feat(process-manager): 增加历史列表和裁剪命令` | pending |
