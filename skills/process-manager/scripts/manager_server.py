@@ -160,6 +160,16 @@ class ProcessManager:
             result["processes"] = state.get("processes", {})
         return result
 
+    def prune(self, max_inactive: int | None = None, delete_run_dirs: bool | None = None, dry_run: bool = True) -> dict[str, Any]:
+        state = load_processes(self.config)
+        if not dry_run:
+            self._refresh_state(state)
+        prune_result = self._prune_state(state, max_inactive=max_inactive, delete_run_dirs=delete_run_dirs, dry_run=dry_run)
+        if not dry_run:
+            save_processes(self.config, state)
+        running = {key: record for key, record in state.get("processes", {}).items() if isinstance(record, dict) and record.get("status") == "running"}
+        return {"ok": True, "dryRun": dry_run, "active": state.get("active", {}), "running": running, "pruned": prune_result}
+
     def stop(self, service: str | None = None, process_key_value: str | None = None) -> dict[str, Any]:
         status = self.status(service=service, process_key_value=process_key_value)
         pid = status.get("pid")
@@ -455,7 +465,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, self.manager.health())
                 return
             if path == "/processes":
-                include_history = query.get("history", ["1"])[0] not in {"0", "false", "False", "no"}
+                include_history = query.get("history", ["0"])[0] in {"1", "true", "True", "yes"}
                 self._send_json(200, self.manager.list_processes(include_history=include_history))
                 return
             if path == "/processes/status":
@@ -488,6 +498,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/processes/stop":
                 self._send_json(200, self.manager.stop(data.get("service"), data.get("processKey")))
+                return
+            if path == "/processes/prune":
+                max_inactive = data.get("maxInactive")
+                if max_inactive is not None and (isinstance(max_inactive, bool) or not isinstance(max_inactive, int) or max_inactive < 0 or max_inactive > 10000):
+                    raise PMError("maxInactive 必须是 0-10000 范围内整数")
+                keep_runs = bool(data.get("keepRuns", False))
+                dry_run = bool(data.get("dryRun", True))
+                self._send_json(200, self.manager.prune(max_inactive=max_inactive, delete_run_dirs=not keep_runs, dry_run=dry_run))
                 return
             self._send_json(404, {"ok": False, "error": "not_found"})
         except KeyError as exc:
