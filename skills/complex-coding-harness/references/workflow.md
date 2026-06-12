@@ -245,6 +245,9 @@ Custom：...
 - 后端工作必须包含相关单元测试；API 变更还需要接口 smoke 或契约检查。
 - Python 工作必须使用配置的 conda、venv、解释器或包管理器。
 - 每轮大修改必须运行配置的 smoke 检查。
+- 长期后台进程（例如 dev server、web 服务、worker、watcher、模型服务）必须优先交给 `process-manager` skill 管理；finite command 仍直接运行，不进入 process-manager。
+- 如果 `process-manager` 可用，必须先读取它的 `SKILL.md` 和 `references/workflow.md`，再用 `pm_health.py`、`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`pm_logs.py`、`pm_stop.py` 等脚本管理生命周期。
+- 如果 manager 离线，必须停止当前长期进程操作，请求用户手动启动 manager 或授权运行 `start_manager.ps1`；不要手写 `Start-Process`、`nohup`、`pnpm dev` 后台化命令。
 - 如果某项验证无法执行，必须记录原因、影响和替代证据，不能声称通过。
 - 验证证据必须写入 `execution-plan.md`，包括命令或工具、结果、覆盖范围、未覆盖范围和 artifact。
 

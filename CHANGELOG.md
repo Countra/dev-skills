@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 29: complex-coding-harness 集成说明
+
+- 在 `complex-coding-harness` 中补充长期后台进程优先使用 `process-manager` 的规则。
+- 更新 README，补充 `process-manager` skill 用途、约束和仓库结构。
+- 扩展 `skill.sh install`，从 `skills/` 安装所有有效 skill；`sh` 不在当前 PowerShell PATH，未执行 shell 语法检查。
+- Commit: `pending`
+- Commit message: `docs(process-manager): 集成复杂任务 harness 说明`
+
 ### Stage 28: process-manager mock lifecycle 示例和评估
 
 - 新增 Python HTTP、worker、动态端口和 Go Web 的 service config 示例。
 - 新增 eval fixtures，覆盖长期进程、finite command、顶层 host/port 拒绝、动态端口和 manager 离线场景。
 - 使用临时 Python HTTP、worker 和动态端口服务完成 init、validate、start、ready、status、logs、list、stop 生命周期验证；Go 源码已生成但本机未安装 `go`，未执行 Go 运行验证。
-- Commit: `pending`
+- Commit: `1226b53`
 - Commit message: `test(process-manager): 补充 lifecycle 示例和评估`
 
 ### Stage 27: process-manager Windows bootstrap

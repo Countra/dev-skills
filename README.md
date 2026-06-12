@@ -22,23 +22,46 @@
 - skill 文件更新后，用户可在会话中提示 agent 重新读取最新规则；不引入 tag 或自动迁移，旧任务状态只在自然更新时按新规则补齐。
 - managed 任务最终交付必须携带任务结论、验证结果、未覆盖范围、commit 信息和关键证据；前端或可视化任务应提供截图或替代证据。
 
+### process-manager
+
+位置：`skills/process-manager/`
+
+用途：通过本地常驻 Python manager 和 `pm_*` 脚本管理 Windows 长期后台进程，例如 dev server、web 服务、worker、watcher 和动态端口预览服务。
+
+核心约束：
+
+- 只管理长期后台进程，不管理测试、构建、lint、format 等 finite command。
+- 启动前先 `pm_health.py`，service config 先 `pm_validate.py`。
+- agent 只调用 `pm_*` 脚本，不直接调用 manager API。
+- service config 的 `cwd`、可执行程序、脚本和路径类参数必须是绝对路径。
+- 顶层不写通用 `host`/`port`；端点放在 readiness 或启动参数里。
+- 默认隐藏窗口，stdout/stderr 写入 manager 自动生成的日志文件。
+
 ## Repository Layout
 
 ```text
 skill.sh
 skills/
-└── complex-coding-harness/
+├── complex-coding-harness/
+│   ├── SKILL.md
+│   ├── references/
+│   │   └── workflow.md
+│   └── templates/
+│       ├── environment.md
+│       ├── execution-plan.md
+│       └── pending-decisions.md
+└── process-manager/
     ├── SKILL.md
+    ├── scripts/
     ├── references/
     │   └── workflow.md
     └── templates/
-        ├── environment.md
-        ├── execution-plan.md
-        └── pending-decisions.md
 examples/
-└── complex-coding-harness/
+├── complex-coding-harness/
+└── process-manager/
 evals/
-└── complex-coding-harness/
+├── complex-coding-harness/
+└── process-manager/
 ```
 
 ## Install
