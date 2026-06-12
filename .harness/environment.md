@@ -3,6 +3,7 @@
 ## 来源（Sources）
 
 - 用户会话：当前任务要求整合并落盘 `process-manager` skill 实施方案，先支持 Windows 平台、cmd-file 和 powershell-file，所有可执行程序和脚本路径必须使用绝对路径；process-manager 必须是通用长期后台进程管理，不限定为 Web 服务管理。
+- 用户会话：当前任务要求为 `process-manager` 的进程历史记录、`runs/` 同步清理、`pm_list` 默认输出和相关 skill 规则调整制定 harness 方案，并判断 `complex-coding-harness` 是否需要联动更新。
 - 本地参考：`E:\work\hl\videoForensic\AI\tmp\process_manager`，包含 prototype 的 `server.py`、`client.py`、`start-manager.ps1`、`stop-manager.ps1`、`state/processes.json`。
 - 当前仓库：`E:\work\hl\videoForensic\AI\dev-skills`，用于沉淀 skill 源码。
 - `docs/development.md`：当前仓库未发现该文件。
@@ -31,10 +32,10 @@ Harness 分支策略（Harness branch policy）:
 
 当前状态（Current status）:
 
-- 当前分支：`harness/feature`。
+- 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `main`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，继续使用 `harness/feature`。
-- 本次用户要求先落盘方案，不要求提交；后续实现前再按 Git Context 检查是否需要同步 `main`。
+- 本次用户要求先落盘方案，不要求提交；后续实现前必须按 Git Context 切换或复用 `harness/feature`，并检查是否需要同步 `main`。
 - 当前 Git 命令存在 ownership 保护：普通 `git status` 报 `detected dubious ownership`。本次校验使用一次性参数 `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills ...`，后续提交前需要继续使用该参数，或由用户确认是否写入全局 `safe.directory`。
 
 ## 项目（Projects）

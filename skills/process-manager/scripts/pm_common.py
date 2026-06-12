@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import secrets
 import socket
 import subprocess
@@ -23,6 +24,8 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18080
 LEGACY_DEFAULT_PORT = 49321
 DEFAULT_PORT_RETRY_SWITCHES = 3
+DEFAULT_HISTORY_MAX_INACTIVE = 20
+DEFAULT_HISTORY_DELETE_RUN_DIRS = True
 SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 PROCESS_ID_RE = re.compile(r"^pm-\d{8}-\d{6}-[0-9a-f]{4,12}$")
 PATH_FLAG_RE = re.compile(r"(path|file|dir|root|config|script|output|input|log)$", re.IGNORECASE)
@@ -42,6 +45,8 @@ class ManagerConfig:
     config_path: Path
     port_retry_enabled: bool = True
     port_retry_max_switches: int = DEFAULT_PORT_RETRY_SWITCHES
+    history_max_inactive: int = DEFAULT_HISTORY_MAX_INACTIVE
+    history_delete_run_dirs: bool = DEFAULT_HISTORY_DELETE_RUN_DIRS
 
     @property
     def base_url(self) -> str:
@@ -173,6 +178,18 @@ def load_manager_config(path: Path) -> ManagerConfig:
         raise PMError("portRetry.maxSwitches 必须是整数")
     if max_switches < 0 or max_switches > 20:
         raise PMError("portRetry.maxSwitches 必须在 0-20 范围内")
+    history_config = data.get("history")
+    if history_config is None:
+        history_config = {}
+    history_config = ensure_object(history_config, "history")
+    max_inactive = history_config.get("maxInactive", DEFAULT_HISTORY_MAX_INACTIVE)
+    if isinstance(max_inactive, bool) or not isinstance(max_inactive, int):
+        raise PMError("history.maxInactive 必须是整数")
+    if max_inactive < 0 or max_inactive > 10000:
+        raise PMError("history.maxInactive 必须在 0-10000 范围内")
+    delete_run_dirs = history_config.get("deleteRunDirs", DEFAULT_HISTORY_DELETE_RUN_DIRS)
+    if not isinstance(delete_run_dirs, bool):
+        raise PMError("history.deleteRunDirs 必须是 boolean")
     return ManagerConfig(
         host=host,
         port=port,
@@ -182,6 +199,8 @@ def load_manager_config(path: Path) -> ManagerConfig:
         config_path=path.resolve(),
         port_retry_enabled=retry_enabled,
         port_retry_max_switches=max_switches,
+        history_max_inactive=max_inactive,
+        history_delete_run_dirs=delete_run_dirs,
     )
 
 
@@ -199,6 +218,10 @@ def create_default_manager_config(workspace: Path, path: Path | None = None, por
         "portRetry": {
             "enabled": True,
             "maxSwitches": port_retry_switches,
+        },
+        "history": {
+            "maxInactive": DEFAULT_HISTORY_MAX_INACTIVE,
+            "deleteRunDirs": DEFAULT_HISTORY_DELETE_RUN_DIRS,
         },
         "workspaceRoot": str(root),
         "stateRoot": str(state_root),
@@ -254,6 +277,32 @@ def load_processes(config: ManagerConfig) -> dict[str, Any]:
 
 def save_processes(config: ManagerConfig, data: dict[str, Any]) -> None:
     write_json_atomic(config.processes_file, data)
+
+
+def remove_run_dir(config: ManagerConfig, run_dir_value: Any) -> bool:
+    if not isinstance(run_dir_value, str) or not run_dir_value:
+        return False
+    run_dir = Path(run_dir_value).resolve()
+    runs_root = config.runs_dir.resolve()
+    if not is_relative_to(run_dir, runs_root):
+        raise PMError(f"拒绝删除 runs 外部目录：{run_dir}")
+    try:
+        relative = run_dir.relative_to(runs_root)
+    except ValueError as exc:
+        raise PMError(f"拒绝删除 runs 外部目录：{run_dir}") from exc
+    parts = relative.parts
+    if len(parts) != 2:
+        raise PMError(f"runDir 必须是 runs/<service>/<processId> 精确目录：{run_dir}")
+    service_name, process_id = parts
+    validate_service_name(service_name)
+    if not PROCESS_ID_RE.match(process_id):
+        raise PMError(f"runDir processId 格式错误：{run_dir}")
+    if not run_dir.exists():
+        return False
+    if not run_dir.is_dir():
+        raise PMError(f"runDir 不是目录：{run_dir}")
+    shutil.rmtree(run_dir)
+    return True
 
 
 def generate_process_id() -> str:

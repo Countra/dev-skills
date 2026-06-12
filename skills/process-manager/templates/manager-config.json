@@ -5,6 +5,10 @@
     "enabled": true,
     "maxSwitches": 3
   },
+  "history": {
+    "maxInactive": 20,
+    "deleteRunDirs": true
+  },
   "workspaceRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
   "stateRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager",
   "tokenFile": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager/token"

@@ -1,8 +1,8 @@
 {
-  "task_id": "2026-06-12-feature-process-manager-skill",
-  "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-skill",
-  "title": "process-manager skill Windows 进程管理中心",
-  "status": "completed",
-  "next_action": "任务完成；等待用户后续安装或使用验证",
+  "task_id": "2026-06-12-feature-process-manager-history-retention",
+  "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-history-retention",
+  "title": "process-manager 历史记录保留和 runs 清理策略",
+  "status": "in_progress",
+  "next_action": "阶段 1：实现 history 配置和裁剪核心",
   "updated_at": "2026-06-12"
 }

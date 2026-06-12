@@ -34,6 +34,7 @@ from pm_common import (
     print_json,
     process_key,
     read_token,
+    remove_run_dir,
     save_processes,
     service_from_path,
     split_process_key,
@@ -122,8 +123,9 @@ class ProcessManager:
         state = load_processes(self.config)
         state["active"][service["name"]] = key
         state["processes"][key] = record
+        prune_result = self._prune_state(state)
         save_processes(self.config, state)
-        return {"ok": True, "result": "started", **record}
+        return {"ok": True, "result": "started", "pruned": prune_result, **record}
 
     def status(self, service: str | None = None, process_key_value: str | None = None, allow_missing: bool = False) -> dict[str, Any]:
         state = load_processes(self.config)
@@ -143,21 +145,20 @@ class ProcessManager:
         state["processes"][key] = status
         if status.get("status") != "running" and state.get("active", {}).get(status.get("service")) == key:
             state["active"].pop(status["service"], None)
+        prune_result = self._prune_state(state)
         save_processes(self.config, state)
-        return {"ok": True, **status}
+        return {"ok": True, "pruned": prune_result, **status}
 
-    def list_processes(self) -> dict[str, Any]:
+    def list_processes(self, include_history: bool = True) -> dict[str, Any]:
         state = load_processes(self.config)
-        refreshed: dict[str, Any] = {}
-        for key, record in list(state.get("processes", {}).items()):
-            if isinstance(record, dict):
-                refreshed[key] = self._refresh_record(record)
-        state["processes"] = refreshed
-        for service, key in list(state.get("active", {}).items()):
-            if refreshed.get(key, {}).get("status") != "running":
-                state["active"].pop(service, None)
+        self._refresh_state(state)
+        prune_result = self._prune_state(state)
         save_processes(self.config, state)
-        return {"ok": True, "active": state.get("active", {}), "processes": refreshed}
+        running = {key: record for key, record in state.get("processes", {}).items() if isinstance(record, dict) and record.get("status") == "running"}
+        result: dict[str, Any] = {"ok": True, "active": state.get("active", {}), "running": running, "pruned": prune_result}
+        if include_history:
+            result["processes"] = state.get("processes", {})
+        return result
 
     def stop(self, service: str | None = None, process_key_value: str | None = None) -> dict[str, Any]:
         status = self.status(service=service, process_key_value=process_key_value)
@@ -173,8 +174,9 @@ class ProcessManager:
         state["processes"][key] = record
         if stopped and state.get("active", {}).get(record.get("service")) == key:
             state["active"].pop(record["service"], None)
+        prune_result = self._prune_state(state)
         save_processes(self.config, state)
-        return {"ok": True, "result": record["status"], **record}
+        return {"ok": True, "result": record["status"], "pruned": prune_result, **record}
 
     def ready(self, service: str | None = None, process_key_value: str | None = None, timeout_override: float | None = None) -> dict[str, Any]:
         status = self.status(service=service, process_key_value=process_key_value)
@@ -327,6 +329,75 @@ class ProcessManager:
         if isinstance(process_file, str):
             self._write_record(record, Path(process_file))
 
+    def _refresh_state(self, state: dict[str, Any]) -> None:
+        refreshed: dict[str, Any] = {}
+        for key, record in list(state.get("processes", {}).items()):
+            if isinstance(record, dict):
+                refreshed[key] = self._refresh_record(record)
+        state["processes"] = refreshed
+        for service, key in list(state.get("active", {}).items()):
+            if refreshed.get(key, {}).get("status") != "running":
+                state["active"].pop(service, None)
+
+    def _prune_state(self, state: dict[str, Any], max_inactive: int | None = None, delete_run_dirs: bool | None = None, dry_run: bool = False) -> dict[str, Any]:
+        limit = self.config.history_max_inactive if max_inactive is None else max_inactive
+        delete_dirs = self.config.history_delete_run_dirs if delete_run_dirs is None else delete_run_dirs
+        processes = state.get("processes", {})
+        if not isinstance(processes, dict):
+            if not dry_run:
+                state["processes"] = {}
+            return {"removedProcesses": 0, "removedRunDirs": 0, "warnings": ["processes 不是 object，已重置为空状态"]}
+        inactive: list[tuple[str, dict[str, Any]]] = []
+        for key, record in processes.items():
+            if not isinstance(record, dict):
+                continue
+            if self._is_inactive_record(record):
+                inactive.append((key, record))
+        inactive.sort(key=lambda item: self._record_sort_value(item[1]), reverse=True)
+        remove_items = inactive[max(0, limit) :]
+        removed_keys = {key for key, _ in remove_items}
+        warnings: list[str] = []
+        removed_run_dirs = 0
+        for key, record in remove_items:
+            if delete_dirs and not dry_run:
+                try:
+                    if remove_run_dir(self.config, record.get("runDir")):
+                        removed_run_dirs += 1
+                except (OSError, PMError) as exc:
+                    warnings.append(f"{key}: {exc}")
+            if not dry_run:
+                processes.pop(key, None)
+        if not dry_run:
+            for service, key in list(state.get("active", {}).items()):
+                if key in removed_keys:
+                    state["active"].pop(service, None)
+        return {"removedProcesses": len(remove_items), "removedRunDirs": removed_run_dirs, "warnings": warnings}
+
+    def _is_inactive_record(self, record: dict[str, Any]) -> bool:
+        status = record.get("status")
+        if status in {"running", "stop_timeout"}:
+            return False
+        return True
+
+    def _record_sort_value(self, record: dict[str, Any]) -> tuple[float, str]:
+        for field in ("stoppedAtEpoch", "exitedAtEpoch", "startedAtEpoch"):
+            value = record.get(field)
+            if isinstance(value, (int, float)):
+                return float(value), str(record.get("processKey", ""))
+        for field in ("stoppedAt", "exitedAt", "startedAt"):
+            value = record.get(field)
+            if isinstance(value, str) and value:
+                return self._parse_time_text(value), str(record.get("processKey", ""))
+        return 0.0, str(record.get("processKey", ""))
+
+    def _parse_time_text(self, value: str) -> float:
+        for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S"):
+            try:
+                return time.mktime(time.strptime(value, fmt))
+            except ValueError:
+                continue
+        return 0.0
+
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "ProcessManager/0.1"
@@ -384,7 +455,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(200, self.manager.health())
                 return
             if path == "/processes":
-                self._send_json(200, self.manager.list_processes())
+                include_history = query.get("history", ["1"])[0] not in {"0", "false", "False", "no"}
+                self._send_json(200, self.manager.list_processes(include_history=include_history))
                 return
             if path == "/processes/status":
                 self._send_json(200, self.manager.status(query.get("service", [None])[0], query.get("processKey", [None])[0]))
