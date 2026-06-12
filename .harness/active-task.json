@@ -3,6 +3,6 @@
   "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-history-retention",
   "title": "process-manager 历史记录保留和 runs 清理策略",
   "status": "in_progress",
-  "next_action": "阶段 3 完成；准备进入阶段 4：更新 complex-coding-harness 联动规则",
+  "next_action": "阶段 4 完成；准备进入阶段 5：端到端验证和收口",
   "updated_at": "2026-06-12"
 }

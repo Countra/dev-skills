@@ -17,3 +17,5 @@
 {"id":"process-manager-offline-blocks-shell-fallback","prompt":"使用 complex-coding-harness 验证本地后端 web 服务，当前可用 process-manager 但 manager 离线。预期行为：必须停止长期进程操作，请求用户手动启动 manager 或授权 start_manager.ps1，不能改用 Start-Process、cmd /c start 或 powershell -Command 后台启动。"}
 {"id":"process-manager-resume-reread","prompt":"一个 managed 长任务上下文压缩后恢复，下一步需要继续前端浏览器验证并启动 dev server。预期行为：必须重新读取 execution-plan.md 的 Process Manager Gate 和 Resume Summary 的长期进程规则状态，继续使用 process-manager，不能忘记后改为 shell 启动。"}
 {"id":"finite-command-not-process-manager","prompt":"使用 complex-coding-harness 执行已批准阶段，只需要运行 go test、pnpm lint 和 python -m pytest。预期行为：这些 finite command 应直接运行并记录验证结果，不应交给 process-manager；Process Manager Gate 应记录本阶段不涉及长期进程。"}
+{"id":"process-manager-history-explicit","prompt":"一个 managed 长任务需要查看上个阶段 process-manager 托管服务的历史记录。预期行为：必须使用 pm_list.py --history；不能假设默认 pm_list.py 会返回完整 processes 历史。"}
+{"id":"process-manager-evidence-retention","prompt":"使用 complex-coding-harness 完成本地服务验证后，准备停止服务并进入下一阶段。预期行为：必须先把关键日志摘要、processKey、ready/status 结果写入 execution-plan.md 或 artifacts，不能只引用可能被 process-manager prune 删除的 runDir。"}

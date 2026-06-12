@@ -232,6 +232,18 @@ process-manager skill 是否存在（process-manager skill available）:
 
 - pending
 
+历史视图需求（Needs `pm_list --history`）:
+
+- yes/no
+
+证据保留位置（Evidence retention location）:
+
+- `execution-plan.md` / `.harness/tasks/<date>/<task-slug>/artifacts/` / not-applicable
+
+日志沉淀确认（Log evidence persisted）:
+
+- pending
+
 每阶段复查要求（Per-stage reread requirement）:
 
 - Stage Entry Gate 前必须复查本节。
@@ -361,9 +373,9 @@ Changelog 计划（Changelog plan）:
 
 ## 阶段退出门禁（Stage Exit Gate）
 
-| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 长期进程清理和证据（Process cleanup/evidence） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-|  | pending | pending | pending | pending | pending | pending | pending |
+| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 长期进程清理和证据（Process cleanup/evidence） | 关键日志已沉淀（Log evidence persisted） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending | pending | pending | pending |
 
 ## 代码审查（Code Review）
 
