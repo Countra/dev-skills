@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-12
+
+### Stage 24: process-manager skill 骨架和模板
+
+- 新增 `process-manager` skill 的 `SKILL.md` 和 workflow，定义 Windows 长期后台进程管理流程。
+- 新增 manager、direct、cmd-file 和 powershell-file JSON 模板，明确绝对路径、隐藏窗口和 readiness 规则。
+- 完成 skill 基础校验、JSON 模板解析和关键规则检索。
+- Commit: `pending`
+- Commit message: `feat(process-manager): 新增进程管理 skill 骨架`
+
 ## 2026-06-10
 
 ### Stage 17: complex-coding-harness skill 更新继续规则

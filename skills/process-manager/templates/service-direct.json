@@ -1,0 +1,25 @@
+{
+  "name": "frontend",
+  "kind": "long-running",
+  "cwd": "D:/ABSOLUTE/PATH/TO/PROJECT",
+  "launcher": {
+    "type": "direct",
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/pnpm.cmd",
+      "dev",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "5173"
+    ]
+  },
+  "env": {
+    "BROWSER": "none"
+  },
+  "window": "hidden",
+  "readiness": {
+    "type": "http",
+    "url": "http://127.0.0.1:5173",
+    "timeoutSeconds": 30
+  }
+}

@@ -876,8 +876,8 @@ Changelog 计划（Changelog plan）:
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 | Planning | completed | 已整合 process-manager skill 实施方案并获得用户批准 | 文档 review、JSON、diff、rg 通过 | active-task/environment/execution-plan | Stage 1 |
-| Stage 1 | in_progress | skill 骨架和模板 | quick_validate、JSON、检索 | pending | 创建 skill 目录 |
-| Stage 2 | pending | manager server 和公共库 | py_compile、health | pending | Stage 1 后开始 |
+| Stage 1 | completed | 已新增 skill 骨架、workflow 和 JSON 模板 | quick_validate、JSON、检索、diff 通过 | quick_validate valid；JSON templates ok；rg 命中关键规则 | Stage 2 |
+| Stage 2 | pending | manager server 和公共库 | py_compile、health | pending | 实现 manager_server.py 和 pm_common.py |
 | Stage 3 | pending | pm 脚手架脚本 | py_compile、help、validate | pending | Stage 2 后开始 |
 | Stage 4 | pending | Windows bootstrap | manager start/stop | pending | Stage 3 后开始 |
 | Stage 5 | pending | mock lifecycle 和 eval | mock lifecycle、JSONL | pending | Stage 4 后开始 |
@@ -888,13 +888,14 @@ Changelog 计划（Changelog plan）:
 | 阶段（Stage） | 重读和恢复检查（Reread/recovery） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 范围匹配（Scope match） | 用户确认/变更触发（Approval/reapproval） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass，已重读 active-task、当前仓库状态、skill-creator、本地 prototype | pass，当前 harness/feature，只有 ignored 旧产物 | pass，无 blocking 遗留 | pass，规划阶段不启动服务 | pass，仅落盘方案 | pass，等待用户批准后实现 | pass |
-| Stage 1 | pending | pending | pending | pending | pending | pending | pending |
+| Stage 1 | pass，已重读 active-task、environment、execution-plan、skill-creator 和现有仓库结构 | pass，当前 harness/feature；规划基线已提交 `d95b099`；工作区只有本阶段新增文件 | pass，无 blocking/major 遗留 | pass，Python、Git、rg 可用；本阶段不启动服务 | pass，仅修改 process-manager skill、CHANGELOG、执行计划 | pass，用户已批准按阶段实现和提交 | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
 | 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | Runtime 清理（Runtime cleanup） | 记录更新（Records updated） | 恢复摘要更新（Resume updated） | 提交记录（Commit recorded） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass，方案已落盘并覆盖核心约束 | pass，已复查 prototype 缺陷、自由 shell、直接 API、路径和状态风险 | pass，已执行 JSON、status、diff、rg 校验 | pass，不启动服务 | pass，已更新 active-task、environment、execution-plan | pass，恢复摘要已写入 | not requested | pass |
+| Stage 1 | pass，已完成 skill 骨架和模板 | pass，未发现 blocking/major 问题 | pass，quick_validate、JSON 模板解析、rg 和 diff 通过 | pass，不启动服务 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 
 ## 代码审查（Code Review）
 
@@ -907,11 +908,11 @@ Changelog 计划（Changelog plan）:
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: Planning 完成，等待用户批准。
-- 已完成（Completed）: 已整合 process-manager skill 方案，明确 Windows only、`pm_*` 脚本、绝对路径、内部 process key、自动日志和状态目录；已修正为通用长期进程模型，顶层不要求 `host`/`port`，默认隐藏窗口。
-- 最新 commit（Latest commit）: 未提交，本次仅落盘方案。
-- 下一步（Next action）: 进入 Stage 1，实现 skill 骨架和模板。
-- 未覆盖/风险（Not covered/risks）: 未实现代码；未启动 manager；未验证 mock lifecycle；真实业务服务和非 Windows 不覆盖；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或用户确认写入全局配置。
+- 当前阶段（Current stage）: Stage 1 完成，准备进入 Stage 2。
+- 已完成（Completed）: 已新增 `skills/process-manager/SKILL.md`、`references/workflow.md` 和 4 个 JSON 模板；明确 Windows only、`pm_*` 脚本、绝对路径、隐藏窗口、readiness 和顶层不使用通用 `host`/`port`。
+- 最新 commit（Latest commit）: `d95b099` 规划基线；Stage 1 commit pending。
+- 下一步（Next action）: Stage 2，实现 `manager_server.py` 和 `pm_common.py`。
+- 未覆盖/风险（Not covered/risks）: 尚未实现 manager 和 pm 脚本；未启动 manager；未验证 mock lifecycle；真实业务服务和非 Windows 不覆盖；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或提权提交。
 
 ## 提交记录（Commit Log）
 
@@ -923,4 +924,5 @@ Changelog 计划（Changelog plan）:
 
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
-| Planning | dev-skills | not requested | 仅落盘方案，等待用户确认 | 不写入 CHANGELOG |
+| Planning | dev-skills | `d95b099` | `docs(process-manager): 托管进程管理 skill 实施计划` | 不写入 CHANGELOG |
+| Stage 1 | dev-skills | pending | `feat(process-manager): 新增进程管理 skill 骨架` | 2026-06-12 Stage 24 |
