@@ -1,0 +1,18 @@
+{
+  "name": "python-worker",
+  "kind": "long-running",
+  "cwd": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
+  "launcher": {
+    "type": "direct",
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/python.exe",
+      "D:/ABSOLUTE/PATH/TO/WORKSPACE/python_worker.py"
+    ]
+  },
+  "window": "hidden",
+  "readiness": {
+    "type": "log",
+    "pattern": "worker ready",
+    "timeoutSeconds": 10
+  }
+}

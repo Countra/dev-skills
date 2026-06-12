@@ -1,0 +1,22 @@
+{
+  "name": "python-dynamic",
+  "kind": "long-running",
+  "cwd": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
+  "launcher": {
+    "type": "direct",
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/python.exe",
+      "D:/ABSOLUTE/PATH/TO/WORKSPACE/python_dynamic.py"
+    ]
+  },
+  "window": "hidden",
+  "readiness": {
+    "type": "log",
+    "pattern": "Local:",
+    "extract": {
+      "urls": ["http://[^\\s]+"],
+      "ports": ["(?<=:)\\d+"]
+    },
+    "timeoutSeconds": 10
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "go-web",
+  "kind": "long-running",
+  "cwd": "D:/ABSOLUTE/PATH/TO/GO/PROJECT",
+  "launcher": {
+    "type": "direct",
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/go.exe",
+      "run",
+      "D:/ABSOLUTE/PATH/TO/GO/PROJECT/main.go",
+      "8099"
+    ]
+  },
+  "window": "hidden",
+  "readiness": {
+    "type": "http",
+    "url": "http://127.0.0.1:8099/health",
+    "timeoutSeconds": 30
+  }
+}

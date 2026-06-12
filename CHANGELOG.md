@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 28: process-manager mock lifecycle 示例和评估
+
+- 新增 Python HTTP、worker、动态端口和 Go Web 的 service config 示例。
+- 新增 eval fixtures，覆盖长期进程、finite command、顶层 host/port 拒绝、动态端口和 manager 离线场景。
+- 使用临时 Python HTTP、worker 和动态端口服务完成 init、validate、start、ready、status、logs、list、stop 生命周期验证；Go 源码已生成但本机未安装 `go`，未执行 Go 运行验证。
+- Commit: `pending`
+- Commit message: `test(process-manager): 补充 lifecycle 示例和评估`
+
 ### Stage 27: process-manager Windows bootstrap
 
 - 新增 `start_manager.ps1` 和 `stop_manager.ps1`，用于启动和停止 manager 自身。
 - bootstrap 默认隐藏窗口，记录 `manager.pid`，由 manager 自行写 stdout/stderr 日志，避免 PowerShell 重定向长期进程导致阻塞。
 - 验证临时 workspace 下 `pm_init`、manager start、`pm_health` 和 manager stop 全流程。
-- Commit: `pending`
+- Commit: `0f016d1`
 - Commit message: `feat(process-manager): 增加 Windows manager 启停脚本`
 
 ### Stage 26: process-manager pm 脚手架脚本

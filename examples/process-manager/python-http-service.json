@@ -1,0 +1,20 @@
+{
+  "name": "python-http",
+  "kind": "long-running",
+  "cwd": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
+  "launcher": {
+    "type": "direct",
+    "argv": [
+      "C:/ABSOLUTE/PATH/TO/python.exe",
+      "D:/ABSOLUTE/PATH/TO/WORKSPACE/python_http.py",
+      "--port",
+      "49401"
+    ]
+  },
+  "window": "hidden",
+  "readiness": {
+    "type": "http",
+    "url": "http://127.0.0.1:49401/health",
+    "timeoutSeconds": 10
+  }
+}

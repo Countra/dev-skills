@@ -189,7 +189,7 @@ class ProcessManager:
             ready_result = self._check_readiness(last, readiness)
             if ready_result.get("ready"):
                 self._merge_observed(last["processKey"], ready_result.get("observed", {}))
-                return {"ok": True, "status": "ready", **last, **ready_result}
+                return {"ok": True, **last, **ready_result, "status": "ready"}
             time.sleep(0.25)
         return {"ok": False, "status": "not_ready", "reason": "timeout", **last}
 

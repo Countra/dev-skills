@@ -880,8 +880,8 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | completed | 已实现 manager server 和公共库 | py_compile、server help、health/list smoke、diff 通过 | health/list 返回 ok；manager stopped | Stage 3 |
 | Stage 3 | completed | 已实现 11 个 pm 脚手架脚本 | py_compile、help、validate 正反例、离线 health、diff 通过 | stage3 cli validation ok | Stage 4 |
 | Stage 4 | completed | 已实现 Windows bootstrap 启停脚本 | PowerShell parse、py_compile、manager start/health/stop、diff 通过 | stage4 bootstrap ok | Stage 5 |
-| Stage 5 | pending | mock lifecycle 和 eval | mock lifecycle、JSONL | pending | 创建临时 Go/Python 测试项目并验证生命周期 |
-| Stage 6 | pending | harness 集成说明 | quick_validate、检索 | pending | Stage 5 后开始 |
+| Stage 5 | completed | 已完成 Python lifecycle、示例和 eval | Python lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 未安装未执行 | stage5 python lifecycle ok；go not recognized | Stage 6 |
+| Stage 6 | pending | harness 集成说明 | quick_validate、检索 | pending | 更新 complex-coding-harness 引用规则 |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -892,6 +892,7 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | pass，已重读 active-task、environment、execution-plan、本地 prototype server/client | pass，当前 harness/feature；Stage 1 已提交 `7d56846` | pass，无 blocking 遗留；Stage 1 commit hash 已补入 changelog | pass，Python、Git、rg 可用；短暂启动 manager 做 health/list 后已停止 | pass，仅修改 manager_server.py、pm_common.py、CHANGELOG、执行计划 | pass，未命中重新审批触发条件 | pass |
 | Stage 3 | pass，已重读 active-task、workflow 和 pm_common 接口 | pass，当前 harness/feature；Stage 2 已提交 `b81e77b`；仅新增 pm scripts 和记录更新 | pass，无 blocking 遗留 | pass，Python、Git、rg 可用；本阶段不启动业务服务 | pass，仅修改 pm scripts、pm_common 错误输出、CHANGELOG、执行计划 | pass，未命中重新审批触发条件 | pass |
 | Stage 4 | pass，已重读 active-task 和 Stage 4 契约 | pass，当前 harness/feature；Stage 3 已提交 `c3c9b77`；仅新增 bootstrap 和日志参数支持 | pass，无 blocking 遗留；Stage 3 commit hash 已补入 changelog | pass，PowerShell、Python 可用；短暂启动 manager 验证后已停止 | pass，仅修改 bootstrap、manager stdout/stderr 参数、CHANGELOG、执行计划 | pass，未命中重新审批触发条件 | pass |
+| Stage 5 | pass，已重读 active-task、execution-plan 和验证要求 | pass，当前 harness/feature；Stage 4 已提交 `0f016d1`；运行产物在 ignored tmp 中 | pass，无 blocking 遗留；Stage 4 commit hash 已补入 changelog | partial，Python 可用，Go 不在 PATH | pass，修改 examples/evals、manager ready 修复、CHANGELOG、执行计划 | pass，Go 未安装不改变方案，记录未覆盖 | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
@@ -902,6 +903,7 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | pass，已完成 manager server 和公共库 | pass，修复 BOM JSON 读取和 process readiness 稳定时间问题 | pass，py_compile、server help、health/list smoke、diff 通过 | pass，临时 manager 已停止 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 | Stage 3 | pass，已完成 pm 脚手架脚本 | pass，修复离线 manager 空错误输出 | pass，py_compile、全脚本 help、pm_init、pm_validate 正反例、pm_health 离线失败和 diff 通过 | pass，不启动业务服务 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 | Stage 4 | pass，已完成 Windows bootstrap | pass，修复 PowerShell 重定向长期进程可能阻塞的问题 | pass，PowerShell parse、py_compile、manager start/health/stop 和 diff 通过 | pass，临时 manager 已停止 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
+| Stage 5 | pass，已完成 Python lifecycle、examples 和 eval | pass，修复 ready 返回状态被 running 覆盖的问题 | pass，Python HTTP/worker/dynamic lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 未安装未执行 | pass，所有临时服务和 manager 已停止，仅 TIME_WAIT | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 
 ## 代码审查（Code Review）
 
@@ -915,14 +917,16 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | `process` readiness 初版没有严格按 stableSeconds 判断 | major | 记录 `startedAtEpoch` 并按 elapsed time 判断 |
 | Stage 3 | 离线 manager 返回 HTTP 503 且空 body 时，CLI 初版只输出 `{}` | major | `http_request` 为 HTTPError 空响应补充 `ok:false` 和错误文本 |
 | Stage 4 | `Start-Process -RedirectStandardOutput/-RedirectStandardError` 启动长期 manager 可能让调用方等待流结束 | major | bootstrap 不再使用 PowerShell 重定向，改由 manager 自行打开 stdout/stderr 日志 |
+| Stage 5 | ready API 初版返回中 `status: running` 覆盖了 ready 状态，导致 `pm_ready.py` 退出码失败 | major | 调整 manager ready 返回合并顺序，确保成功时 `status: ready` |
+| Stage 5 | 本机未安装 Go，无法执行临时 Go Web 运行验证 | follow-up | 已生成 Go 示例源码和 service config，记录未覆盖；Python lifecycle 覆盖实际 manager 行为 |
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: Stage 4 完成，准备进入 Stage 5。
-- 已完成（Completed）: 已实现 `start_manager.ps1` 和 `stop_manager.ps1`；manager 支持 `--stdout-log` 和 `--stderr-log`；bootstrap 验证通过并确认临时 manager 已停止。
-- 最新 commit（Latest commit）: `c3c9b77` Stage 3；Stage 4 commit pending。
-- 下一步（Next action）: Stage 5，创建临时 Go/Python 测试项目并验证完整生命周期。
-- 未覆盖/风险（Not covered/risks）: 尚未执行真实业务进程 lifecycle、examples/evals 和 harness 集成；非 Windows 不覆盖；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或提权提交。
+- 当前阶段（Current stage）: Stage 5 完成，准备进入 Stage 6。
+- 已完成（Completed）: 已用临时 Python HTTP、worker 和动态端口服务验证 `pm_init/health/validate/start/ready/status/logs/list/stop` 完整生命周期；新增 examples 和 eval fixtures；修复 ready 成功状态。
+- 最新 commit（Latest commit）: `0f016d1` Stage 4；Stage 5 commit pending。
+- 下一步（Next action）: Stage 6，补充 complex-coding-harness 对 process-manager 的集成说明。
+- 未覆盖/风险（Not covered/risks）: Go 运行验证未执行，因为本机 `go` 不在 PATH；非 Windows 不覆盖；真实用户项目验证不在本阶段范围；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或提权提交。
 
 ## 提交记录（Commit Log）
 
@@ -938,4 +942,5 @@ Changelog 计划（Changelog plan）:
 | Stage 1 | dev-skills | `7d56846` | `feat(process-manager): 新增进程管理 skill 骨架` | 2026-06-12 Stage 24 |
 | Stage 2 | dev-skills | `b81e77b` | `feat(process-manager): 实现 manager 服务核心` | 2026-06-12 Stage 25 |
 | Stage 3 | dev-skills | `c3c9b77` | `feat(process-manager): 增加 pm 脚手架命令` | 2026-06-12 Stage 26 |
-| Stage 4 | dev-skills | pending | `feat(process-manager): 增加 Windows manager 启停脚本` | 2026-06-12 Stage 27 |
+| Stage 4 | dev-skills | `0f016d1` | `feat(process-manager): 增加 Windows manager 启停脚本` | 2026-06-12 Stage 27 |
+| Stage 5 | dev-skills | pending | `test(process-manager): 补充 lifecycle 示例和评估` | 2026-06-12 Stage 28 |
