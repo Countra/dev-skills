@@ -2,7 +2,7 @@
   "task_id": "2026-06-12-feature-process-manager-history-retention",
   "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-history-retention",
   "title": "process-manager 历史记录保留和 runs 清理策略",
-  "status": "in_progress",
-  "next_action": "阶段 4 完成；准备进入阶段 5：端到端验证和收口",
+  "status": "completed",
+  "next_action": "任务完成；等待用户验收或后续使用反馈",
   "updated_at": "2026-06-12"
 }

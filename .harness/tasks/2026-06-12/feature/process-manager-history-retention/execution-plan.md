@@ -770,7 +770,7 @@ Changelog 计划（Changelog plan）:
 | 2 | completed | 已实现 `pm_list --history`、默认轻量视图和 `pm_prune.py` dry-run/apply | py_compile、help、合成 list/prune 行为通过 | `stage2 list prune behavior ok` | 阶段 3 |
 | 3 | completed | 已更新 process-manager SKILL、workflow 和 eval，固化历史保留与 pm_prune 规则 | quick_validate、JSONL 解析、关键规则检索通过 | `Skill is valid!`、fixtures 9 条 | 阶段 4 |
 | 4 | completed | 已更新 complex-coding-harness 的历史视图、证据保留和模板门禁规则 | quick_validate、JSONL 解析、模板表格检查通过 | complex prompts 21 条，表格列数 10/10/10 | 阶段 5 |
-| 5 | pending | 端到端验证和收口 | pending | pending | 阶段 4 后开始 |
+| 5 | completed | 已完成端到端生命周期验证和最终静态校验 | lifecycle smoke、py_compile、quick_validate、JSON/JSONL、diff --check 通过 | manager stopped；`pm_prune --apply --max-inactive 0` 删除 2 个 runDir | 完成 |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -780,7 +780,7 @@ Changelog 计划（Changelog plan）:
 | 2 | pass | none | pass | not-applicable | pass | pass |
 | 3 | pass | none | pass | not-applicable | pass | pass |
 | 4 | pass | none | pass | not-applicable | pass | pass |
-| 5 | pending | pending | pending | pending | pending | pending |
+| 5 | pass | none | pass | pass | pass | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
@@ -790,7 +790,7 @@ Changelog 计划（Changelog plan）:
 | 2 | pass | pass | pass | not-applicable | pass | pending | pass |
 | 3 | pass | pass | pass | not-applicable | pass | pending | pass |
 | 4 | pass | pass | pass | not-applicable | pass | pending | pass |
-| 5 | pending | pending | pending | pending | pending | pending | pending |
+| 5 | pass | pass | pass | pass | pass | pending | pass |
 
 ## 代码审查（Code Review）
 
@@ -799,15 +799,16 @@ Changelog 计划（Changelog plan）:
 | planning | 方案确认：`complex-coding-harness` 需要轻量更新证据保留规则 | follow-up | 已纳入阶段 4 |
 | 1 | `_prune_state(dry_run=True)` 原实现会在异常 state 时修改内存状态 | minor | 已修复为 dry-run 不修改 state |
 | 2 | `pm_prune` dry-run 如果先刷新状态会写入 `process.json` | minor | 已改为 dry-run 不刷新、不保存，仅预估裁剪结果 |
+| 5 | `pm_health.py` 在 stop_manager 后返回 503 导致命令 exit 1 | follow-up | 这是确认 manager 已停止的预期结果，记录为清理证据 |
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: 阶段 4 completed，准备提交。
-- 已完成（Completed）: 已实现 process-manager 行为和文档；已更新 complex-coding-harness 证据保留联动规则。
-- 最新 commit（Latest commit）: `61a2147` 阶段 3。
-- 下一步（Next action）: 提交阶段 4，然后进入阶段 5 端到端验证。
-- 长期进程规则（Process manager rule）: 阶段 5 需要长期进程，必须使用 process-manager；本任务新规则要求关键证据不能只依赖可能被 prune 的 runDir。
-- 未覆盖/风险（Not covered/risks）: 实现前尚未验证路径删除；当前 Git 普通命令有 ownership 保护。
+- 当前阶段（Current stage）: 全部阶段 completed。
+- 已完成（Completed）: 已完成 history 配置、自动裁剪、`pm_list --history`、`pm_prune`、process-manager 文档、complex-coding-harness 联动规则和端到端验证。
+- 最新 commit（Latest commit）: `ea6fe63` 阶段 4，最终收口提交 pending。
+- 下一步（Next action）: 提交阶段 5 收口记录并交付。
+- 长期进程规则（Process manager rule）: 阶段 5 全程通过 process-manager 脚本管理临时 worker；manager 已停止，runDir 已清理。
+- 未覆盖/风险（Not covered/risks）: 未覆盖非 Windows；未做多天真实业务运行压测。
 
 ## 提交记录（Commit Log）
 
@@ -823,3 +824,4 @@ Changelog 计划（Changelog plan）:
 | 1 | dev-skills | `9960512` | `feat(process-manager): 增加历史裁剪核心` | pending |
 | 2 | dev-skills | `0e6afe4` | `feat(process-manager): 增加历史列表和裁剪命令` | pending |
 | 3 | dev-skills | `61a2147` | `docs(process-manager): 记录历史保留规则` | pending |
+| 4 | dev-skills | `ea6fe63` | `docs(complex-coding-harness): 补充进程历史证据规则` | pending |
