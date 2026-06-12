@@ -877,8 +877,8 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- |
 | Planning | completed | 已整合 process-manager skill 实施方案并获得用户批准 | 文档 review、JSON、diff、rg 通过 | active-task/environment/execution-plan | Stage 1 |
 | Stage 1 | completed | 已新增 skill 骨架、workflow 和 JSON 模板 | quick_validate、JSON、检索、diff 通过 | quick_validate valid；JSON templates ok；rg 命中关键规则 | Stage 2 |
-| Stage 2 | pending | manager server 和公共库 | py_compile、health | pending | 实现 manager_server.py 和 pm_common.py |
-| Stage 3 | pending | pm 脚手架脚本 | py_compile、help、validate | pending | Stage 2 后开始 |
+| Stage 2 | completed | 已实现 manager server 和公共库 | py_compile、server help、health/list smoke、diff 通过 | health/list 返回 ok；manager stopped | Stage 3 |
+| Stage 3 | pending | pm 脚手架脚本 | py_compile、help、validate | pending | 实现 pm_* CLI |
 | Stage 4 | pending | Windows bootstrap | manager start/stop | pending | Stage 3 后开始 |
 | Stage 5 | pending | mock lifecycle 和 eval | mock lifecycle、JSONL | pending | Stage 4 后开始 |
 | Stage 6 | pending | harness 集成说明 | quick_validate、检索 | pending | Stage 5 后开始 |
@@ -889,6 +889,7 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass，已重读 active-task、当前仓库状态、skill-creator、本地 prototype | pass，当前 harness/feature，只有 ignored 旧产物 | pass，无 blocking 遗留 | pass，规划阶段不启动服务 | pass，仅落盘方案 | pass，等待用户批准后实现 | pass |
 | Stage 1 | pass，已重读 active-task、environment、execution-plan、skill-creator 和现有仓库结构 | pass，当前 harness/feature；规划基线已提交 `d95b099`；工作区只有本阶段新增文件 | pass，无 blocking/major 遗留 | pass，Python、Git、rg 可用；本阶段不启动服务 | pass，仅修改 process-manager skill、CHANGELOG、执行计划 | pass，用户已批准按阶段实现和提交 | pass |
+| Stage 2 | pass，已重读 active-task、environment、execution-plan、本地 prototype server/client | pass，当前 harness/feature；Stage 1 已提交 `7d56846` | pass，无 blocking 遗留；Stage 1 commit hash 已补入 changelog | pass，Python、Git、rg 可用；短暂启动 manager 做 health/list 后已停止 | pass，仅修改 manager_server.py、pm_common.py、CHANGELOG、执行计划 | pass，未命中重新审批触发条件 | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
@@ -896,6 +897,7 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass，方案已落盘并覆盖核心约束 | pass，已复查 prototype 缺陷、自由 shell、直接 API、路径和状态风险 | pass，已执行 JSON、status、diff、rg 校验 | pass，不启动服务 | pass，已更新 active-task、environment、execution-plan | pass，恢复摘要已写入 | not requested | pass |
 | Stage 1 | pass，已完成 skill 骨架和模板 | pass，未发现 blocking/major 问题 | pass，quick_validate、JSON 模板解析、rg 和 diff 通过 | pass，不启动服务 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
+| Stage 2 | pass，已完成 manager server 和公共库 | pass，修复 BOM JSON 读取和 process readiness 稳定时间问题 | pass，py_compile、server help、health/list smoke、diff 通过 | pass，临时 manager 已停止 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 
 ## 代码审查（Code Review）
 
@@ -905,14 +907,16 @@ Changelog 计划（Changelog plan）:
 | Planning | 直接让 agent 调 HTTP API 容易因上下文压缩写错 | major | 采用 `pm_*` 脚手架脚本封装 API |
 | Planning | 自由 PowerShell/cmd 命令可能回到长命令问题 | major | 第一版只支持 `cmd-file` 和 `powershell-file`，禁止 command string |
 | Planning | 早期 schema 顶层放置 `host`/`port`，容易把 process-manager 误设计为 Web-only 管理器 | major | 已改为通用长期进程模型，端口只放在启动参数、readiness 或 observed 中 |
+| Stage 2 | PowerShell 写出的 JSON 可能带 UTF-8 BOM，初版 read_json 无法读取 | major | `read_json` 和 `read_token` 改用 `utf-8-sig` |
+| Stage 2 | `process` readiness 初版没有严格按 stableSeconds 判断 | major | 记录 `startedAtEpoch` 并按 elapsed time 判断 |
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: Stage 1 完成，准备进入 Stage 2。
-- 已完成（Completed）: 已新增 `skills/process-manager/SKILL.md`、`references/workflow.md` 和 4 个 JSON 模板；明确 Windows only、`pm_*` 脚本、绝对路径、隐藏窗口、readiness 和顶层不使用通用 `host`/`port`。
-- 最新 commit（Latest commit）: `d95b099` 规划基线；Stage 1 commit pending。
-- 下一步（Next action）: Stage 2，实现 `manager_server.py` 和 `pm_common.py`。
-- 未覆盖/风险（Not covered/risks）: 尚未实现 manager 和 pm 脚本；未启动 manager；未验证 mock lifecycle；真实业务服务和非 Windows 不覆盖；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或提权提交。
+- 当前阶段（Current stage）: Stage 2 完成，准备进入 Stage 3。
+- 已完成（Completed）: 已新增 `pm_common.py` 和 `manager_server.py`，实现 manager 配置、token 鉴权、service 校验、内部 processKey、状态文件、隐藏窗口启动、日志路径、start/status/list/logs/ready/stop API。
+- 最新 commit（Latest commit）: `7d56846` Stage 1；Stage 2 commit pending。
+- 下一步（Next action）: Stage 3，实现 `pm_*` CLI 脚手架。
+- 未覆盖/风险（Not covered/risks）: 尚未实现 CLI 脚本、bootstrap 和 mock lifecycle；真实 Go/Python 测试项目验证留到 Stage 5；非 Windows 不覆盖；Git 普通命令当前受 dubious ownership 保护影响，后续需使用一次性 `-c safe.directory=...` 或提权提交。
 
 ## 提交记录（Commit Log）
 
@@ -925,4 +929,5 @@ Changelog 计划（Changelog plan）:
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | `d95b099` | `docs(process-manager): 托管进程管理 skill 实施计划` | 不写入 CHANGELOG |
-| Stage 1 | dev-skills | pending | `feat(process-manager): 新增进程管理 skill 骨架` | 2026-06-12 Stage 24 |
+| Stage 1 | dev-skills | `7d56846` | `feat(process-manager): 新增进程管理 skill 骨架` | 2026-06-12 Stage 24 |
+| Stage 2 | dev-skills | pending | `feat(process-manager): 实现 manager 服务核心` | 2026-06-12 Stage 25 |

@@ -3,6 +3,6 @@
   "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-skill",
   "title": "process-manager skill Windows 进程管理中心",
   "status": "in_progress",
-  "next_action": "Stage 2：实现 manager_server.py 和 pm_common.py",
+  "next_action": "Stage 3：实现 pm_* CLI 脚手架",
   "updated_at": "2026-06-12"
 }

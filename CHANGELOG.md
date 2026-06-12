@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 25: process-manager manager server 和公共库
+
+- 新增 `pm_common.py`，集中处理 manager 配置、token、service 校验、绝对路径校验、启动器转换和 HTTP 客户端基础能力。
+- 新增 `manager_server.py`，提供本地 token 鉴权的 health、list、status、logs、start、ready 和 stop API。
+- 支持内部 processKey、自动 runDir/stdout/stderr/pidFile、隐藏窗口启动和通用 readiness 判断。
+- Commit: `pending`
+- Commit message: `feat(process-manager): 实现 manager 服务核心`
+
 ### Stage 24: process-manager skill 骨架和模板
 
 - 新增 `process-manager` skill 的 `SKILL.md` 和 workflow，定义 Windows 长期后台进程管理流程。
 - 新增 manager、direct、cmd-file 和 powershell-file JSON 模板，明确绝对路径、隐藏窗口和 readiness 规则。
 - 完成 skill 基础校验、JSON 模板解析和关键规则检索。
-- Commit: `pending`
+- Commit: `7d56846`
 - Commit message: `feat(process-manager): 新增进程管理 skill 骨架`
 
 ## 2026-06-10
