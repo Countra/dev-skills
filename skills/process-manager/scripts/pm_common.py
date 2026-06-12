@@ -436,6 +436,9 @@ def http_request(config: ManagerConfig, method: str, path: str, payload: dict[st
             data = json.loads(text) if text else {}
         except json.JSONDecodeError:
             data = {"error": text}
+        if "error" not in data:
+            data["error"] = f"HTTP {exc.code} {exc.reason}"
+        data.setdefault("ok", False)
         return exc.code, data
     except urllib.error.URLError as exc:
         raise PMError(f"manager 不可用：{exc}") from exc

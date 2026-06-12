@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 26: process-manager pm 脚手架脚本
+
+- 新增 `pm_init.py`、`pm_health.py`、`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`pm_status.py`、`pm_logs.py`、`pm_list.py`、`pm_stop.py`、`pm_restart.py` 和 `pm_doctor.py`。
+- 将 manager API 调用封装为短命令，避免 agent 手写 HTTP 请求。
+- 验证 CLI help、Python 编译、配置初始化、正向 service 校验、离线 manager 失败输出和顶层 host/port 拒绝。
+- Commit: `pending`
+- Commit message: `feat(process-manager): 增加 pm 脚手架命令`
+
 ### Stage 25: process-manager manager server 和公共库
 
 - 新增 `pm_common.py`，集中处理 manager 配置、token、service 校验、绝对路径校验、启动器转换和 HTTP 客户端基础能力。
 - 新增 `manager_server.py`，提供本地 token 鉴权的 health、list、status、logs、start、ready 和 stop API。
 - 支持内部 processKey、自动 runDir/stdout/stderr/pidFile、隐藏窗口启动和通用 readiness 判断。
-- Commit: `pending`
+- Commit: `b81e77b`
 - Commit message: `feat(process-manager): 实现 manager 服务核心`
 
 ### Stage 24: process-manager skill 骨架和模板
