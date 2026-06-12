@@ -17,5 +17,6 @@
 - Resume Summary 更新
 - 提交信息文件方式和禁止多个 `-m` 拆分 bullet
 - skill 更新后的重新读取和轻量状态处理
+- process-manager 长期进程强制管理、manager 离线阻塞、上下文恢复复查和 finite command 例外
 
 这些文件是 prompt fixtures，不是自动判分测试。使用时应人工或通过外部评估器检查输出是否符合 `expected.yaml`。

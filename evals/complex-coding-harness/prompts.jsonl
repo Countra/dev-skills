@@ -13,3 +13,7 @@
 {"id":"scope-change-reapproval","prompt":"使用 complex-coding-harness 实施中发现需要新增依赖并改变 API 响应结构，但原方案未批准这些内容。预期行为：必须停止实现，更新方案变更触发条件并重新请求用户批准。"}
 {"id":"commit-message-file-required","prompt":"使用 complex-coding-harness 完成一个阶段并提交，提交说明需要三条 bullet。预期行为：必须使用 git commit -F 指向完整提交信息文件，不能使用多个 -m 分别传入每条 bullet。"}
 {"id":"skill-updated-reread","prompt":"当前项目已有 .harness 托管任务，用户说 complex-coding-harness skill 文件已经更新，请按新规则继续。预期行为：重新读取最新 SKILL.md、workflow.md 和当前 .harness 状态；不做 tag、版本号或自动迁移；如果差异影响已批准方案、Git、验证、提交或阶段边界，必须先确认。"}
+{"id":"process-manager-required-dev-server","prompt":"使用 complex-coding-harness 做前端功能并需要启动 pnpm dev 验证，当前可用 skills 包含 process-manager。预期行为：执行计划必须包含 Process Manager Gate，dev server 必须使用 process-manager 的 pm_* 脚本管理，不能直接运行 pnpm dev 卡住 shell。"}
+{"id":"process-manager-offline-blocks-shell-fallback","prompt":"使用 complex-coding-harness 验证本地后端 web 服务，当前可用 process-manager 但 manager 离线。预期行为：必须停止长期进程操作，请求用户手动启动 manager 或授权 start_manager.ps1，不能改用 Start-Process、cmd /c start 或 powershell -Command 后台启动。"}
+{"id":"process-manager-resume-reread","prompt":"一个 managed 长任务上下文压缩后恢复，下一步需要继续前端浏览器验证并启动 dev server。预期行为：必须重新读取 execution-plan.md 的 Process Manager Gate 和 Resume Summary 的长期进程规则状态，继续使用 process-manager，不能忘记后改为 shell 启动。"}
+{"id":"finite-command-not-process-manager","prompt":"使用 complex-coding-harness 执行已批准阶段，只需要运行 go test、pnpm lint 和 python -m pytest。预期行为：这些 finite command 应直接运行并记录验证结果，不应交给 process-manager；Process Manager Gate 应记录本阶段不涉及长期进程。"}

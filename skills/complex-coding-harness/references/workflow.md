@@ -47,6 +47,47 @@
 12. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
 13. 完成最终交付门禁，给出任务结论、验证摘要、关键证据、commit 信息和剩余风险。
 
+## 长期进程管理强制规则
+
+如果当前会话可用 skill 列表中存在 `process-manager`，所有服务、后台和需要挂起运行的长期进程都必须由 `process-manager` 管理。该规则适用于方案制定、阶段实施、验证、调试、最终清理和上下文恢复后的继续执行。
+
+长期进程包括：
+
+- 前端 dev server，例如 `pnpm dev`、`npm run dev`、`vite`。
+- 后端 web/API 服务，例如 Go、Python、Node、Java 的本地服务。
+- worker、watcher、队列消费者、模型服务、文件监听器。
+- 任何启动后不会马上返回、需要持续占用终端或端口的进程。
+
+finite command 不进入 `process-manager`，应按项目验证流程直接运行：
+
+- 单元测试、集成测试、lint、format、build。
+- 数据迁移、代码生成、一次性脚本。
+- 任何预期马上返回标准输出结果的命令。
+
+强制操作顺序：
+
+1. 在计划阶段判断每个阶段是否需要长期进程，并写入 `Process Manager Gate`。
+2. 如果需要长期进程，读取 `process-manager` 的 `SKILL.md` 和 `references/workflow.md`。
+3. 启动前先运行 `pm_health.py`；manager 离线时停止当前长期进程操作，请求用户手动启动 manager 或授权 `start_manager.ps1`。
+4. 准备或更新 service config 后运行 `pm_validate.py`。
+5. 使用 `pm_start.py` 启动，使用 `pm_ready.py` 或 `pm_status.py` 判断可用。
+6. 使用 `pm_logs.py` 采集日志证据，使用 `pm_stop.py` 或 `pm_restart.py` 清理或重启。
+7. 把 `processKey`、ready 结果、日志路径、清理结果写入验证证据。
+
+禁止：
+
+- 不直接运行会挂起 shell 的 `pnpm dev`、`npm run dev`、`go run`、`python app.py` 等长期服务命令。
+- 不手写 `Start-Process`、`cmd /c start`、`powershell -Command`、`nohup`、`&` 或自制后台 launcher 作为替代。
+- manager 离线时不允许退回 shell 启动；必须停止并确认。
+- 不自动 kill 不属于当前 `processKey` 的未知 PID 或未知端口占用者。
+
+防遗忘要求：
+
+- 每个 managed 任务的 `execution-plan.md` 必须包含 `Process Manager Gate`。
+- 每个阶段的 `Stage Entry Gate` 必须确认本阶段长期进程策略。
+- 每个阶段的 `Stage Exit Gate` 必须确认长期进程清理和证据记录。
+- 每个 `Resume Summary` 必须记录长期进程规则状态；上下文压缩或中断后，恢复流程必须重新读取该字段。
+
 ## Skill 更新后的继续工作
 
 如果用户提示 `complex-coding-harness` 已更新，不做 Git tag、schema version、workflow version 或自动迁移流程。继续当前任务前必须：
@@ -212,6 +253,7 @@ Custom：...
 - 上一阶段没有未处理的 blocking 或 major finding。
 - 本阶段相关环境、命令、工具和权限可用，或替代策略已记录。
 - 本阶段范围没有超出已批准方案。
+- 如果本阶段需要长期进程，`Process Manager Gate` 已通过；如果不需要，已明确记录为 not-applicable。
 - 如果存在用户或未知改动，必须暂停确认。
 
 `Stage Exit Gate` 通过前不能进入下一阶段或最终交付。必须检查：
@@ -220,6 +262,7 @@ Custom：...
 - code review 已完成，blocking 和 major finding 已关闭。
 - 必需验证已执行；无法执行时已记录原因、影响和替代证据。
 - 明显缺陷已修复，并已重复必要 review 和验证。
+- 长期进程均已通过 `process-manager` 记录 ready/log/status/stop 证据，或已明确记录本阶段不涉及长期进程。
 - `execution-plan.md`、changelog 或等价变更记录、`Commit Log` 已更新。
 - 如阶段提交已授权，已完成提交并记录 commit hash；未提交时已说明原因。
 
@@ -227,17 +270,18 @@ Custom：...
 
 1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、`pending-decisions.md`（如存在）、项目 `docs/development.md` 和 changelog。
 2. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
-3. 检查 `Git Context` 和实际 git 状态，确认当前分支、主分支同步和工作区安全。
-4. 阅读本阶段相关代码、测试、配置、API 和文档。
-5. 在批准范围内做最小必要修改。
-6. 修复明显缺陷；小优化只能在不改变方案方向时执行。
-7. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
-8. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
-9. 按 `Validation` 和 `.harness/environment.md` 执行验证。
-10. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
-11. 更新 changelog 或项目等价变更记录。
-12. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
-13. 进入下一阶段前，重读任务记录和 changelog，确认状态没有丢失。
+3. 复查 `Process Manager Gate`，确认本阶段是否需要长期进程；需要时必须使用 `process-manager`，不能手写后台 shell 命令。
+4. 检查 `Git Context` 和实际 git 状态，确认当前分支、主分支同步和工作区安全。
+5. 阅读本阶段相关代码、测试、配置、API 和文档。
+6. 在批准范围内做最小必要修改。
+7. 修复明显缺陷；小优化只能在不改变方案方向时执行。
+8. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
+9. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
+10. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
+11. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
+12. 更新 changelog 或项目等价变更记录。
+13. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
+14. 进入下一阶段前，重读任务记录、`Process Manager Gate` 和 changelog，确认状态没有丢失。
 
 ## 验证规则
 
@@ -245,7 +289,7 @@ Custom：...
 - 后端工作必须包含相关单元测试；API 变更还需要接口 smoke 或契约检查。
 - Python 工作必须使用配置的 conda、venv、解释器或包管理器。
 - 每轮大修改必须运行配置的 smoke 检查。
-- 长期后台进程（例如 dev server、web 服务、worker、watcher、模型服务）必须优先交给 `process-manager` skill 管理；finite command 仍直接运行，不进入 process-manager。
+- 长期后台进程（例如 dev server、web 服务、worker、watcher、模型服务）在 `process-manager` skill 存在时必须交给它管理；finite command 仍直接运行，不进入 process-manager。
 - 如果 `process-manager` 可用，必须先读取它的 `SKILL.md` 和 `references/workflow.md`，再用 `pm_health.py`、`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`pm_logs.py`、`pm_stop.py` 等脚本管理生命周期。
 - 如果 manager 离线，必须停止当前长期进程操作，请求用户手动启动 manager 或授权运行 `start_manager.ps1`；不要手写 `Start-Process`、`nohup`、`pnpm dev` 后台化命令。
 - 如果某项验证无法执行，必须记录原因、影响和替代证据，不能声称通过。
@@ -260,7 +304,7 @@ Custom：...
 - `minor`：可在不改变方案方向时自修；不修复时必须说明影响。
 - `follow-up`：不影响当前验收，但必须记录后续建议。
 
-每个阶段结束后必须写 `Resume Summary`，用于上下文压缩后快速恢复。至少包含当前阶段、已完成内容、最新 commit、下一步、未覆盖范围和剩余风险。
+每个阶段结束后必须写 `Resume Summary`，用于上下文压缩后快速恢复。至少包含当前阶段、已完成内容、最新 commit、下一步、长期进程规则状态、未覆盖范围和剩余风险。
 
 ## 最终交付门禁
 
@@ -335,5 +379,6 @@ feat(scope): 标题
 2. 读取 `pending-decisions.md`（如存在）。
 3. 读取当前 `execution-plan.md`。
 4. 读取 `.harness/environment.md`。
-5. 检查 `Git Context`、实际文件和 git 状态。
-6. 继续 `next_action`，不要重新开任务。
+5. 复查 `Process Manager Gate` 和 `Resume Summary` 的长期进程规则状态。
+6. 检查 `Git Context`、实际文件和 git 状态。
+7. 继续 `next_action`，不要重新开任务。

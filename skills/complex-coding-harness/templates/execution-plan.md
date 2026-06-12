@@ -206,6 +206,38 @@ Workspace 环境来源（Workspace environment source）:
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |
 
+## 长期进程管理（Process Manager Gate）
+
+是否需要长期后台进程（Needs long-running processes）:
+
+- yes/no
+
+process-manager skill 是否存在（process-manager skill available）:
+
+- yes/no/not-checked
+
+规则结论（Rule decision）:
+
+- 如果 `process-manager` 存在，所有服务、后台或需要挂起运行的长期进程必须使用它管理。
+- finite command，例如测试、lint、build、format、迁移和一次性脚本，不进入 `process-manager`。
+- manager 离线时必须停止长期进程操作，请求用户手动启动 manager 或授权 bootstrap；不能退回 shell 后台启动。
+
+需要托管的服务（Managed services）:
+
+| 服务（Service） | 类型（Type） | 阶段（Stage） | service config | readiness | processKey | 日志/证据（Logs/evidence） | 清理状态（Cleanup） |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  | dev-server / web / worker / watcher / model / other |  |  |  | pending | pending | pending |
+
+禁止 shell 后台启动确认（No shell background start）:
+
+- pending
+
+每阶段复查要求（Per-stage reread requirement）:
+
+- Stage Entry Gate 前必须复查本节。
+- 启动、验证、调试长期进程前必须复查本节。
+- 上下文压缩或中断恢复后必须复查本节和 `Resume Summary`。
+
 ## 验证（Validation）
 
 必需验证（Required）:
@@ -323,15 +355,15 @@ Changelog 计划（Changelog plan）:
 
 ## 阶段进入门禁（Stage Entry Gate）
 
-| 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 范围匹配（Scope match） | 结论（Result） |
-| --- | --- | --- | --- | --- | --- |
-|  | pending | pending | pending | pending | pending |
+| 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 长期进程门禁（Process manager gate） | 范围匹配（Scope match） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending | pending |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
-| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
-| --- | --- | --- | --- | --- | --- | --- |
-|  | pending | pending | pending | pending | pending | pending |
+| 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 长期进程清理和证据（Process cleanup/evidence） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending | pending | pending |
 
 ## 代码审查（Code Review）
 
@@ -345,6 +377,7 @@ Changelog 计划（Changelog plan）:
 - 已完成（Completed）:
 - 最新 commit（Latest commit）:
 - 下一步（Next action）:
+- 长期进程规则（Process manager rule）:
 - 未覆盖/风险（Not covered/risks）:
 
 ## 提交记录（Commit Log）
