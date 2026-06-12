@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 27: process-manager Windows bootstrap
+
+- 新增 `start_manager.ps1` 和 `stop_manager.ps1`，用于启动和停止 manager 自身。
+- bootstrap 默认隐藏窗口，记录 `manager.pid`，由 manager 自行写 stdout/stderr 日志，避免 PowerShell 重定向长期进程导致阻塞。
+- 验证临时 workspace 下 `pm_init`、manager start、`pm_health` 和 manager stop 全流程。
+- Commit: `pending`
+- Commit message: `feat(process-manager): 增加 Windows manager 启停脚本`
+
 ### Stage 26: process-manager pm 脚手架脚本
 
 - 新增 `pm_init.py`、`pm_health.py`、`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`pm_status.py`、`pm_logs.py`、`pm_list.py`、`pm_stop.py`、`pm_restart.py` 和 `pm_doctor.py`。
 - 将 manager API 调用封装为短命令，避免 agent 手写 HTTP 请求。
 - 验证 CLI help、Python 编译、配置初始化、正向 service 校验、离线 manager 失败输出和顶层 host/port 拒绝。
-- Commit: `pending`
+- Commit: `c3c9b77`
 - Commit message: `feat(process-manager): 增加 pm 脚手架命令`
 
 ### Stage 25: process-manager manager server 和公共库

@@ -445,7 +445,7 @@ def http_request(config: ManagerConfig, method: str, path: str, payload: dict[st
 
 
 def print_json(data: Any) -> None:
-    print(json.dumps(data, ensure_ascii=False, indent=2))
+    print(json.dumps(data, ensure_ascii=False, indent=2), flush=True)
 
 
 def fail(message: str) -> int:

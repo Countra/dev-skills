@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -430,10 +431,20 @@ class PMHTTPServer(ThreadingHTTPServer):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="启动 process-manager 本地管理服务")
     parser.add_argument("--config", required=True, help="manager-config.json 绝对路径")
+    parser.add_argument("--stdout-log", help="manager stdout 日志路径")
+    parser.add_argument("--stderr-log", help="manager stderr 日志路径")
     args = parser.parse_args(argv)
     config_path = Path(args.config)
     if not config_path.is_absolute():
         raise SystemExit("manager --config 必须是绝对路径")
+    if args.stdout_log:
+        stdout_path = Path(args.stdout_log)
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        sys.stdout = stdout_path.open("a", encoding="utf-8", buffering=1)
+    if args.stderr_log:
+        stderr_path = Path(args.stderr_log)
+        stderr_path.parent.mkdir(parents=True, exist_ok=True)
+        sys.stderr = stderr_path.open("a", encoding="utf-8", buffering=1)
     config = load_manager_config(config_path)
     if config.host != DEFAULT_HOST:
         raise SystemExit("manager 只允许绑定 127.0.0.1")
