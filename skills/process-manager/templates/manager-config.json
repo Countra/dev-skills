@@ -1,6 +1,10 @@
 {
   "host": "127.0.0.1",
-  "port": 49321,
+  "port": 18080,
+  "portRetry": {
+    "enabled": true,
+    "maxSwitches": 3
+  },
   "workspaceRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
   "stateRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager",
   "tokenFile": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager/token"

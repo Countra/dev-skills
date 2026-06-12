@@ -36,6 +36,7 @@
 - service config 的 `cwd`、可执行程序、脚本和路径类参数必须是绝对路径。
 - 顶层不写通用 `host`/`port`；端点放在 readiness 或启动参数里。
 - 默认隐藏窗口，stdout/stderr 写入 manager 自动生成的日志文件。
+- manager 默认端口是 `18080`；如果绑定失败，会最多向后切换 3 次并把最终端口写回 config。
 
 ## Repository Layout
 

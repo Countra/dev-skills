@@ -42,17 +42,21 @@
 └── tmp/
 ```
 
-`token`、`manager.pid`、`processes.json`、`runs/`、`logs/` 和 `tmp/` 是运行产物，应默认加入 `.gitignore`。
+`config.json`、`token`、`manager.pid`、`processes.json`、`services/`、`runs/`、`logs/` 和 `tmp/` 是运行产物，应默认加入 `.gitignore`。如果要共享 service 配置，请放到项目自己的模板目录，不要直接提交机器绝对路径。
 
 ## Manager 配置
 
 manager 配置描述控制面，不描述业务服务：
 
 - `host` 必须是 `127.0.0.1`。
-- `port` 是 manager API 端口。
+- `port` 是 manager API 初始端口，默认 `18080`。
+- `portRetry.enabled` 默认 `true`。
+- `portRetry.maxSwitches` 默认 `3`，表示初始端口失败后最多再尝试 3 个递增端口。
 - `workspaceRoot` 必须是绝对路径。
 - `stateRoot` 必须在 workspaceRoot 内。
 - `tokenFile` 必须在 stateRoot 内。
+
+如果绑定端口失败，manager 会按 `port`、`port + 1`、`port + 2`、`port + 3` 顺序尝试。成功后会把最终端口写回 `config.json`，后续 `pm_*` 脚本读取同一个配置即可连接真实端口。绑定失败通常来自 Windows excluded port range、端口占用或安全软件拦截。
 
 ## Service 配置
 
@@ -190,6 +194,7 @@ python skills/process-manager/scripts/pm_stop.py --service frontend
 ## 故障处理
 
 - manager 离线：不要尝试手写后台命令，先请求用户批准启动 manager。
+- manager 启动时报 `WinError 10013` 或 `WinError 10048`：优先检查 `config.json` 中的 `port` 和 `portRetry`；如果自动切换仍失败，手动指定一个不在 Windows excluded port range 内的端口后重启。
 - token 不匹配：运行 `pm_doctor.py`，不要打印 token 值。
 - 端口占用：如果占用者不是当前 manager 管理的 processKey，不要自动 kill。
 - readiness 超时：查看 stdout/stderr 日志，必要时调整 service config 后重新 validate。

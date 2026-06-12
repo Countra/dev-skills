@@ -9,3 +9,4 @@
 - service 顶层不能写通用 `host`/`port`。
 - 动态端口通过 log readiness 和 observed 记录。
 - manager 离线时必须停止并请求启动或授权 bootstrap。
+- manager 默认端口、绑定失败重试和最终端口写回。

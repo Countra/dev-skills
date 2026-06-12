@@ -20,7 +20,9 @@ from typing import Any
 
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 49321
+DEFAULT_PORT = 18080
+LEGACY_DEFAULT_PORT = 49321
+DEFAULT_PORT_RETRY_SWITCHES = 3
 SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 PROCESS_ID_RE = re.compile(r"^pm-\d{8}-\d{6}-[0-9a-f]{4,12}$")
 PATH_FLAG_RE = re.compile(r"(path|file|dir|root|config|script|output|input|log)$", re.IGNORECASE)
@@ -37,6 +39,9 @@ class ManagerConfig:
     workspace_root: Path
     state_root: Path
     token_file: Path
+    config_path: Path
+    port_retry_enabled: bool = True
+    port_retry_max_switches: int = DEFAULT_PORT_RETRY_SWITCHES
 
     @property
     def base_url(self) -> str:
@@ -154,22 +159,47 @@ def load_manager_config(path: Path) -> ManagerConfig:
         raise PMError("stateRoot 必须位于 workspaceRoot 内")
     if not is_relative_to(token_file, state_root):
         raise PMError("tokenFile 必须位于 stateRoot 内")
+    retry_config = data.get("portRetry")
+    if retry_config is None and port == LEGACY_DEFAULT_PORT:
+        port = DEFAULT_PORT
+    if retry_config is None:
+        retry_config = {}
+    retry_config = ensure_object(retry_config, "portRetry")
+    retry_enabled = retry_config.get("enabled", True)
+    if not isinstance(retry_enabled, bool):
+        raise PMError("portRetry.enabled 必须是 boolean")
+    max_switches = retry_config.get("maxSwitches", DEFAULT_PORT_RETRY_SWITCHES)
+    if isinstance(max_switches, bool) or not isinstance(max_switches, int):
+        raise PMError("portRetry.maxSwitches 必须是整数")
+    if max_switches < 0 or max_switches > 20:
+        raise PMError("portRetry.maxSwitches 必须在 0-20 范围内")
     return ManagerConfig(
         host=host,
         port=port,
         workspace_root=workspace_root,
         state_root=state_root,
         token_file=token_file,
+        config_path=path.resolve(),
+        port_retry_enabled=retry_enabled,
+        port_retry_max_switches=max_switches,
     )
 
 
-def create_default_manager_config(workspace: Path, path: Path | None = None) -> ManagerConfig:
+def create_default_manager_config(workspace: Path, path: Path | None = None, port: int = DEFAULT_PORT, port_retry_switches: int = DEFAULT_PORT_RETRY_SWITCHES) -> ManagerConfig:
     root = workspace.resolve()
     state_root = default_state_root(root)
     config_path = path or state_root / "config.json"
+    if port <= 0 or port > 65535:
+        raise PMError("port 必须在 1-65535 范围内")
+    if port_retry_switches < 0 or port_retry_switches > 20:
+        raise PMError("portRetry.maxSwitches 必须在 0-20 范围内")
     config = {
         "host": DEFAULT_HOST,
-        "port": DEFAULT_PORT,
+        "port": port,
+        "portRetry": {
+            "enabled": True,
+            "maxSwitches": port_retry_switches,
+        },
         "workspaceRoot": str(root),
         "stateRoot": str(state_root),
         "tokenFile": str(state_root / "token"),
@@ -184,6 +214,20 @@ def create_default_manager_config(workspace: Path, path: Path | None = None) -> 
     if not processes_file.exists():
         write_json_atomic(processes_file, {"active": {}, "processes": {}})
     return load_manager_config(config_path)
+
+
+def write_manager_port(config: ManagerConfig, port: int) -> ManagerConfig:
+    data = ensure_object(read_json(config.config_path), "manager config")
+    data["port"] = port
+    retry = data.get("portRetry")
+    if retry is None:
+        retry = {}
+    retry = ensure_object(retry, "portRetry")
+    retry.setdefault("enabled", config.port_retry_enabled)
+    retry.setdefault("maxSwitches", config.port_retry_max_switches)
+    data["portRetry"] = retry
+    write_json_atomic(config.config_path, data)
+    return load_manager_config(config.config_path)
 
 
 def read_token(config: ManagerConfig) -> str:

@@ -4,14 +4,17 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -37,6 +40,7 @@ from pm_common import (
     stop_pid_tree,
     tcp_ready,
     validate_service_config,
+    write_manager_port,
 )
 
 
@@ -428,6 +432,36 @@ class PMHTTPServer(ThreadingHTTPServer):
         self.manager = manager
 
 
+def should_retry_bind(exc: OSError) -> bool:
+    return exc.errno in {errno.EACCES, errno.EADDRINUSE, 10013, 10048}
+
+
+def bind_manager_server(config: ManagerConfig) -> tuple[PMHTTPServer, ManagerConfig, list[dict[str, Any]]]:
+    attempts = config.port_retry_max_switches if config.port_retry_enabled else 0
+    errors: list[dict[str, Any]] = []
+    for offset in range(attempts + 1):
+        port = config.port + offset
+        if port > 65535:
+            break
+        candidate = replace(config, port=port)
+        try:
+            server = PMHTTPServer((candidate.host, candidate.port), ProcessManager(candidate))
+        except OSError as exc:
+            errors.append({"port": port, "errno": exc.errno, "error": str(exc)})
+            if not should_retry_bind(exc) or offset >= attempts:
+                raise PMError(f"manager 端口绑定失败，已尝试 {', '.join(str(item['port']) for item in errors)}；请检查 Windows excluded port range 或手动指定端口") from exc
+            continue
+        try:
+            candidate = write_manager_port(config, port)
+        except Exception:
+            server.server_close()
+            raise
+        if port != config.port:
+            server.manager = ProcessManager(candidate)
+        return server, candidate, errors
+    raise PMError("manager 没有可尝试的端口，请手动指定 1-65535 范围内端口")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="启动 process-manager 本地管理服务")
     parser.add_argument("--config", required=True, help="manager-config.json 绝对路径")
@@ -448,8 +482,12 @@ def main(argv: list[str] | None = None) -> int:
     config = load_manager_config(config_path)
     if config.host != DEFAULT_HOST:
         raise SystemExit("manager 只允许绑定 127.0.0.1")
-    server = PMHTTPServer((config.host, config.port), ProcessManager(config))
-    print_json({"ok": True, "status": "listening", "host": config.host, "port": config.port})
+    try:
+        server, config, bind_errors = bind_manager_server(config)
+    except PMError as exc:
+        print_json({"ok": False, "error": str(exc)})
+        return 1
+    print_json({"ok": True, "status": "listening", "host": config.host, "port": config.port, "bindRetries": bind_errors})
     try:
         server.serve_forever()
     except KeyboardInterrupt:
