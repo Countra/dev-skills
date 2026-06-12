@@ -1,8 +1,8 @@
-﻿{
-    "task_id":  "2026-06-10-feature-complex-coding-harness-two-phase-gates",
-    "task_dir":  ".harness/tasks/2026-06-10/feature/complex-coding-harness-two-phase-gates",
-    "title":  "complex-coding-harness 两阶段门禁增强",
-    "status":  "completed",
-    "next_action":  "所有阶段已完成，进行最终交付说明",
-    "updated_at":  "2026-06-10"
+{
+  "task_id": "2026-06-12-feature-process-manager-skill",
+  "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-skill",
+  "title": "process-manager skill Windows 进程管理中心",
+  "status": "in_progress",
+  "next_action": "Stage 1：创建 process-manager skill 骨架、workflow 和模板",
+  "updated_at": "2026-06-12"
 }
