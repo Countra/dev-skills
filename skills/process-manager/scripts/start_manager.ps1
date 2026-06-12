@@ -43,13 +43,20 @@ $logsDir = Join-Path $stateRoot "logs"
 New-Item -ItemType Directory -Force -Path $logsDir | Out-Null
 
 if (Test-Path -LiteralPath $pidFile) {
-  $oldPidText = (Get-Content -Raw -LiteralPath $pidFile).Trim()
+  $oldPidRaw = Get-Content -Raw -LiteralPath $pidFile
+  if ($null -eq $oldPidRaw) {
+    $oldPidText = ""
+  } else {
+    $oldPidText = $oldPidRaw.Trim()
+  }
   if ($oldPidText -match '^\d+$') {
     $oldProcess = Get-Process -Id ([int]$oldPidText) -ErrorAction SilentlyContinue
     if ($null -ne $oldProcess) {
       Write-Output "ALREADY_RUNNING pid=$oldPidText"
       exit 0
     }
+  } elseif (-not [string]::IsNullOrWhiteSpace($oldPidText)) {
+    Clear-Content -LiteralPath $pidFile
   }
 }
 

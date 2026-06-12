@@ -2,12 +2,20 @@
 
 ## 2026-06-12
 
+### Stage 30: process-manager bootstrap 空 PID 修复
+
+- 修复 `start_manager.ps1` 在 `manager.pid` 为空时调用 `.Trim()` 失败的问题。
+- 修复 `stop_manager.ps1` 遇到空 `manager.pid` 时应返回 `NOT_RUNNING`，避免无效异常。
+- 补跑临时 Go Web 项目验证，使用绝对路径 Go 编译 exe 后由 manager 托管启动、HTTP ready、读取 stdout 日志并停止清理。
+- Commit: `pending`
+- Commit message: `fix(process-manager): 修复 manager 空 PID 启动`
+
 ### Stage 29: complex-coding-harness 集成说明
 
 - 在 `complex-coding-harness` 中补充长期后台进程优先使用 `process-manager` 的规则。
 - 更新 README，补充 `process-manager` skill 用途、约束和仓库结构。
 - 扩展 `skill.sh install`，从 `skills/` 安装所有有效 skill；`sh` 不在当前 PowerShell PATH，未执行 shell 语法检查。
-- Commit: `pending`
+- Commit: `153d4dd`
 - Commit message: `docs(process-manager): 集成复杂任务 harness 说明`
 
 ### Stage 28: process-manager mock lifecycle 示例和评估

@@ -3,6 +3,6 @@
   "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-skill",
   "title": "process-manager skill Windows 进程管理中心",
   "status": "in_progress",
-  "next_action": "最终复查、验证汇总和交付总结",
+  "next_action": "提交 bootstrap 空 PID 修复后执行最终全量验证",
   "updated_at": "2026-06-12"
 }

@@ -34,7 +34,16 @@ if (-not (Test-Path -LiteralPath $pidFile)) {
   exit 0
 }
 
-$pidText = (Get-Content -Raw -LiteralPath $pidFile).Trim()
+$pidRaw = Get-Content -Raw -LiteralPath $pidFile
+if ($null -eq $pidRaw) {
+  $pidText = ""
+} else {
+  $pidText = $pidRaw.Trim()
+}
+if ([string]::IsNullOrWhiteSpace($pidText)) {
+  Write-Output "NOT_RUNNING"
+  exit 0
+}
 if ($pidText -notmatch '^\d+$') {
   Clear-Content -LiteralPath $pidFile
   throw "manager.pid 内容不是 PID：$pidText"

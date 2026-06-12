@@ -880,8 +880,9 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | completed | 已实现 manager server 和公共库 | py_compile、server help、health/list smoke、diff 通过 | health/list 返回 ok；manager stopped | Stage 3 |
 | Stage 3 | completed | 已实现 11 个 pm 脚手架脚本 | py_compile、help、validate 正反例、离线 health、diff 通过 | stage3 cli validation ok | Stage 4 |
 | Stage 4 | completed | 已实现 Windows bootstrap 启停脚本 | PowerShell parse、py_compile、manager start/health/stop、diff 通过 | stage4 bootstrap ok | Stage 5 |
-| Stage 5 | completed | 已完成 Python lifecycle、示例和 eval | Python lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 未安装未执行 | stage5 python lifecycle ok；go not recognized | Stage 6 |
+| Stage 5 | completed | 已完成 Python lifecycle、示例和 eval | Python lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 初次不在 PATH，最终使用绝对路径补验通过 | stage5 python lifecycle ok；Go Web lifecycle ok | Stage 6 |
 | Stage 6 | completed | 已补充 complex-coding-harness 集成说明、README 和安装脚本 | quick_validate、rg、diff 通过；sh 不可用未执行 | two skills valid；rg 命中 process-manager 规则 | 最终复查 |
+| Stage 7 | completed | 已修复 bootstrap 空 manager.pid 再启动失败 | PowerShell parse、diff、Go Web lifecycle、清理检查通过 | start/stop 空 PID 修复；Go Web ready/logs/stop ok | 最终全量验证 |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -894,6 +895,7 @@ Changelog 计划（Changelog plan）:
 | Stage 4 | pass，已重读 active-task 和 Stage 4 契约 | pass，当前 harness/feature；Stage 3 已提交 `c3c9b77`；仅新增 bootstrap 和日志参数支持 | pass，无 blocking 遗留；Stage 3 commit hash 已补入 changelog | pass，PowerShell、Python 可用；短暂启动 manager 验证后已停止 | pass，仅修改 bootstrap、manager stdout/stderr 参数、CHANGELOG、执行计划 | pass，未命中重新审批触发条件 | pass |
 | Stage 5 | pass，已重读 active-task、execution-plan 和验证要求 | pass，当前 harness/feature；Stage 4 已提交 `0f016d1`；运行产物在 ignored tmp 中 | pass，无 blocking 遗留；Stage 4 commit hash 已补入 changelog | partial，Python 可用，Go 不在 PATH | pass，修改 examples/evals、manager ready 修复、CHANGELOG、执行计划 | pass，Go 未安装不改变方案，记录未覆盖 | pass |
 | Stage 6 | pass，已重读 active-task、complex-coding-harness、README 和安装脚本 | pass，当前 harness/feature；Stage 5 已提交 `1226b53` | pass，无 blocking 遗留；Stage 5 commit hash 已补入 changelog | partial，Python/Git/rg 可用，sh 不在 PATH | pass，仅补充 harness 引用、README、skill.sh 和记录 | pass，未命中重新审批触发条件 | pass |
+| Stage 7 | pass，已重读 active-task、execution-plan、bootstrap 脚本和临时 Go 验证上下文 | pass，当前 harness/feature；Stage 6 已提交 `153d4dd`；仅修改 bootstrap 和记录 | pass，最终 Go 补验发现空 PID 缺陷，已作为本阶段修复 | pass，Python/PowerShell/Git 可用；Go 需使用绝对路径 `F:\dev\Go\bin\go.exe` | pass，仅修复 `start_manager.ps1` 和 `stop_manager.ps1` 空 PID 处理 | pass，属于验证发现缺陷的局部修复，不触发重新审批 | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
@@ -904,8 +906,9 @@ Changelog 计划（Changelog plan）:
 | Stage 2 | pass，已完成 manager server 和公共库 | pass，修复 BOM JSON 读取和 process readiness 稳定时间问题 | pass，py_compile、server help、health/list smoke、diff 通过 | pass，临时 manager 已停止 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 | Stage 3 | pass，已完成 pm 脚手架脚本 | pass，修复离线 manager 空错误输出 | pass，py_compile、全脚本 help、pm_init、pm_validate 正反例、pm_health 离线失败和 diff 通过 | pass，不启动业务服务 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
 | Stage 4 | pass，已完成 Windows bootstrap | pass，修复 PowerShell 重定向长期进程可能阻塞的问题 | pass，PowerShell parse、py_compile、manager start/health/stop 和 diff 通过 | pass，临时 manager 已停止 | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
-| Stage 5 | pass，已完成 Python lifecycle、examples 和 eval | pass，修复 ready 返回状态被 running 覆盖的问题 | pass，Python HTTP/worker/dynamic lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 未安装未执行 | pass，所有临时服务和 manager 已停止，仅 TIME_WAIT | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pending | pass |
-| Stage 6 | pass，已完成 complex-coding-harness 集成说明 | pass，未发现 blocking/major 问题 | pass，两个 skill quick_validate、rg、diff 通过；sh 不在 PATH 未执行 | pass，不启动服务 | pass，已更新 README、CHANGELOG、execution-plan | pass，恢复摘要更新 | pending | pass |
+| Stage 5 | pass，已完成 Python lifecycle、examples 和 eval | pass，修复 ready 返回状态被 running 覆盖的问题 | pass，Python HTTP/worker/dynamic lifecycle、JSON/JSONL、quick_validate、py_compile、diff 通过；Go 补验在 Stage 7 完成 | pass，所有临时服务和 manager 已停止，仅 TIME_WAIT | pass，已更新 CHANGELOG 和 execution-plan | pass，恢复摘要更新 | pass，`1226b53` | pass |
+| Stage 6 | pass，已完成 complex-coding-harness 集成说明 | pass，未发现 blocking/major 问题 | pass，两个 skill quick_validate、rg、diff 通过；bash/WSL 不可用未执行 `sh -n` | pass，不启动服务 | pass，已更新 README、CHANGELOG、execution-plan | pass，恢复摘要更新 | pass，`153d4dd` | pass |
+| Stage 7 | pass，已完成 bootstrap 空 PID 修复 | pass，缺陷来自真实 Go 补验，修复范围局限在 PID 文件读取 | pass，PowerShell parse、diff、Go Web validate/start/ready/status/logs/stop、manager stop 和端口清理通过 | pass，Go Web 和 manager 已停止，仅 TIME_WAIT | pass，已更新 CHANGELOG、execution-plan、active-task | pass，恢复摘要更新 | pending | pass |
 
 ## 代码审查（Code Review）
 
@@ -920,16 +923,17 @@ Changelog 计划（Changelog plan）:
 | Stage 3 | 离线 manager 返回 HTTP 503 且空 body 时，CLI 初版只输出 `{}` | major | `http_request` 为 HTTPError 空响应补充 `ok:false` 和错误文本 |
 | Stage 4 | `Start-Process -RedirectStandardOutput/-RedirectStandardError` 启动长期 manager 可能让调用方等待流结束 | major | bootstrap 不再使用 PowerShell 重定向，改由 manager 自行打开 stdout/stderr 日志 |
 | Stage 5 | ready API 初版返回中 `status: running` 覆盖了 ready 状态，导致 `pm_ready.py` 退出码失败 | major | 调整 manager ready 返回合并顺序，确保成功时 `status: ready` |
-| Stage 5 | 本机未安装 Go，无法执行临时 Go Web 运行验证 | follow-up | 已生成 Go 示例源码和 service config，记录未覆盖；Python lifecycle 覆盖实际 manager 行为 |
-| Stage 6 | 当前 PowerShell PATH 没有 `sh`，无法执行 `sh -n skill.sh` | follow-up | 已用 diff/人工审查覆盖脚本修改，最终交付记录未覆盖 |
+| Stage 5 | 裸 `go` 不在当前 PowerShell PATH，无法直接执行临时 Go Web 运行验证 | follow-up | Stage 7 使用 `F:\dev\Go\bin\go.exe` 绝对路径补验通过，符合 skill 绝对路径规则 |
+| Stage 6 | 当前 `bash.exe` 是 WSL 入口且没有可用发行版，无法执行 `sh -n skill.sh` | follow-up | 已用 diff/人工审查覆盖脚本修改，最终交付记录未覆盖 |
+| Stage 7 | `manager.pid` 被 stop 脚本清空后，start 脚本读取空文件会对 `$null` 调 `.Trim()` | major | `start_manager.ps1` 将空 PID 视为未运行，`stop_manager.ps1` 遇到空 PID 返回 `NOT_RUNNING` |
 
 ## 恢复摘要（Resume Summary）
 
-- 当前阶段（Current stage）: Stage 6 完成，准备最终复查。
-- 已完成（Completed）: 已补充 `complex-coding-harness` 对 `process-manager` 的引用规则；README 增加 process-manager 说明；`skill.sh` 扩展为安装所有有效 skill。
-- 最新 commit（Latest commit）: `1226b53` Stage 5；Stage 6 commit pending。
-- 下一步（Next action）: 最终复查、验证汇总、提交记录补齐和交付总结。
-- 未覆盖/风险（Not covered/risks）: `sh -n skill.sh` 未执行，因为当前 PowerShell PATH 没有 sh；Go 运行验证未执行，因为本机 `go` 不在 PATH；非 Windows 不覆盖；真实用户项目验证不在本阶段范围。
+- 当前阶段（Current stage）: Stage 7 完成，准备最终全量验证和收口。
+- 已完成（Completed）: 已修复 bootstrap 空 `manager.pid` 再启动失败；已用临时 Go Web exe 完成 process-manager 托管验证；Stage 6 已提交并回填记录。
+- 最新 commit（Latest commit）: `153d4dd` Stage 6；Stage 7 commit pending。
+- 下一步（Next action）: 提交 Stage 7 修复，执行最终 quick_validate、py_compile、JSON/JSONL、diff、status 和记录收口。
+- 未覆盖/风险（Not covered/risks）: `sh -n skill.sh` 未执行，因为当前 `bash.exe` 是 WSL 入口且没有可用发行版；非 Windows 不覆盖；真实用户项目验证不在本阶段范围。
 
 ## 提交记录（Commit Log）
 
@@ -947,4 +951,5 @@ Changelog 计划（Changelog plan）:
 | Stage 3 | dev-skills | `c3c9b77` | `feat(process-manager): 增加 pm 脚手架命令` | 2026-06-12 Stage 26 |
 | Stage 4 | dev-skills | `0f016d1` | `feat(process-manager): 增加 Windows manager 启停脚本` | 2026-06-12 Stage 27 |
 | Stage 5 | dev-skills | `1226b53` | `test(process-manager): 补充 lifecycle 示例和评估` | 2026-06-12 Stage 28 |
-| Stage 6 | dev-skills | pending | `docs(process-manager): 集成复杂任务 harness 说明` | 2026-06-12 Stage 29 |
+| Stage 6 | dev-skills | `153d4dd` | `docs(process-manager): 集成复杂任务 harness 说明` | 2026-06-12 Stage 29 |
+| Stage 7 | dev-skills | pending | `fix(process-manager): 修复 manager 空 PID 启动` | 2026-06-12 Stage 30 |
