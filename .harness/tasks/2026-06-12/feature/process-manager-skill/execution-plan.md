@@ -931,8 +931,8 @@ Changelog 计划（Changelog plan）:
 
 - 当前阶段（Current stage）: Stage 7 完成，准备最终全量验证和收口。
 - 已完成（Completed）: 已修复 bootstrap 空 `manager.pid` 再启动失败；已用临时 Go Web exe 完成 process-manager 托管验证；Stage 6 已提交并回填记录。
-- 最新 commit（Latest commit）: `153d4dd` Stage 6；Stage 7 commit pending。
-- 下一步（Next action）: 提交 Stage 7 修复，执行最终 quick_validate、py_compile、JSON/JSONL、diff、status 和记录收口。
+- 最新 commit（Latest commit）: `39b489d` Stage 7。
+- 下一步（Next action）: 最终 quick_validate、py_compile、JSON/JSONL、diff、status 和记录收口。
 - 未覆盖/风险（Not covered/risks）: `sh -n skill.sh` 未执行，因为当前 `bash.exe` 是 WSL 入口且没有可用发行版；非 Windows 不覆盖；真实用户项目验证不在本阶段范围。
 
 ## 提交记录（Commit Log）
@@ -952,4 +952,12 @@ Changelog 计划（Changelog plan）:
 | Stage 4 | dev-skills | `0f016d1` | `feat(process-manager): 增加 Windows manager 启停脚本` | 2026-06-12 Stage 27 |
 | Stage 5 | dev-skills | `1226b53` | `test(process-manager): 补充 lifecycle 示例和评估` | 2026-06-12 Stage 28 |
 | Stage 6 | dev-skills | `153d4dd` | `docs(process-manager): 集成复杂任务 harness 说明` | 2026-06-12 Stage 29 |
-| Stage 7 | dev-skills | pending | `fix(process-manager): 修复 manager 空 PID 启动` | 2026-06-12 Stage 30 |
+| Stage 7 | dev-skills | `39b489d` | `fix(process-manager): 修复 manager 空 PID 启动` | 2026-06-12 Stage 30 |
+
+## 最终交付记录（Final Delivery Record）
+
+- 任务状态（Task status）: completed。
+- 最终工作分支（Final branch）: `harness/feature`。
+- 最新提交（Latest commit）: `39b489d`。
+- 运行时清理（Runtime cleanup）: 临时 Python/Go 服务和 manager 均已停止；端口仅剩 TIME_WAIT。
+- 未覆盖范围（Not covered）: 非 Windows 平台未覆盖；真实用户业务项目未覆盖；`skill.sh` 的 shell 语法检查未执行，因为当前 `bash.exe` 是 WSL 入口且没有可用发行版。
