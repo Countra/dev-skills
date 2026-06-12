@@ -7,7 +7,7 @@
 - 将 manager 默认端口从 `49321` 调整为 `18080`，避开 Windows 常见动态端口排除范围。
 - 增加 `portRetry` 配置，manager 绑定失败时最多向后切换 3 次并把最终端口写回 `config.json`。
 - 补充 `pm_init --port` 和 `--port-retry-switches`，并更新模板、文档、eval 和 `.gitignore`。
-- Commit: `pending`
+- Commit: `3c165d4`
 - Commit message: `fix(process-manager): 增加 manager 端口重试`
 
 ### Stage 31: complex-coding-harness 长期进程门禁
