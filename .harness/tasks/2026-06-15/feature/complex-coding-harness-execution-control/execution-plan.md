@@ -961,7 +961,12 @@ process-manager skill 是否可用（Available）:
 | Stage 3 Review 完成 | pass | 复查新增 JSONL 行，确认场景与计划一致 |
 | Stage 3 验证完成或替代证据已记录 | pass | JSONL 解析通过，新增 id 检索通过 |
 | Stage 3 任务记录更新 | pass | 已更新 active task、执行计划和 changelog |
-| Stage 3 Commit Log 更新 | pending | 提交后回填 hash |
+| Stage 3 Commit Log 更新 | pass | 已提交 `01f66c4` |
+| Stage 4 目标完成 | pass | 完成 quick_validate、JSONL 解析、关键规则检索、diff check 和最终记录收口 |
+| Stage 4 Review 完成 | pass | 复查当前 diff、工作区状态和最终记录，未发现 blocking 或 major finding |
+| Stage 4 验证完成或替代证据已记录 | pass | 全部必需验证通过 |
+| Stage 4 任务记录更新 | pass | 已更新 active task、执行计划、环境清单和 changelog |
+| Stage 4 Commit Log 更新 | pending | 提交后回填 hash |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -992,7 +997,7 @@ process-manager skill 是否可用（Available）:
 | Stage 3 当前阶段已完成 | pass | eval 场景已追加 |
 | Stage 3 当前阶段 review 已完成 | pass | 已复查 JSONL diff 和新增 id |
 | Stage 3 当前阶段验证已完成或替代证据已记录 | pass | JSONL 解析和 id 检索通过 |
-| Stage 3 当前阶段提交或未提交原因已记录 | pending | 提交后回填 |
+| Stage 3 当前阶段提交或未提交原因已记录 | pass | 已提交 `01f66c4` |
 | Stage 3 是否还有 pending stage | yes | Stage 4 |
 | Stage 3 是否存在 Stop Condition | no | 无阻塞 |
 | Stage 3 是否需要重新批准 | no | 未超出批准范围 |
@@ -1000,10 +1005,21 @@ process-manager skill 是否可用（Available）:
 | Stage 3 active-task 是否已同步 | pass | `active-task.json` 指向 Stage 4 |
 | Stage 3 阶段边界是否允许停止 | no | run-to-completion 模式下继续 Stage 4 |
 | Stage 3 下一动作 | continue Stage 4 | 提交 Stage 3 后继续 Stage 4 |
+| Stage 4 当前阶段已完成 | pass | 验证和记录收口已完成 |
+| Stage 4 当前阶段 review 已完成 | pass | 已复查当前 diff、git status 和验证结果 |
+| Stage 4 当前阶段验证已完成或替代证据已记录 | pass | quick_validate、JSONL、rg、diff check 均通过 |
+| Stage 4 当前阶段提交或未提交原因已记录 | pending | 提交后回填 |
+| Stage 4 是否还有 pending stage | no | 所有已批准阶段完成 |
+| Stage 4 是否存在 Stop Condition | yes | `all_approved_stages_completed` |
+| Stage 4 是否需要重新批准 | no | 未超出批准范围 |
+| Stage 4 Execution Control 是否已更新 | pass | active task 已标记 completed |
+| Stage 4 active-task 是否已同步 | pass | `active-task.json` 标记 completed |
+| Stage 4 阶段边界是否允许停止 | yes | 所有已批准阶段完成，进入最终交付 |
+| Stage 4 下一动作 | final delivery | 提交最终记录后交付 |
 
 结论（Decision）:
 
-- Stage 1、Stage 2 和 Stage 3 完成后均不停止，按 `continue Stage 4` 继续。
+- Stage 1、Stage 2 和 Stage 3 完成后均未停止；Stage 4 完成全部已批准阶段，进入最终交付。
 
 ## 验证记录（Validation Evidence）
 
@@ -1014,12 +1030,16 @@ process-manager skill 是否可用（Available）:
 | Stage 1 | `rg -n "run-to-completion|Stage Transition Gate|停止条件|最终回复|next_automatic_action" skills\complex-coding-harness\SKILL.md skills\complex-coding-harness\references\workflow.md` | pass | 核心规则、workflow 执行控制、停止条件、阶段转移和恢复继续规则 | 未覆盖模板和 eval，后续阶段处理 | 终端输出命中 `SKILL.md:24-26`、`workflow.md:230-254`、`workflow.md:305-328`、`workflow.md:443-444` |
 | Stage 2 | `rg -n "执行控制|active-task 同步字段|阶段转移门禁|Stage boundary is not a stop condition|next_automatic_action|state_source" skills\complex-coding-harness\templates\execution-plan.md` | pass | 模板执行控制、active-task 同步字段、阶段转移门禁和恢复摘要 | 未覆盖 eval，后续 Stage 3 处理 | 终端输出命中模板 `execution-plan.md:362`、`:400`、`:438`、`:475` |
 | Stage 3 | `python -c "import json, pathlib; ..."` 和 `rg` 新增 id | pass | JSONL 格式和新增 eval 场景 | 未执行真实 agent eval | JSONL 解析输出 `28`，新增 id 从 `stage-boundary-continue` 到 `active-task-conflict-plan-wins` 均命中 |
+| Stage 4 | `python C:\Users\admin\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills\complex-coding-harness` | pass | skill frontmatter 和基础结构 | 不覆盖行为语义 | 输出 `Skill is valid!` |
+| Stage 4 | `python -c "import json, pathlib; ..."` | pass | JSONL 解析和 id 唯一性 | 不执行真实 agent eval | 输出 `rows 28`、`last active-task-conflict-plan-wins` |
+| Stage 4 | `rg -n "run-to-completion|Stage Transition Gate|Stop Conditions|停止条件|Stage boundary is not a stop condition|active-task-conflict-plan-wins|progress-update-not-final" skills\complex-coding-harness evals\complex-coding-harness` | pass | 核心规则、模板和 eval 场景检索 | 不验证自然语言行为，只验证规则存在 | 命中 `SKILL.md`、`workflow.md`、模板和 JSONL |
+| Stage 4 | `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills diff --check` | pass | diff 空白和格式检查 | CRLF warning 不影响结果 | 命令退出码 0 |
 
 ## Code Review
 
 当前状态（Current status）:
 
-- Stage 3 已完成，进入 Stage 4。
+- Stage 4 已完成，准备最终记录提交。
 
 已识别风险（Findings）:
 
@@ -1027,20 +1047,21 @@ process-manager skill 是否可用（Available）:
 - `major`: 无。
 - `minor`: 新增模板字段可能增加文档长度，实施时应控制描述密度。
 - `minor`: `.harness/environment.md` 曾残留 process-manager 任务描述，已在本轮复查中计划修正为当前任务语境。
-- `minor`: Stage 1 已覆盖入口和 workflow，Stage 2 已覆盖模板，Stage 3 已覆盖 eval；Stage 4 需要完整验证并收口记录。
+- `minor`: 新增 eval 是 prompts fixture，不是真实自动行为测试；后续可用真实任务前向测试。
 - `follow-up`: 可在后续真实任务中前向测试“完成 Stage 4 后自动继续 Stage 5”的行为。
 
 ## Commit Log
 
 当前状态（Current status）:
 
-- Stage 1 和 Stage 2 已提交，Stage 3 待提交。
+- Stage 1、Stage 2 和 Stage 3 已提交，Stage 4 待提交。
 
 | 阶段 | 仓库 | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Stage 1 | dev-skills | `8f8c75b` | `feat(complex-coding-harness): 增加连续执行控制` | `CHANGELOG.md` Stage 33 |
 | Stage 2 | dev-skills | `21d28cc` | `feat(complex-coding-harness): 增加执行控制模板` | `CHANGELOG.md` Stage 34 |
-| Stage 3 | dev-skills | pending | `test(complex-coding-harness): 补充连续执行评估` | `CHANGELOG.md` Stage 35 |
+| Stage 3 | dev-skills | `01f66c4` | `test(complex-coding-harness): 补充连续执行评估` | `CHANGELOG.md` Stage 35 |
+| Stage 4 | dev-skills | pending | `docs(harness): 完成执行控制验证记录` | `CHANGELOG.md` Stage 36 |
 
 后续建议提交（Planned commit）:
 
@@ -1064,7 +1085,7 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 整体任务状态（Overall status）:
 
-- in_progress
+- completed
 
 已完成阶段（Completed stages）:
 
@@ -1075,23 +1096,23 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 当前阶段（Current stage）:
 
-- Stage 4：完整验证、记录和提交。
+- Final Delivery
 
 剩余阶段（Remaining stages）:
 
-- Stage 4：完整验证、记录和提交
+- 无。
 
 最新 commit（Latest commit）:
 
-- `21d28cc`
+- `01f66c4`
 
 下一步自动动作（Next automatic action）:
 
-- 提交 Stage 3 后继续 Stage 4。
+- 提交 Stage 4 最终记录后交付。
 
 当前停止条件（Current stop condition）:
 
-- none
+- all_approved_stages_completed
 
 状态来源（State source of truth）:
 
@@ -1103,7 +1124,8 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 未覆盖范围和剩余风险（Uncovered scope and residual risks）:
 
-- 完整 quick_validate、JSONL 解析和 diff check 将在 Stage 4 执行。
+- 未执行真实 agent 前向测试；当前通过文档规则、模板、eval fixture 和静态验证覆盖。
+- 本任务不涉及浏览器、MCP 或长期后台服务。
 
 不得停止说明（Do not stop note）:
 

@@ -102,7 +102,7 @@ Runtime Services:
 
 待确认问题（Open questions）:
 
-- 无 blocking 问题；本计划等待用户批准后进入实现。
+- 无 blocking 问题；本任务已按用户批准范围完成。
 
 冲突（Conflicts）:
 

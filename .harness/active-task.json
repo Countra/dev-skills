@@ -2,16 +2,14 @@
   "task_id": "2026-06-15-feature-complex-coding-harness-execution-control",
   "task_dir": ".harness/tasks/2026-06-15/feature/complex-coding-harness-execution-control",
   "title": "complex-coding-harness 阶段连续执行控制强化",
-  "status": "in_progress",
+  "status": "completed",
   "execution_mode": "run-to-completion",
-  "overall_status": "in_progress",
-  "current_stage": "Stage 4: 完整验证、记录和提交",
-  "remaining_stages": [
-    "Stage 4: 完整验证、记录和提交"
-  ],
-  "next_action": "执行 Stage 4：完整验证、记录和提交",
-  "next_automatic_action": "continue Stage 4",
-  "stop_condition": "none",
+  "overall_status": "completed",
+  "current_stage": "Final Delivery",
+  "remaining_stages": [],
+  "next_action": "任务完成；等待用户验收或后续使用反馈",
+  "next_automatic_action": "none",
+  "stop_condition": "all_approved_stages_completed",
   "state_source": "execution-plan.md",
   "updated_at": "2026-06-15"
 }

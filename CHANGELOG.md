@@ -23,8 +23,16 @@
 - 补充阶段边界继续、恢复摘要局部化和阶段提交不是最终交付的 eval 场景。
 - 补充明确停止条件、显式 `stage-only` 和阶段进度更新不是最终回复的 eval 场景。
 - 补充 `active-task.json` 与 `execution-plan.md` 冲突时以计划为准的 eval 场景。
-- Commit: pending
+- Commit: `01f66c4`
 - Commit message: `test(complex-coding-harness): 补充连续执行评估`
+
+### Stage 36: complex-coding-harness 执行控制验证收口
+
+- 完成 skill 结构校验、JSONL 解析、关键规则检索和 diff check。
+- 回填 harness 执行计划、active task、环境清单和 changelog 的最终状态。
+- 确认本任务不涉及长期后台服务，验证命令均为 finite command。
+- Commit: pending
+- Commit message: `docs(harness): 完成执行控制验证记录`
 
 ## 2026-06-12
 
