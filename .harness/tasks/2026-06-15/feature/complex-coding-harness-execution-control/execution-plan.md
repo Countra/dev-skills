@@ -936,10 +936,10 @@ process-manager skill 是否可用（Available）:
 
 | 检查项 | 状态 | 说明 |
 | --- | --- | --- |
-| 用户已批准方案 | pending | 当前只落盘方案 |
 | 用户已批准方案 | pass | 用户已要求“按方案执行” |
 | 当前分支和工作区安全 | pass | 已切换到 `harness/feature`；本阶段改动均属于当前任务 |
-| 本阶段范围未超出批准方案 | pass | 仅修改 `SKILL.md` 和 `workflow.md` 的执行控制规则 |
+| Stage 1 范围未超出批准方案 | pass | 仅修改 `SKILL.md` 和 `workflow.md` 的执行控制规则 |
+| Stage 2 范围未超出批准方案 | pass | 仅修改 `templates/execution-plan.md` 的执行控制、阶段转移和恢复摘要字段 |
 | 必需工具可用 | pass | 已使用 rg 和 Git 检查 |
 | 长期进程策略明确 | pass | 不涉及长期进程 |
 
@@ -951,7 +951,12 @@ process-manager skill 是否可用（Available）:
 | Stage 1 Review 完成 | pass | 复查 diff 和 workflow 相关行号，确认未削弱方案审批门禁和长期进程门禁 |
 | Stage 1 验证完成或替代证据已记录 | pass | `rg` 检索命中核心规则 |
 | Stage 1 任务记录更新 | pass | 已更新 active task、执行计划和 changelog |
-| Stage 1 Commit Log 更新 | pending | 提交后回填 hash |
+| Stage 1 Commit Log 更新 | pass | 已提交 `8f8c75b` |
+| Stage 2 目标完成 | pass | 模板新增 `Execution Control`、`Stage Transition Gate`、active-task 同步字段和强化后的 `Resume Summary` |
+| Stage 2 Review 完成 | pass | 复查 diff，确认模板字段与 workflow 的执行控制规则一致 |
+| Stage 2 验证完成或替代证据已记录 | pass | `rg` 检索命中模板新增字段 |
+| Stage 2 任务记录更新 | pass | 已更新 active task、执行计划、环境清单和 changelog |
+| Stage 2 Commit Log 更新 | pending | 提交后回填 hash |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -960,7 +965,7 @@ process-manager skill 是否可用（Available）:
 | Stage 1 当前阶段已完成 | pass | 核心规则和 workflow 执行控制已写入 |
 | Stage 1 当前阶段 review 已完成 | pass | 已复查规则位置和 diff |
 | Stage 1 当前阶段验证已完成或替代证据已记录 | pass | `rg` 检索已覆盖核心关键词 |
-| Stage 1 当前阶段提交或未提交原因已记录 | pending | 提交后回填 |
+| Stage 1 当前阶段提交或未提交原因已记录 | pass | 已提交 `8f8c75b` |
 | Stage 1 是否还有 pending stage | yes | Stage 2、Stage 3、Stage 4 |
 | Stage 1 是否存在 Stop Condition | no | 无阻塞 |
 | Stage 1 是否需要重新批准 | no | 未超出批准范围 |
@@ -968,10 +973,21 @@ process-manager skill 是否可用（Available）:
 | Stage 1 active-task 是否已同步 | pass | `active-task.json` 指向 Stage 2 |
 | Stage 1 阶段边界是否允许停止 | no | run-to-completion 模式下继续 Stage 2 |
 | Stage 1 下一动作 | continue Stage 2 | 提交 Stage 1 后继续 Stage 2 |
+| Stage 2 当前阶段已完成 | pass | 执行计划模板字段已更新 |
+| Stage 2 当前阶段 review 已完成 | pass | 已复查模板 diff 和检索结果 |
+| Stage 2 当前阶段验证已完成或替代证据已记录 | pass | `rg` 检索已覆盖模板字段 |
+| Stage 2 当前阶段提交或未提交原因已记录 | pending | 提交后回填 |
+| Stage 2 是否还有 pending stage | yes | Stage 3、Stage 4 |
+| Stage 2 是否存在 Stop Condition | no | 无阻塞 |
+| Stage 2 是否需要重新批准 | no | 未超出批准范围 |
+| Stage 2 Execution Control 是否已更新 | pass | 已切到 Stage 3，stop condition 为 none |
+| Stage 2 active-task 是否已同步 | pass | `active-task.json` 指向 Stage 3 |
+| Stage 2 阶段边界是否允许停止 | no | run-to-completion 模式下继续 Stage 3 |
+| Stage 2 下一动作 | continue Stage 3 | 提交 Stage 2 后继续 Stage 3 |
 
 结论（Decision）:
 
-- Stage 1 完成后不停止，按 `continue Stage 2` 继续。
+- Stage 1 和 Stage 2 完成后均不停止，按 `continue Stage 3` 继续。
 
 ## 验证记录（Validation Evidence）
 
@@ -980,12 +996,13 @@ process-manager skill 是否可用（Available）:
 | Planning | `rg` / 文件读取 | pass | 读取当前 skill、workflow、模板和 harness 状态 | 未修改 skill 本体 | 本计划 Context |
 | Planning review | 人工复查 | pass | 补充主契约优先级、进度更新边界、状态同步、active-task 冲突处理 | 未进入实现阶段 | 本计划修订内容 |
 | Stage 1 | `rg -n "run-to-completion|Stage Transition Gate|停止条件|最终回复|next_automatic_action" skills\complex-coding-harness\SKILL.md skills\complex-coding-harness\references\workflow.md` | pass | 核心规则、workflow 执行控制、停止条件、阶段转移和恢复继续规则 | 未覆盖模板和 eval，后续阶段处理 | 终端输出命中 `SKILL.md:24-26`、`workflow.md:230-254`、`workflow.md:305-328`、`workflow.md:443-444` |
+| Stage 2 | `rg -n "执行控制|active-task 同步字段|阶段转移门禁|Stage boundary is not a stop condition|next_automatic_action|state_source" skills\complex-coding-harness\templates\execution-plan.md` | pass | 模板执行控制、active-task 同步字段、阶段转移门禁和恢复摘要 | 未覆盖 eval，后续 Stage 3 处理 | 终端输出命中模板 `execution-plan.md:362`、`:400`、`:438`、`:475` |
 
 ## Code Review
 
 当前状态（Current status）:
 
-- Stage 1 已完成，进入 Stage 2。
+- Stage 2 已完成，进入 Stage 3。
 
 已识别风险（Findings）:
 
@@ -993,14 +1010,19 @@ process-manager skill 是否可用（Available）:
 - `major`: 无。
 - `minor`: 新增模板字段可能增加文档长度，实施时应控制描述密度。
 - `minor`: `.harness/environment.md` 曾残留 process-manager 任务描述，已在本轮复查中计划修正为当前任务语境。
-- `minor`: Stage 1 只覆盖入口和 workflow，模板和 eval 仍需 Stage 2/3 落地。
+- `minor`: Stage 1 已覆盖入口和 workflow，Stage 2 已覆盖模板，eval 仍需 Stage 3 落地。
 - `follow-up`: 可在后续真实任务中前向测试“完成 Stage 4 后自动继续 Stage 5”的行为。
 
 ## Commit Log
 
 当前状态（Current status）:
 
-- Stage 1 待提交。
+- Stage 1 已提交，Stage 2 待提交。
+
+| 阶段 | 仓库 | Commit | Message | Changelog |
+| --- | --- | --- | --- | --- |
+| Stage 1 | dev-skills | `8f8c75b` | `feat(complex-coding-harness): 增加连续执行控制` | `CHANGELOG.md` Stage 33 |
+| Stage 2 | dev-skills | pending | `feat(complex-coding-harness): 增加执行控制模板` | `CHANGELOG.md` Stage 34 |
 
 后续建议提交（Planned commit）:
 
@@ -1030,24 +1052,24 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 - 已完成问题复盘、上下文读取和最终修改方案落盘。
 - Stage 1：核心规则和 workflow 执行控制。
+- Stage 2：模板执行控制和恢复摘要。
 
 当前阶段（Current stage）:
 
-- Stage 2：模板执行控制和恢复摘要。
+- Stage 3：eval 覆盖提前停止风险。
 
 剩余阶段（Remaining stages）:
 
-- Stage 2：模板执行控制和恢复摘要
 - Stage 3：eval 覆盖提前停止风险
 - Stage 4：完整验证、记录和提交
 
 最新 commit（Latest commit）:
 
-- Stage 1 待提交。
+- `8f8c75b`
 
 下一步自动动作（Next automatic action）:
 
-- 提交 Stage 1 后继续 Stage 2。
+- 提交 Stage 2 后继续 Stage 3。
 
 当前停止条件（Current stop condition）:
 
@@ -1063,7 +1085,7 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 未覆盖范围和剩余风险（Uncovered scope and residual risks）:
 
-- 模板字段和 eval 场景尚未实现。
+- eval 场景尚未实现。
 - 完整 quick_validate、JSONL 解析和 diff check 将在 Stage 4 执行。
 
 不得停止说明（Do not stop note）:

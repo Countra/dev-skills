@@ -7,8 +7,16 @@
 - 增加 `run-to-completion` 执行模式规则，防止已批准 managed 任务在阶段边界提前停止。
 - 在 workflow 中补充停止条件白名单、阶段转移门禁和上下文恢复后的继续执行要求。
 - 明确阶段边界只允许进度更新，最终回复只能在停止条件命中或最终交付门禁通过后发送。
-- Commit: pending
+- Commit: `8f8c75b`
 - Commit message: `feat(complex-coding-harness): 增加连续执行控制`
+
+### Stage 34: complex-coding-harness 执行计划模板状态字段
+
+- 在执行计划模板中新增 `Execution Control`，记录执行模式、剩余阶段、停止条件和状态来源。
+- 新增 `Stage Transition Gate`，要求阶段退出后同步 execution plan、active task 并继续剩余阶段。
+- 强化 `Resume Summary`，让上下文恢复时以整体目标、剩余阶段和下一步自动动作继续。
+- Commit: pending
+- Commit message: `feat(complex-coding-harness): 增加执行控制模板`
 
 ## 2026-06-12
 

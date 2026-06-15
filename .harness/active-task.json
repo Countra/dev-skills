@@ -5,14 +5,13 @@
   "status": "in_progress",
   "execution_mode": "run-to-completion",
   "overall_status": "in_progress",
-  "current_stage": "Stage 2: 模板执行控制和恢复摘要",
+  "current_stage": "Stage 3: eval 覆盖提前停止风险",
   "remaining_stages": [
-    "Stage 2: 模板执行控制和恢复摘要",
     "Stage 3: eval 覆盖提前停止风险",
     "Stage 4: 完整验证、记录和提交"
   ],
-  "next_action": "执行 Stage 2：更新 execution-plan 模板的执行控制、阶段转移和恢复摘要字段",
-  "next_automatic_action": "continue Stage 2",
+  "next_action": "执行 Stage 3：补充 complex-coding-harness eval 场景",
+  "next_automatic_action": "continue Stage 3",
   "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-06-15"

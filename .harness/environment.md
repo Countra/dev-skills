@@ -35,8 +35,8 @@ Harness 分支策略（Harness branch policy）:
 
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `main`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
-- 本任务是 feature 类型，继续使用 `harness/feature`。
-- 本次用户要求先落盘 `complex-coding-harness` 阶段连续执行控制方案，不要求提交；后续实现前必须按 Git Context 切换或复用 `harness/feature`，并检查是否需要同步 `main`。
+- 本任务是 feature 类型，当前使用 `harness/feature`。
+- 用户已批准按方案执行，当前按 `run-to-completion` 连续完成 Stage 1 到 Stage 4；阶段边界不是停止条件。
 - 当前 Git 命令存在 ownership 保护：普通 `git status` 报 `detected dubious ownership`。本次校验使用一次性参数 `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills ...`，后续提交前需要继续使用该参数，或由用户确认是否写入全局 `safe.directory`。
 
 ## 项目（Projects）
@@ -94,7 +94,7 @@ Runtime Services:
 
 规则（Rules）:
 
-- 本规划阶段不实现 skill，只复查并优化 harness 方案。
+- 当前实施阶段只修改已批准范围内的 skill 规则、模板、eval、changelog 和 harness 任务记录。
 - 后续实现阶段预计只修改 `skills/complex-coding-harness/SKILL.md`、`references/workflow.md`、`templates/execution-plan.md` 和 `evals/complex-coding-harness/prompts.jsonl`。
 - 本任务不需要长期后台服务；验证命令均为 finite command，不进入 process-manager。
 - 如果后续临时出现必须启动的长期服务，仍按 `complex-coding-harness` 的长期进程门禁使用 process-manager，不手写后台 shell 启动。

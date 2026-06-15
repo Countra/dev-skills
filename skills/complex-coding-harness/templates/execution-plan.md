@@ -359,6 +359,64 @@ Changelog 计划（Changelog plan）:
 
 - `not_authorized`
 
+## 执行控制（Execution Control）
+
+执行模式（Execution mode）:
+
+- run-to-completion / stage-only / planning-only
+
+整体任务状态（Overall status）:
+
+- awaiting_plan_approval / in_progress / blocked / completed
+
+当前阶段（Current stage）:
+
+-
+
+已完成阶段（Completed stages）:
+
+-
+
+剩余阶段（Remaining stages）:
+
+-
+
+下一步自动动作（Next automatic action）:
+
+-
+
+当前停止条件（Current stop condition）:
+
+- none
+
+状态来源（State source of truth）:
+
+- execution-plan.md
+
+阶段边界是否允许停止（May stop at stage boundary）:
+
+- no, unless the user explicitly requested stage-only execution or a Stop Condition is active
+
+active-task 同步字段（active-task sync fields）:
+
+```json
+{
+  "execution_mode": "run-to-completion",
+  "overall_status": "in_progress",
+  "current_stage": "Stage N",
+  "remaining_stages": ["Stage N+1"],
+  "next_automatic_action": "continue Stage N+1",
+  "stop_condition": "none",
+  "state_source": "execution-plan.md"
+}
+```
+
+状态同步规则（State sync rules）:
+
+- `execution-plan.md` 是唯一主契约；`.harness/active-task.json` 只作为恢复入口和摘要索引。
+- `next_action` 可以保留，但不得与 `next_automatic_action` 冲突。
+- 如果 `active-task.json` 和本节冲突，必须以本节为准修正 `active-task.json` 后继续。
+
 ## 实施进度（Implementation Progress）
 
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
@@ -377,6 +435,22 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 |  | pending | pending | pending | pending | pending | pending | pending | pending |
 
+## 阶段转移门禁（Stage Transition Gate）
+
+| 阶段（Stage） | 当前阶段已完成（Stage done） | Review 已完成（Review done） | 验证已完成或替代证据已记录（Validation done） | 提交或未提交原因已记录（Commit recorded） | 是否还有 pending stage（Pending remains） | 是否存在停止条件（Stop Condition） | 是否需要重新批准（Reapproval needed） | Execution Control 已更新 | active-task 已同步 | 阶段边界允许停止（May stop） | 下一动作（Next action） |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+|  | pending | pending | pending | pending | pending | pending | pending | pending | pending | pending | continue Stage N / final delivery / stop with reason |
+
+结论（Decision）:
+
+-
+
+规则（Rules）:
+
+- 如果还有 pending stage，且没有停止条件，也不需要重新批准，下一动作必须是 `continue Stage N`。
+- 这种情况下可以发送简短进度更新，但不能最终回复后停止。
+- 进入下一阶段前必须同步 `Execution Control`、`Resume Summary` 和 `.harness/active-task.json`。
+
 ## 代码审查（Code Review）
 
 | 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
@@ -385,12 +459,20 @@ Changelog 计划（Changelog plan）:
 
 ## 恢复摘要（Resume Summary）
 
+- 整体目标（Overall goal）:
+- 执行模式（Execution mode）:
+- 整体任务状态（Overall status）:
+- 已完成阶段（Completed stages）:
 - 当前阶段（Current stage）:
-- 已完成（Completed）:
+- 剩余阶段（Remaining stages）:
 - 最新 commit（Latest commit）:
-- 下一步（Next action）:
+- 下一步自动动作（Next automatic action）:
+- 当前停止条件（Current stop condition）:
+- 状态来源（State source of truth）:
 - 长期进程规则（Process manager rule）:
 - 未覆盖/风险（Not covered/risks）:
+- 不得停止说明（Do not stop note）:
+  - Stage boundary is not a stop condition. Continue until all approved stages and the final delivery gate are complete, unless a Stop Condition is active.
 
 ## 提交记录（Commit Log）
 
