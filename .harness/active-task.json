@@ -1,8 +1,19 @@
 {
-  "task_id": "2026-06-12-feature-process-manager-history-retention",
-  "task_dir": ".harness/tasks/2026-06-12/feature/process-manager-history-retention",
-  "title": "process-manager 历史记录保留和 runs 清理策略",
-  "status": "completed",
-  "next_action": "任务完成；等待用户验收或后续使用反馈",
-  "updated_at": "2026-06-12"
+  "task_id": "2026-06-15-feature-complex-coding-harness-execution-control",
+  "task_dir": ".harness/tasks/2026-06-15/feature/complex-coding-harness-execution-control",
+  "title": "complex-coding-harness 阶段连续执行控制强化",
+  "status": "in_progress",
+  "execution_mode": "run-to-completion",
+  "overall_status": "in_progress",
+  "current_stage": "Stage 2: 模板执行控制和恢复摘要",
+  "remaining_stages": [
+    "Stage 2: 模板执行控制和恢复摘要",
+    "Stage 3: eval 覆盖提前停止风险",
+    "Stage 4: 完整验证、记录和提交"
+  ],
+  "next_action": "执行 Stage 2：更新 execution-plan 模板的执行控制、阶段转移和恢复摘要字段",
+  "next_automatic_action": "continue Stage 2",
+  "stop_condition": "none",
+  "state_source": "execution-plan.md",
+  "updated_at": "2026-06-15"
 }

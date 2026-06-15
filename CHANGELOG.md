@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-06-15
+
+### Stage 33: complex-coding-harness 阶段连续执行控制
+
+- 增加 `run-to-completion` 执行模式规则，防止已批准 managed 任务在阶段边界提前停止。
+- 在 workflow 中补充停止条件白名单、阶段转移门禁和上下文恢复后的继续执行要求。
+- 明确阶段边界只允许进度更新，最终回复只能在停止条件命中或最终交付门禁通过后发送。
+- Commit: pending
+- Commit message: `feat(complex-coding-harness): 增加连续执行控制`
+
 ## 2026-06-12
 
 ### Stage 32: process-manager manager 端口重试

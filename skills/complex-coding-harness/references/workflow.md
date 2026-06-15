@@ -225,6 +225,34 @@ Readiness 通过后必须：
 
 如果用户改变方案、环境、工具或验证策略，必须更新计划并重新通过 readiness 和批准。
 
+## 执行控制
+
+用户批准 managed 方案后，默认执行模式为 `run-to-completion`。该模式表示连续完成所有已批准阶段，直到最终交付门禁通过。
+
+只有用户明确要求“只做当前阶段”“完成后等我确认”或等价表达时，才允许使用 `stage-only`。不能把阶段边界、阶段提交完成、恢复点完成或下一阶段已识别当成停止点。
+
+`execution-plan.md` 是任务状态唯一主契约，`.harness/active-task.json` 只是恢复入口和摘要索引。如果二者冲突，必须以 `execution-plan.md` 为准，先修正 `active-task.json`，再继续执行。
+
+阶段边界可以发送简短进度更新，例如“Stage 4 已完成并提交，继续 Stage 5”。这不是最终回复；没有停止条件时，更新后必须继续执行下一阶段。
+
+上下文压缩或中断恢复后，如果任务状态为 `in_progress`、`execution_mode = run-to-completion`，并且 `remaining_stages` 非空，必须继续执行 `next_automatic_action`。如果 `Resume Summary` 的局部下一步和 `Execution Control.remaining_stages` 不一致，必须先以 `Execution Control` 为准更新恢复摘要，再继续。
+
+## 停止条件
+
+只有以下情况允许停止 managed 实施：
+
+- 用户明确要求暂停、停止、只完成当前阶段或等待确认。
+- 发现方案变化，需要重新批准。
+- 有 blocking 决策必须用户确认。
+- 工作区存在用户或未知改动，继续会有覆盖风险。
+- Git 处于冲突、merge、rebase、cherry-pick 未完成或分支状态不安全。
+- 必需权限被拒绝，且无安全替代路径。
+- 必需验证失败，已按规则自修后仍无法通过，或替代验证不足。
+- `process-manager` 离线且用户未启动或授权 bootstrap，且当前阶段需要长期进程。
+- 所有已批准阶段完成，并且最终交付门禁通过。
+
+禁止把阶段完成、阶段提交完成、恢复点完成、下一步已识别、上下文压缩风险、当前轮次变长或需要记录状态作为停止条件。遇到这些情况时，应更新 `Resume Summary` 和 `active-task.json` 后继续。
+
 ## Blocking 决策
 
 只询问会影响方案、环境、权限、验证、接口、数据、依赖、风险或提交行为的 blocking 问题。
@@ -274,22 +302,43 @@ Custom：...
 - `execution-plan.md`、changelog 或等价变更记录、`Commit Log` 已更新。
 - 如阶段提交已授权，已完成提交并记录 commit hash；未提交时已说明原因。
 
+`Stage Transition Gate` 在每个阶段退出后立即执行。通过前不能最终回复。
+
+| 检查项 | 结果 |
+| --- | --- |
+| 当前阶段已完成 | pass/fail |
+| 当前阶段 review 已完成 | pass/fail |
+| 当前阶段必需验证已完成或记录替代证据 | pass/fail |
+| 当前阶段提交或未提交原因已记录 | pass/fail |
+| 是否还有 pending stage | yes/no |
+| 是否存在停止条件 | yes/no |
+| 是否需要重新批准 | yes/no |
+| Execution Control 是否已更新 | yes/no |
+| active-task 是否已同步 | yes/no |
+| 阶段边界是否允许停止 | yes/no |
+| 下一动作 | continue Stage N / final delivery / stop with reason |
+
+如果 `是否还有 pending stage = yes` 且 `是否存在停止条件 = no` 且 `是否需要重新批准 = no`，`下一动作` 必须是 `continue Stage N`。这种情况下不能向用户最终回复“下一步进入 Stage N”后停止，必须直接进入下一阶段。进入下一阶段前必须更新 `Execution Control`、`Resume Summary` 和 `.harness/active-task.json`，让恢复状态指向整体剩余任务，而不是只指向刚完成的阶段。
+
+只有 `pending stage = no` 时，才能进入最终交付门禁。
+
 每个已批准阶段都必须执行：
 
 1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、`pending-decisions.md`（如存在）、项目 `docs/development.md` 和 changelog。
-2. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
-3. 复查 `Process Manager Gate`，确认本阶段是否需要长期进程；需要时必须使用 `process-manager`，不能手写后台 shell 命令。
-4. 检查 `Git Context` 和实际 git 状态，确认当前分支、主分支同步和工作区安全。
-5. 阅读本阶段相关代码、测试、配置、API 和文档。
-6. 在批准范围内做最小必要修改。
-7. 修复明显缺陷；小优化只能在不改变方案方向时执行。
-8. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
-9. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
-10. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
-11. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
-12. 更新 changelog 或项目等价变更记录。
-13. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
-14. 进入下一阶段前，重读任务记录、`Process Manager Gate` 和 changelog，确认状态没有丢失。
+2. 读取 `Execution Control` 和上一阶段 `Stage Transition Gate` 的最新状态，确认当前执行模式、剩余阶段和停止条件。
+3. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
+4. 复查 `Process Manager Gate`，确认本阶段是否需要长期进程；需要时必须使用 `process-manager`，不能手写后台 shell 命令。
+5. 检查 `Git Context` 和实际 git 状态，确认当前分支、主分支同步和工作区安全。
+6. 阅读本阶段相关代码、测试、配置、API 和文档。
+7. 在批准范围内做最小必要修改。
+8. 修复明显缺陷；小优化只能在不改变方案方向时执行。
+9. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
+10. 做 code review，检查正确性、边界条件、错误处理、兼容性、无关改动、测试和文档。
+11. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
+12. 修复 review 或验证发现的问题，并重复 review 和验证，直到没有 blocking 或 major finding。
+13. 更新 changelog 或项目等价变更记录。
+14. 只有用户批准的方案授权提交时，才提交代码；提交 hash 写入 `Commit Log`。
+15. 进入下一阶段前，重读任务记录、`Process Manager Gate` 和 changelog，确认状态没有丢失。
 
 ## 验证规则
 
@@ -314,7 +363,7 @@ Custom：...
 - `minor`：可在不改变方案方向时自修；不修复时必须说明影响。
 - `follow-up`：不影响当前验收，但必须记录后续建议。
 
-每个阶段结束后必须写 `Resume Summary`，用于上下文压缩后快速恢复。至少包含当前阶段、已完成内容、最新 commit、下一步、长期进程规则状态、未覆盖范围和剩余风险。
+每个阶段结束后必须写 `Resume Summary`，用于上下文压缩后快速恢复。至少包含整体目标、执行模式、整体任务状态、已完成阶段、当前阶段、剩余阶段、最新 commit、下一步自动动作、当前停止条件、长期进程规则状态、未覆盖范围和剩余风险。
 
 ## 最终交付门禁
 
@@ -391,4 +440,5 @@ feat(scope): 标题
 4. 读取 `.harness/environment.md`。
 5. 复查 `Process Manager Gate` 和 `Resume Summary` 的长期进程规则状态。
 6. 检查 `Git Context`、实际文件和 git 状态。
-7. 继续 `next_action`，不要重新开任务。
+7. 读取 `Execution Control`、`Stage Transition Gate` 和 `Resume Summary`，确认整体剩余阶段。
+8. 如果 `execution_mode = run-to-completion` 且没有停止条件，继续 `next_automatic_action`，不要重新开任务，也不要只完成局部恢复点后停止。

@@ -4,6 +4,7 @@
 
 - 用户会话：当前任务要求整合并落盘 `process-manager` skill 实施方案，先支持 Windows 平台、cmd-file 和 powershell-file，所有可执行程序和脚本路径必须使用绝对路径；process-manager 必须是通用长期后台进程管理，不限定为 Web 服务管理。
 - 用户会话：当前任务要求为 `process-manager` 的进程历史记录、`runs/` 同步清理、`pm_list` 默认输出和相关 skill 规则调整制定 harness 方案，并判断 `complex-coding-harness` 是否需要联动更新。
+- 用户会话：当前任务要求分析 `complex-coding-harness` 在阶段边界提前停止的问题，并用 harness 方式落盘最终详细修改方案；本阶段只规划，不修改 skill 本体。
 - 本地参考：`E:\work\hl\videoForensic\AI\tmp\process_manager`，包含 prototype 的 `server.py`、`client.py`、`start-manager.ps1`、`stop-manager.ps1`、`state/processes.json`。
 - 当前仓库：`E:\work\hl\videoForensic\AI\dev-skills`，用于沉淀 skill 源码。
 - `docs/development.md`：当前仓库未发现该文件。
@@ -35,7 +36,7 @@ Harness 分支策略（Harness branch policy）:
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `main`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，继续使用 `harness/feature`。
-- 本次用户要求先落盘方案，不要求提交；后续实现前必须按 Git Context 切换或复用 `harness/feature`，并检查是否需要同步 `main`。
+- 本次用户要求先落盘 `complex-coding-harness` 阶段连续执行控制方案，不要求提交；后续实现前必须按 Git Context 切换或复用 `harness/feature`，并检查是否需要同步 `main`。
 - 当前 Git 命令存在 ownership 保护：普通 `git status` 报 `detected dubious ownership`。本次校验使用一次性参数 `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills ...`，后续提交前需要继续使用该参数，或由用户确认是否写入全局 `safe.directory`。
 
 ## 项目（Projects）
@@ -56,7 +57,7 @@ Harness 分支策略（Harness branch policy）:
 
 运行时（Runtime）:
 
-- 本任务将新增 Python 标准库脚本和 Windows PowerShell bootstrap 脚本。
+- 本任务是 `complex-coding-harness` 规则、模板和 eval 的文档类更新；不新增运行时脚本。
 
 包管理器（Package manager）:
 
@@ -68,8 +69,9 @@ Harness 分支策略（Harness branch policy）:
 
 命令（Commands）:
 
-- Skill 验证：`python C:\Users\admin\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills/process-manager`
-- Python 语法：`python -m py_compile <script>`
+- Skill 验证：`python C:\Users\admin\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills/complex-coding-harness`
+- JSONL 检查：解析 `evals/complex-coding-harness/prompts.jsonl`
+- 关键规则检索：`rg "run-to-completion|Stage Transition Gate|Stop Conditions|stage boundary" skills/complex-coding-harness evals/complex-coding-harness`
 - 文档检查：`git diff --check`
 - JSON 检查：`python -c "import json; ..."`
 
@@ -83,7 +85,7 @@ Runtime Services:
 
 | Service | Project | Mode | Endpoint | Readiness | Logs | Stop policy |
 | --- | --- | --- | --- | --- | --- | --- |
-| process-manager prototype | external reference only | not started by this plan | `127.0.0.1:49321` | `/health` | external reference logs | 不由本规划阶段启动或停止 |
+| none | dev-skills | not required | none | none | none | 本任务不启动长期后台服务 |
 
 产物策略（Artifact policy）:
 
@@ -92,15 +94,11 @@ Runtime Services:
 
 规则（Rules）:
 
-- 本规划阶段不实现 skill，不启动 manager，不启动真实业务服务。
-- 后续实现阶段第一版仅支持 Windows。
-- 长期后台进程必须通过 process-manager skill 的脚手架脚本管理，不直接运行 `pnpm dev`、`go run`、`python app.py`、`uvicorn`、`Start-Process`、`nohup` 或自由 shell 长命令。
-- finite command，例如测试、构建、lint、一次性脚本，不进入 process-manager。
-- 服务配置中的 `cwd`、`direct.argv[0]`、`cmd-file.script`、`powershell-file.script` 和所有代表文件/目录的参数必须解析为绝对路径。
-- 第一版支持 `direct`、`cmd-file`、`powershell-file`；不支持 `cmd-command`、`powershell-command`、Linux/macOS、Docker compose、systemd。
-- 服务配置顶层不要求 `host` 和 `port`；端口只属于 Web/TCP readiness 或用户传给业务进程的启动参数。
-- manager 启动业务进程默认隐藏窗口，stdout/stderr 写入日志文件，不弹出 cmd 或 PowerShell 终端窗口。
-- manager 自身 bootstrap 只允许用户手动执行或用户明确授权执行；agent 每轮优先 `pm_health.py` 检查，不自动手写后台启动 manager。
+- 本规划阶段不实现 skill，只复查并优化 harness 方案。
+- 后续实现阶段预计只修改 `skills/complex-coding-harness/SKILL.md`、`references/workflow.md`、`templates/execution-plan.md` 和 `evals/complex-coding-harness/prompts.jsonl`。
+- 本任务不需要长期后台服务；验证命令均为 finite command，不进入 process-manager。
+- 如果后续临时出现必须启动的长期服务，仍按 `complex-coding-harness` 的长期进程门禁使用 process-manager，不手写后台 shell 启动。
+- `execution-plan.md` 是当前任务唯一主契约；`.harness/active-task.json` 只作为恢复入口和摘要索引，二者冲突时以 `execution-plan.md` 为准。
 
 待确认问题（Open questions）:
 
