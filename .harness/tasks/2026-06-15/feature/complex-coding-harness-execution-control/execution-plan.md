@@ -846,7 +846,7 @@ git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills diff --check
 | 方案变更触发条件已记录 | pass | 见下方触发条件 |
 | 工具和验证策略明确 | pass | 不需要长期进程，不需要 MCP |
 | 复查缺陷已处理 | pass | 已补充主契约优先级、进度更新边界、状态同步和冲突处理 |
-| 用户批准状态 | pending | 当前仅落盘方案，等待用户确认后实施 |
+| 用户批准状态 | pass | 用户已批准并已完成全部已批准阶段 |
 
 方案变更触发条件（Change triggers）:
 
@@ -882,11 +882,11 @@ git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills diff --check
 
 整体任务状态（Overall status）:
 
-- in_progress
+- completed
 
 当前阶段（Current stage）:
 
-- Stage 2：模板执行控制和恢复摘要
+- Final Delivery
 
 已完成阶段（Completed stages）:
 
@@ -894,20 +894,21 @@ git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills diff --check
 - 上下文读取
 - 最终方案制定
 - Stage 1：核心规则和 workflow 执行控制
-
-剩余阶段（Remaining stages）:
-
 - Stage 2：模板执行控制和恢复摘要
 - Stage 3：eval 覆盖提前停止风险
 - Stage 4：完整验证、记录和提交
 
+剩余阶段（Remaining stages）:
+
+- 无。
+
 下一步自动动作（Next automatic action）:
 
-- continue Stage 2
+- none
 
 当前停止条件（Current stop condition）:
 
-- none
+- all_approved_stages_completed
 
 状态来源（State source of truth）:
 
@@ -915,7 +916,7 @@ git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills diff --check
 
 阶段边界是否允许停止（May stop at stage boundary）:
 
-- no；Stage 1 已完成，按 run-to-completion 继续 Stage 2。
+- yes；所有已批准阶段完成，已进入最终交付。
 
 ## 长期进程管理（Process Manager Gate）
 
