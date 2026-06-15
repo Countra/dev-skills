@@ -15,8 +15,16 @@
 - 在执行计划模板中新增 `Execution Control`，记录执行模式、剩余阶段、停止条件和状态来源。
 - 新增 `Stage Transition Gate`，要求阶段退出后同步 execution plan、active task 并继续剩余阶段。
 - 强化 `Resume Summary`，让上下文恢复时以整体目标、剩余阶段和下一步自动动作继续。
-- Commit: pending
+- Commit: `21d28cc`
 - Commit message: `feat(complex-coding-harness): 增加执行控制模板`
+
+### Stage 35: complex-coding-harness 连续执行评估样例
+
+- 补充阶段边界继续、恢复摘要局部化和阶段提交不是最终交付的 eval 场景。
+- 补充明确停止条件、显式 `stage-only` 和阶段进度更新不是最终回复的 eval 场景。
+- 补充 `active-task.json` 与 `execution-plan.md` 冲突时以计划为准的 eval 场景。
+- Commit: pending
+- Commit message: `test(complex-coding-harness): 补充连续执行评估`
 
 ## 2026-06-12
 
