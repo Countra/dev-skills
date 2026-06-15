@@ -966,7 +966,7 @@ process-manager skill 是否可用（Available）:
 | Stage 4 Review 完成 | pass | 复查当前 diff、工作区状态和最终记录，未发现 blocking 或 major finding |
 | Stage 4 验证完成或替代证据已记录 | pass | 全部必需验证通过 |
 | Stage 4 任务记录更新 | pass | 已更新 active task、执行计划、环境清单和 changelog |
-| Stage 4 Commit Log 更新 | pending | 提交后回填 hash |
+| Stage 4 Commit Log 更新 | pass | 已提交 `a00cc1f` |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -1008,7 +1008,7 @@ process-manager skill 是否可用（Available）:
 | Stage 4 当前阶段已完成 | pass | 验证和记录收口已完成 |
 | Stage 4 当前阶段 review 已完成 | pass | 已复查当前 diff、git status 和验证结果 |
 | Stage 4 当前阶段验证已完成或替代证据已记录 | pass | quick_validate、JSONL、rg、diff check 均通过 |
-| Stage 4 当前阶段提交或未提交原因已记录 | pending | 提交后回填 |
+| Stage 4 当前阶段提交或未提交原因已记录 | pass | 已提交 `a00cc1f` |
 | Stage 4 是否还有 pending stage | no | 所有已批准阶段完成 |
 | Stage 4 是否存在 Stop Condition | yes | `all_approved_stages_completed` |
 | Stage 4 是否需要重新批准 | no | 未超出批准范围 |
@@ -1039,7 +1039,7 @@ process-manager skill 是否可用（Available）:
 
 当前状态（Current status）:
 
-- Stage 4 已完成，准备最终记录提交。
+- Stage 4 已完成，最终记录提交已回填。
 
 已识别风险（Findings）:
 
@@ -1054,14 +1054,14 @@ process-manager skill 是否可用（Available）:
 
 当前状态（Current status）:
 
-- Stage 1、Stage 2 和 Stage 3 已提交，Stage 4 待提交。
+- Stage 1、Stage 2、Stage 3 和 Stage 4 已提交。
 
 | 阶段 | 仓库 | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Stage 1 | dev-skills | `8f8c75b` | `feat(complex-coding-harness): 增加连续执行控制` | `CHANGELOG.md` Stage 33 |
 | Stage 2 | dev-skills | `21d28cc` | `feat(complex-coding-harness): 增加执行控制模板` | `CHANGELOG.md` Stage 34 |
 | Stage 3 | dev-skills | `01f66c4` | `test(complex-coding-harness): 补充连续执行评估` | `CHANGELOG.md` Stage 35 |
-| Stage 4 | dev-skills | pending | `docs(harness): 完成执行控制验证记录` | `CHANGELOG.md` Stage 36 |
+| Stage 4 | dev-skills | `a00cc1f` | `docs(harness): 完成执行控制验证记录` | `CHANGELOG.md` Stage 36 |
 
 后续建议提交（Planned commit）:
 
@@ -1104,11 +1104,11 @@ feat(complex-coding-harness): 强化阶段连续执行控制
 
 最新 commit（Latest commit）:
 
-- `01f66c4`
+- `a00cc1f`
 
 下一步自动动作（Next automatic action）:
 
-- 提交 Stage 4 最终记录后交付。
+- none
 
 当前停止条件（Current stop condition）:
 

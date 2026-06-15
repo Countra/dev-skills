@@ -31,7 +31,7 @@
 - 完成 skill 结构校验、JSONL 解析、关键规则检索和 diff check。
 - 回填 harness 执行计划、active task、环境清单和 changelog 的最终状态。
 - 确认本任务不涉及长期后台服务，验证命令均为 finite command。
-- Commit: pending
+- Commit: `a00cc1f`
 - Commit message: `docs(harness): 完成执行控制验证记录`
 
 ## 2026-06-12
