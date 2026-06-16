@@ -5,6 +5,7 @@
 - 用户会话：当前任务要求整合并落盘 `process-manager` skill 实施方案，先支持 Windows 平台、cmd-file 和 powershell-file，所有可执行程序和脚本路径必须使用绝对路径；process-manager 必须是通用长期后台进程管理，不限定为 Web 服务管理。
 - 用户会话：当前任务要求为 `process-manager` 的进程历史记录、`runs/` 同步清理、`pm_list` 默认输出和相关 skill 规则调整制定 harness 方案，并判断 `complex-coding-harness` 是否需要联动更新。
 - 用户会话：当前任务要求分析 `complex-coding-harness` 在阶段边界提前停止的问题，并用 harness 方式落盘最终详细修改方案；本阶段只规划，不修改 skill 本体。
+- 用户会话：当前任务要求为 `complex-coding-harness` 增加独立的规划自查模块；方案已获用户批准并按 `run-to-completion` 完成实施、验证和记录。
 - 本地参考：`E:\work\hl\videoForensic\AI\tmp\process_manager`，包含 prototype 的 `server.py`、`client.py`、`start-manager.ps1`、`stop-manager.ps1`、`state/processes.json`。
 - 当前仓库：`E:\work\hl\videoForensic\AI\dev-skills`，用于沉淀 skill 源码。
 - `docs/development.md`：当前仓库未发现该文件。
@@ -33,10 +34,10 @@ Harness 分支策略（Harness branch policy）:
 
 当前状态（Current status）:
 
-- 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `main`。
+- 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `harness/feature`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，当前使用 `harness/feature`。
-- 用户已批准按方案执行，当前按 `run-to-completion` 连续完成 Stage 1 到 Stage 4；阶段边界不是停止条件。
+- 当前任务为 `complex-coding-harness` 规划自查独立模块，状态为实施验证收口；已按用户批准范围修改 skill 本体、模板和 eval。
 - 当前 Git 命令存在 ownership 保护：普通 `git status` 报 `detected dubious ownership`。本次校验使用一次性参数 `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills ...`，后续提交前需要继续使用该参数，或由用户确认是否写入全局 `safe.directory`。
 
 ## 项目（Projects）
@@ -57,7 +58,7 @@ Harness 分支策略（Harness branch policy）:
 
 运行时（Runtime）:
 
-- 本任务是 `complex-coding-harness` 规则、模板和 eval 的文档类更新；不新增运行时脚本。
+- 本任务已完成 `complex-coding-harness` 规划自查独立模块的规则、模板和 eval 更新。
 
 包管理器（Package manager）:
 
@@ -69,11 +70,12 @@ Harness 分支策略（Harness branch policy）:
 
 命令（Commands）:
 
-- Skill 验证：`python C:\Users\admin\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills/complex-coding-harness`
-- JSONL 检查：解析 `evals/complex-coding-harness/prompts.jsonl`
-- 关键规则检索：`rg "run-to-completion|Stage Transition Gate|Stop Conditions|stage boundary" skills/complex-coding-harness evals/complex-coding-harness`
+- JSON 检查：解析 `.harness/active-task.json`
+- Skill 验证：`quick_validate.py skills/complex-coding-harness`
+- JSONL 检查：解析 `evals/complex-coding-harness/prompts.jsonl` 并检查 id 唯一
+- 关键规则检索：`rg "Plan Self-Review|规划自查|Defects|Missing items|Consistency|规划自查已通过" skills/complex-coding-harness evals/complex-coding-harness`
+- 模板门禁顺序检索：`rg -n "方案质量门禁|规划自查|就绪门禁|方案批准" skills/complex-coding-harness/templates/execution-plan.md`
 - 文档检查：`git diff --check`
-- JSON 检查：`python -c "import json; ..."`
 
 验证工具（Validation tools）:
 
@@ -94,8 +96,7 @@ Runtime Services:
 
 规则（Rules）:
 
-- 当前实施阶段只修改已批准范围内的 skill 规则、模板、eval、changelog 和 harness 任务记录。
-- 后续实现阶段预计只修改 `skills/complex-coding-harness/SKILL.md`、`references/workflow.md`、`templates/execution-plan.md` 和 `evals/complex-coding-harness/prompts.jsonl`。
+- 本任务已批准并完成修改范围：`skills/complex-coding-harness/SKILL.md`、`references/workflow.md`、`templates/execution-plan.md`、`evals/complex-coding-harness/prompts.jsonl`、harness 任务记录和 `CHANGELOG.md`。
 - 本任务不需要长期后台服务；验证命令均为 finite command，不进入 process-manager。
 - 如果后续临时出现必须启动的长期服务，仍按 `complex-coding-harness` 的长期进程门禁使用 process-manager，不手写后台 shell 启动。
 - `execution-plan.md` 是当前任务唯一主契约；`.harness/active-task.json` 只作为恢复入口和摘要索引，二者冲突时以 `execution-plan.md` 为准。

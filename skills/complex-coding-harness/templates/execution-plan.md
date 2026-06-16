@@ -305,6 +305,42 @@ Changelog 计划（Changelog plan）:
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
+## 方案质量门禁（Plan Quality Gate）
+
+| 检查项（Check） | 状态（Status） | 证据（Evidence） |
+| --- | --- | --- |
+| 关键判断有证据等级（Evidence levels assigned） | pending |  |
+| 影响面矩阵完整（Impact matrix complete） | pending |  |
+| 候选方案比较充分（Options compared enough） | pending |  |
+| 每阶段可独立验证（Stages independently verifiable） | pending |  |
+| 方案变更触发条件清楚（Reapproval triggers clear） | pending |  |
+| 用户批准摘要可记录（Approval summary ready） | pending |  |
+
+质量结论（Quality result）:
+
+- `pending`
+
+## 规划自查（Plan Self-Review）
+
+自查结论（Review result）:
+
+- `pending`
+
+| 类别（Category） | 发现（Finding） | 处理（Action） | 结果（Result） |
+| --- | --- | --- | --- |
+| 缺陷（Defects） |  |  | pending |
+| 优化（Optimizations） |  |  | pending |
+| 缺失项（Missing items） |  |  | pending |
+| 风险（Risks） |  |  | pending |
+| 一致性（Consistency） |  |  | pending |
+
+门禁重跑（Gate rerun）:
+
+- `Plan Quality Gate` 是否需要重跑：
+- `Plan Self-Review` 是否需要重跑：
+- `Readiness Gate` 是否需要重跑：
+- 原因：
+
 ## 就绪门禁（Readiness Gate）
 
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
@@ -321,18 +357,8 @@ Changelog 计划（Changelog plan）:
 | 最终交付证据已规划（Final delivery evidence planned） | pending |  |
 | 文档更新已确认（Documentation updates confirmed） | pending |  |
 | 风险已识别（Risks identified） | pending |  |
+| 规划自查已通过（Plan self-review passed） | pending |  |
 | 阻塞问题已关闭（Blocking questions closed） | pending |  |
-
-## 方案质量门禁（Plan Quality Gate）
-
-| 检查项（Check） | 状态（Status） | 证据（Evidence） |
-| --- | --- | --- |
-| 关键判断有证据等级（Evidence levels assigned） | pending |  |
-| 影响面矩阵完整（Impact matrix complete） | pending |  |
-| 候选方案比较充分（Options compared enough） | pending |  |
-| 每阶段可独立验证（Stages independently verifiable） | pending |  |
-| 方案变更触发条件清楚（Reapproval triggers clear） | pending |  |
-| 用户批准摘要可记录（Approval summary ready） | pending |  |
 
 就绪结论（Readiness result）:
 
