@@ -7,7 +7,7 @@
 - 新增 `Plan Self-Review` 规划自查规则，要求审批前复查缺陷、优化点、缺失项、风险和一致性。
 - 调整执行计划模板审批前门禁顺序为 `Plan Quality Gate`、`Plan Self-Review`、`Readiness Gate`、`Plan Approval`。
 - 补充 6 条 eval 场景，覆盖缺失环境、一致性冲突、过度复杂、缺陷阻塞、门禁重跑和顺序错误。
-- Commit: `pending`
+- Commit: `6a7de25`
 - Commit message: `feat(complex-coding-harness): 增加规划自查门禁`
 
 ## 2026-06-15

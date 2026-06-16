@@ -699,7 +699,7 @@ manager 离线处理策略:
 
 | 阶段（Stage） | Commit | Message | Notes |
 | --- | --- | --- | --- |
-| Stage 1-4 | pending | `feat(complex-coding-harness): 增加规划自查门禁` | 等待提交 |
+| Stage 1-4 | `6a7de25` | `feat(complex-coding-harness): 增加规划自查门禁` | 已提交 |
 
 ## 恢复摘要（Resume Summary）
 
