@@ -41,11 +41,13 @@
 6. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
 7. 创建或更新 `execution-plan.md`。
 8. 确认 `Git Context`：主分支、harness 工作分支、同步来源和提交策略。
-9. 完成 `Readiness Gate`。
-10. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
-11. 只有用户明确批准后才能实现。
-12. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
-13. 完成最终交付门禁，给出任务结论、验证摘要、关键证据、commit 信息和剩余风险。
+9. 完成 `Plan Quality Gate`。
+10. 完成 `Plan Self-Review`，发现问题时先修复计划。
+11. 完成 `Readiness Gate`。
+12. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
+13. 只有用户明确批准后才能实现。
+14. 按阶段实施，每阶段完成 review、验证、修复、记录更新和授权提交。
+15. 完成最终交付门禁，给出任务结论、验证摘要、关键证据、commit 信息和剩余风险。
 
 ## 长期进程管理强制规则
 
@@ -189,6 +191,28 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 - 每个实施阶段都能独立验证，不能只写“最终一起测试”。
 - 方案变更触发条件已记录；命中触发条件时必须暂停实现、更新计划并重新请求批准。
 - 用户批准摘要已记录批准范围、提交授权、工具授权和文档更新授权。
+
+`Plan Quality Gate` 通过后，必须执行 `Plan Self-Review`。该自查用于主动挑出并修复方案问题，不等同于 `Plan Quality Gate` 或 `Readiness Gate`。
+
+`Plan Self-Review` 必须覆盖：
+
+- `Defects`：逻辑矛盾、错误假设、不可执行步骤、遗漏前置条件。
+- `Optimizations`：可减少复杂度、文件数量、阶段数量、用户交互或验证成本的改进。
+- `Missing items`：缺少环境、Git、验证、工具、MCP、process-manager、回滚、文档或提交策略。
+- `Risks`：高风险改动缺少验证、缓解或回滚。
+- `Consistency`：`Execution Control`、阶段计划、验证、Git、状态记录和恢复摘要之间存在冲突。
+
+处理规则：
+
+- 发现 defect 时，必须先修复计划，不得进入 `Readiness Gate`。
+- 发现 missing item 时，必须补充到对应章节。
+- 发现 optimization 时，如果不改变目标、范围和风险，应直接优化计划；如果会改变目标、范围、阶段、验证或风险，必须记录为方案变更并请求用户确认。
+- 发现 risk 时，必须补充验证、缓解或回滚策略。
+- 发现 consistency 问题时，必须修正冲突字段；`execution-plan.md` 仍是任务状态唯一主契约。
+- 用户审批前只要方案内容被修改，必须重新执行 `Plan Self-Review` 并更新自查结论。
+- 自查修复影响目标、范围、阶段、验证、工具依赖、风险或提交策略时，必须重新跑 `Plan Quality Gate` 和 `Readiness Gate`。
+
+`Readiness Gate` 必须作为最终提交审批前的综合检查，并确认 `Plan Self-Review` 已通过。
 
 证据等级：
 
