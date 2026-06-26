@@ -377,7 +377,7 @@ harness 的 `execution-plan.md` 往往包含问题、上下文、方案、阶段
 
 | 类型 | Commit | 说明 |
 | --- | --- | --- |
-| implementation | pending | 等待首次实现提交后回填 |
+| implementation | 726e0b2 | `feat(complex-coding-harness): 增加分段 patch 写入策略` |
 
 ## Resume Summary
 
@@ -387,7 +387,7 @@ harness 的 `execution-plan.md` 往往包含问题、上下文、方案、阶段
 
 当前状态：
 
-- 已按批准方案完成 Stage 1 到 Stage 5，并完成验证；等待提交记录回填。
+- 已按批准方案完成 Stage 1 到 Stage 5，并完成验证和提交记录回填。
 
 关键规则：
 

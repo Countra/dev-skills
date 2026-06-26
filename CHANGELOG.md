@@ -7,7 +7,7 @@
 - 新增所有大段落盘写文件动作的分段 patch 规则，覆盖代码、文档、规划、模板、eval、changelog 和任务状态。
 - 明确单次 `apply_patch` 新增内容建议不超过 120 行、硬上限 200 行，并要求超过 300 行先写分段方案。
 - 在执行计划模板中新增 `File Write Strategy` 区块，并补充 4 条 eval 场景覆盖大文档、大代码和 patch 失败恢复。
-- Commit: `pending`
+- Commit: `726e0b2`
 - Commit message: `feat(complex-coding-harness): 增加分段 patch 写入策略`
 
 ## 2026-06-16
