@@ -6,6 +6,7 @@
 - 用户会话：当前任务要求为 `process-manager` 的进程历史记录、`runs/` 同步清理、`pm_list` 默认输出和相关 skill 规则调整制定 harness 方案，并判断 `complex-coding-harness` 是否需要联动更新。
 - 用户会话：当前任务要求分析 `complex-coding-harness` 在阶段边界提前停止的问题，并用 harness 方式落盘最终详细修改方案；本阶段只规划，不修改 skill 本体。
 - 用户会话：当前任务要求为 `complex-coding-harness` 增加独立的规划自查模块；方案已获用户批准并按 `run-to-completion` 完成实施、验证和记录。
+- 用户会话：当前任务要求为 `complex-coding-harness` 增加分段 patch 写入策略，约束所有大段落盘写文件动作；方案已获用户确认并进入实施。
 - 本地参考：`E:\work\hl\videoForensic\AI\tmp\process_manager`，包含 prototype 的 `server.py`、`client.py`、`start-manager.ps1`、`stop-manager.ps1`、`state/processes.json`。
 - 当前仓库：`E:\work\hl\videoForensic\AI\dev-skills`，用于沉淀 skill 源码。
 - `docs/development.md`：当前仓库未发现该文件。
@@ -37,7 +38,8 @@ Harness 分支策略（Harness branch policy）:
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `harness/feature`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，当前使用 `harness/feature`。
-- 当前任务为 `complex-coding-harness` 规划自查独立模块，状态为实施验证收口；已按用户批准范围修改 skill 本体、模板和 eval。
+- 当前任务为 `complex-coding-harness` 分段 patch 写入策略，状态为实施验证收口；已按用户批准范围修改 skill 本体、模板和 eval。
+- 当前任务规划已恢复为单一 `execution-plan.md`，不保留临时 numbered planning files。
 - 当前 Git 命令存在 ownership 保护：普通 `git status` 报 `detected dubious ownership`。本次校验使用一次性参数 `git -c safe.directory=E:/work/hl/videoForensic/AI/dev-skills ...`，后续提交前需要继续使用该参数，或由用户确认是否写入全局 `safe.directory`。
 
 ## 项目（Projects）
@@ -58,7 +60,7 @@ Harness 分支策略（Harness branch policy）:
 
 运行时（Runtime）:
 
-- 本任务已完成 `complex-coding-harness` 规划自查独立模块的规则、模板和 eval 更新。
+- 本任务已完成 `complex-coding-harness` 分段 patch 写入策略的规则、模板和 eval 更新。
 
 包管理器（Package manager）:
 
@@ -73,8 +75,7 @@ Harness 分支策略（Harness branch policy）:
 - JSON 检查：解析 `.harness/active-task.json`
 - Skill 验证：`quick_validate.py skills/complex-coding-harness`
 - JSONL 检查：解析 `evals/complex-coding-harness/prompts.jsonl` 并检查 id 唯一
-- 关键规则检索：`rg "Plan Self-Review|规划自查|Defects|Missing items|Consistency|规划自查已通过" skills/complex-coding-harness evals/complex-coding-harness`
-- 模板门禁顺序检索：`rg -n "方案质量门禁|规划自查|就绪门禁|方案批准" skills/complex-coding-harness/templates/execution-plan.md`
+- 关键规则检索：`rg "分段 patch|File Write Strategy|单次 apply_patch|120 行|200 行|300 行|500 行|segmented-patch" skills/complex-coding-harness evals/complex-coding-harness`
 - 文档检查：`git diff --check`
 
 验证工具（Validation tools）:

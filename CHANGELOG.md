@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-06-26
+
+### Stage 41: complex-coding-harness 分段判断模板优化
+
+- 将 `File Write Strategy` 的行数预测字段改为 `分段判断`，避免把预估行数误当成功能规模约束。
+- 明确分段判断是写入风险判断，不是最终内容长度承诺；不得为了符合判断结果删减功能、测试或文档。
+- 补充 eval 场景，覆盖无法确定最终行数时使用 `yes/no/unknown` 和分段边界的行为。
+- Commit: `5543238`
+- Commit message: `docs(complex-coding-harness): 优化分段判断模板`
+
+### Stage 40: complex-coding-harness 分段 patch 递进式设计
+
+- 明确分段 patch 不要求一次性生成全部细节，但首次写入前必须有全局框架。
+- 允许分模块递进式细化、实现和验证，避免把整体规划误解为一次性全量生成。
+- 更新 eval 场景，约束大型模块先明确模块边界、接口关系和验证策略。
+- Commit: `3b1f291`
+- Commit message: `docs(complex-coding-harness): 精确分段 patch 设计边界`
+
+### Stage 39: complex-coding-harness 分段 patch 语义强化
+
+- 明确分段 patch 是落盘策略，不是思考策略；大内容必须先整体规划，再分段写入。
+- 补充全部分段写入完成后的完整文件复查要求，覆盖命名、接口、章节、引用和一致性。
+- 增加 eval 场景，约束大型模块不能边写边想，必须先有完整结构和验证策略。
+- Commit: `6931e31`
+- Commit message: `docs(complex-coding-harness): 强化分段 patch 语义`
+
+### Stage 38: complex-coding-harness 分段 patch 写入策略
+
+- 新增所有大段落盘写文件动作的分段 patch 规则，覆盖代码、文档、规划、模板、eval、changelog 和任务状态。
+- 明确单次 `apply_patch` 新增内容建议不超过 120 行、硬上限 200 行，并要求超过 300 行先写分段方案。
+- 在执行计划模板中新增 `File Write Strategy` 区块，并补充 4 条 eval 场景覆盖大文档、大代码和 patch 失败恢复。
+- Commit: `726e0b2`
+- Commit message: `feat(complex-coding-harness): 增加分段 patch 写入策略`
+
 ## 2026-06-16
 
 ### Stage 37: complex-coding-harness 规划自查门禁
