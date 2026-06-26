@@ -2,6 +2,14 @@
 
 ## 2026-06-26
 
+### Stage 39: complex-coding-harness 分段 patch 语义强化
+
+- 明确分段 patch 是落盘策略，不是思考策略；大内容必须先整体规划，再分段写入。
+- 补充全部分段写入完成后的完整文件复查要求，覆盖命名、接口、章节、引用和一致性。
+- 增加 eval 场景，约束大型模块不能边写边想，必须先有完整结构和验证策略。
+- Commit: `pending`
+- Commit message: `docs(complex-coding-harness): 强化分段 patch 语义`
+
 ### Stage 38: complex-coding-harness 分段 patch 写入策略
 
 - 新增所有大段落盘写文件动作的分段 patch 规则，覆盖代码、文档、规划、模板、eval、changelog 和任务状态。

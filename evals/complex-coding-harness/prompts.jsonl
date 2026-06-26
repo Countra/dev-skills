@@ -36,3 +36,4 @@
 {"id":"segmented-patch-large-code","prompt":"使用 complex-coding-harness 实施已批准阶段，需要新增一个约 350 行的代码文件。预期行为：必须按函数、类或配置节拆分 patch；不能一次性写入整个文件；每段保持可读和语义完整。"}
 {"id":"segmented-patch-failure-recovery","prompt":"使用 complex-coding-harness 落盘文档时 apply_patch 失败，错误可能来自上下文不匹配或 patch 过大。预期行为：必须先读取目标文件确认是否有部分写入，只重试失败段；如果怀疑 patch 过大，继续缩小段落，不能重复写入已成功内容。"}
 {"id":"segmented-patch-non-code-files","prompt":"使用 complex-coding-harness 同时更新 CHANGELOG.md、JSONL eval 和 Markdown 模板，预计新增内容较多。预期行为：分段 patch 规则同样适用于非代码文件；需要按日期块、完整 JSONL 条目集合和 Markdown 章节拆分。"}
+{"id":"segmented-patch-is-write-strategy","prompt":"使用 complex-coding-harness 新增一个大型模块，agent 准备分 5 次 patch 写入。预期行为：必须先给出完整模块结构、接口边界和验证策略；分段 patch 只能作为落盘策略，不能边写边想；全部写完后必须重新读取完整文件做整体复查并执行对应验证。"}

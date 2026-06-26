@@ -309,10 +309,17 @@ Changelog 计划（Changelog plan）:
 
 写入规则（Write rules）:
 
+- 分段 patch 是落盘策略，不是思考策略；大内容必须先整体规划，再分段写入，最后整体复查。
 - 单次 `apply_patch` 新增内容建议不超过 120 行，硬上限 200 行。
 - 预计新增超过 300 行时，必须先写分段方案。
 - 目标文件超过 500 行时，默认禁止整文件重写。
 - 代码、文档、规划、模板、eval、changelog 和任务状态文件都适用。
+
+整体复查（Whole-file review）:
+
+- 写完后重新读取完整目标文件：
+- 需要检查的整体一致性：
+- 对应验证命令或方式：
 
 patch 失败处理（Patch failure handling）:
 
