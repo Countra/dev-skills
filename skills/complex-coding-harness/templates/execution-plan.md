@@ -299,6 +299,27 @@ Changelog 计划（Changelog plan）:
 
 - 
 
+## 文件写入策略（File Write Strategy）
+
+预计大文件（Expected large writes）:
+
+| 文件（File） | 预计新增/替换行数（Estimated lines） | 分段方案（Segmentation plan） | 单次 patch 上限（Patch limit） |
+| --- | --- | --- | --- |
+|  |  |  |  |
+
+写入规则（Write rules）:
+
+- 单次 `apply_patch` 新增内容建议不超过 120 行，硬上限 200 行。
+- 预计新增超过 300 行时，必须先写分段方案。
+- 目标文件超过 500 行时，默认禁止整文件重写。
+- 代码、文档、规划、模板、eval、changelog 和任务状态文件都适用。
+
+patch 失败处理（Patch failure handling）:
+
+- 读取目标文件确认是否有部分写入：
+- 失败原因判断：
+- 重试策略：
+
 ## 问题和覆盖项（Questions And Overrides）
 
 | ID | 是否阻塞（Blocking） | 状态（Status） | 问题（Question） | 决策（Decision） | 应用位置（Applied to） |

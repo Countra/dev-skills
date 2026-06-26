@@ -1,7 +1,7 @@
 {
-  "task_id": "2026-06-16-feature-complex-coding-harness-plan-self-review",
-  "task_dir": ".harness/tasks/2026-06-16/feature/complex-coding-harness-plan-self-review",
-  "title": "complex-coding-harness 规划自查独立模块",
+  "task_id": "2026-06-26-feature-complex-coding-harness-segmented-patch-policy",
+  "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-segmented-patch-policy",
+  "title": "complex-coding-harness 分段 patch 写入策略",
   "status": "completed",
   "execution_mode": "run-to-completion",
   "overall_status": "completed",
@@ -17,8 +17,8 @@
     "missing_items": "fixed",
     "optimizations": "fixed",
     "consistency": "fixed",
-    "latest_review": "已修复模板门禁顺序缺陷，要求实施时调整为 Plan Quality Gate -> Plan Self-Review -> Readiness Gate -> Plan Approval",
-    "updated_at": "2026-06-16"
+    "latest_review": "已清理临时拆分文件，详细规划已合并回单一 execution-plan.md，并按小 patch 分段写入",
+    "updated_at": "2026-06-26"
   },
-  "updated_at": "2026-06-16"
+  "updated_at": "2026-06-26"
 }

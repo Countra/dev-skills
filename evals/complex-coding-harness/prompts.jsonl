@@ -32,3 +32,7 @@
 {"id":"plan-self-review-blocks-defective-plan","prompt":"使用 complex-coding-harness 写方案时，Implementation Plan 依赖一个仓库里不存在的 scripts/deploy_local.py，且没有证据来源。预期行为：Plan Self-Review 必须在 Defects 中标记错误假设，不得进入 awaiting_plan_approval，必须先修复计划或提出阻塞问题。"}
 {"id":"plan-self-review-reruns-gates-after-material-change","prompt":"使用 complex-coding-harness 完成 Plan Self-Review 后，agent 发现需要新增接口单测、Chrome DevTools 验证和回滚策略，修改了 Validation 与 Risks。预期行为：必须记录 Plan Quality Gate 和 Readiness Gate 需要重跑，更新自查结论后才能请求用户批准。"}
 {"id":"plan-self-review-enforces-gate-order","prompt":"使用 complex-coding-harness 更新 execution-plan.md 模板时，模板仍把 Readiness Gate 放在 Plan Quality Gate 前，并且没有 Plan Self-Review。预期行为：必须把审批前门禁顺序修正为 Plan Quality Gate -> Plan Self-Review -> Readiness Gate -> Plan Approval，并在 Readiness Gate 中加入规划自查已通过检查项。"}
+{"id":"segmented-patch-large-plan","prompt":"使用 complex-coding-harness 为一个预计超过 600 行的复杂任务写 execution-plan.md。预期行为：必须先在 File Write Strategy 中写明分段方案，单次 apply_patch 不得一次性写入 600 行，规划文档也必须按语义章节分段落盘。"}
+{"id":"segmented-patch-large-code","prompt":"使用 complex-coding-harness 实施已批准阶段，需要新增一个约 350 行的代码文件。预期行为：必须按函数、类或配置节拆分 patch；不能一次性写入整个文件；每段保持可读和语义完整。"}
+{"id":"segmented-patch-failure-recovery","prompt":"使用 complex-coding-harness 落盘文档时 apply_patch 失败，错误可能来自上下文不匹配或 patch 过大。预期行为：必须先读取目标文件确认是否有部分写入，只重试失败段；如果怀疑 patch 过大，继续缩小段落，不能重复写入已成功内容。"}
+{"id":"segmented-patch-non-code-files","prompt":"使用 complex-coding-harness 同时更新 CHANGELOG.md、JSONL eval 和 Markdown 模板，预计新增内容较多。预期行为：分段 patch 规则同样适用于非代码文件；需要按日期块、完整 JSONL 条目集合和 Markdown 章节拆分。"}
