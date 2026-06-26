@@ -301,9 +301,9 @@ Changelog 计划（Changelog plan）:
 
 ## 文件写入策略（File Write Strategy）
 
-预计大文件（Expected large writes）:
+分段判断（Segmentation decision）:
 
-| 文件（File） | 预计新增/替换行数（Estimated lines） | 分段方案（Segmentation plan） | 单次 patch 上限（Patch limit） |
+| 文件（File） | 分段判断（yes / no / unknown） | 分段边界（Segmentation boundary） | 整体复查方式（Whole-file review） |
 | --- | --- | --- | --- |
 |  |  |  |  |
 
@@ -311,7 +311,8 @@ Changelog 计划（Changelog plan）:
 
 - 分段 patch 是落盘策略，不要求一次性生成全部细节；大内容首次写入前必须先有全局框架，再分模块递进式细化，最后整体复查。
 - 单次 `apply_patch` 新增内容建议不超过 120 行，硬上限 200 行。
-- 预计新增超过 300 行时，必须先写分段方案。
+- 分段判断是写入风险判断，不是最终内容长度承诺；不得为了符合判断结果删减功能、压缩测试或省略文档。
+- 写入范围无法判断时填 `unknown`，按 `medium/large` 风险保守处理；实际新增超过 300 行时必须升级为分段写入。
 - 目标文件超过 500 行时，默认禁止整文件重写。
 - 代码、文档、规划、模板、eval、changelog 和任务状态文件都适用。
 

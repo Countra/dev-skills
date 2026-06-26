@@ -2,6 +2,14 @@
 
 ## 2026-06-26
 
+### Stage 41: complex-coding-harness 分段判断模板优化
+
+- 将 `File Write Strategy` 的行数预测字段改为 `分段判断`，避免把预估行数误当成功能规模约束。
+- 明确分段判断是写入风险判断，不是最终内容长度承诺；不得为了符合判断结果删减功能、测试或文档。
+- 补充 eval 场景，覆盖无法确定最终行数时使用 `yes/no/unknown` 和分段边界的行为。
+- Commit: `pending`
+- Commit message: `docs(complex-coding-harness): 优化分段判断模板`
+
 ### Stage 40: complex-coding-harness 分段 patch 递进式设计
 
 - 明确分段 patch 不要求一次性生成全部细节，但首次写入前必须有全局框架。
