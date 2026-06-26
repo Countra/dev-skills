@@ -170,9 +170,34 @@ Workspace 环境来源（Workspace environment source）:
 
 分支占用（Branch occupancy）:
 
-- `git log <main>..HEAD`:
-- `git diff <main>...HEAD --name-only`:
+- 串行 `git log <main>..HEAD`:
+- 串行 `git -c diff.autoRefreshIndex=false diff <main>...HEAD --name-only`:
 - 现有提交属于本任务（Existing commits belong to this task）:
+
+Git 命令策略（Git command policy）:
+
+- 同一仓库 Git 命令必须串行：
+- 禁止通过并发工具、子 agent、后台任务、多 shell 或脚本并发任务同时运行同仓库 Git：
+- 非 Git 文件读取和文本搜索是否可并发：
+
+只读 Git 选项（Read-only Git options）:
+
+- 状态检查优先：`git --no-optional-locks status --short --branch`
+- diff 检查优先：`git -c diff.autoRefreshIndex=false diff <range>`
+- 最终提交前如需精确状态，可在确认无其它 Git 命令运行后串行执行普通 `git status --short --branch`：
+
+Index lock 恢复策略（Index lock recovery）:
+
+- lock 路径解析命令：`git rev-parse --git-path index.lock`
+- 删除前检查：精确路径、文件存在、大小/mtime 稳定、无活跃或未知归属 Git 进程
+- 删除范围：只删除解析出的精确 `index.lock`，禁止通配符、递归删除和删除其它 `.lock`
+- 删除后检查：串行 `git --no-optional-locks status --short --branch`
+
+Git Lock Recovery Log:
+
+| 时间（Time） | lock 路径（Lock path） | 文件大小/mtime（Size/mtime） | Git 进程检查（Process check） | 操作（Action） | 后续 status（Follow-up status） |
+| --- | --- | --- | --- | --- | --- |
+|  |  |  |  |  |  |
 
 提交策略（Commit policy）:
 

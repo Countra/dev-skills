@@ -146,8 +146,8 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 
 切换或创建 harness 分支前必须检查：
 
-- `git status --short`
-- `git branch --show-current`
+- 串行执行 `git --no-optional-locks status --short --branch`
+- 串行执行 `git branch --show-current`
 
 如果存在用户或未知改动、未完成 merge/rebase/cherry-pick、冲突文件或不明确的当前分支，必须停止确认。不要自动 stash、reset、rebase、覆盖用户改动或删除分支。
 
@@ -155,8 +155,8 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 
 进入 harness 分支后必须检查分支占用：
 
-- `git log <main>..HEAD`
-- `git diff <main>...HEAD --name-only`
+- 串行执行 `git log <main>..HEAD`
+- 串行执行 `git -c diff.autoRefreshIndex=false diff <main>...HEAD --name-only`
 
 如果发现未合回主分支的提交，必须判断是否属于当前任务链路。属于当前任务链路时，记录到 `Git Context` 后继续；不属于当前任务链路或无法判断时，必须暂停确认。不要把其他任务的提交混入当前阶段提交或最终交付。
 
@@ -168,6 +168,63 @@ managed 任务采用统一 harness 工作分支，不按任务名创建分支：
 - 如果 feature 有未提交改动，先询问是否提交检查点或暂停切换，不能自动带着脏工作区切换。
 
 `execution-plan.md` 必须记录 `Git Context`，至少包括主分支、任务类型、工作分支、创建或复用动作、同步来源、最近同步时间、分支占用、提交策略、分支收口状态和未解决分支问题。
+
+## Git 命令串行化和 index lock 恢复
+
+同一仓库、同一 working tree 内，所有 Git 命令必须串行执行。禁止通过任何 agent 并发工具、子 agent、后台任务、多 shell、脚本并发任务或自定义调度同时运行多个同仓库 Git 命令。
+
+串行范围包括看似只读的 Git 命令：
+
+- `git status`
+- `git diff`
+- `git log`
+- `git show`
+- `git branch`
+- `git rev-parse`
+- `git ls-files`
+
+非 Git 的文件读取、文本搜索、普通测试命令可以并发，但不能和 Git 命令混在同一并发批次中。
+
+只读状态检查优先使用：
+
+```text
+git --no-optional-locks status --short --branch
+```
+
+diff 类检查优先禁用自动刷新 index：
+
+```text
+git -c diff.autoRefreshIndex=false diff --check
+git -c diff.autoRefreshIndex=false diff <range>
+```
+
+`--no-optional-locks` 是只读脚本检查的优先策略，不是所有场景唯一选择。提交、切换分支或最终交付前如果需要精确工作区状态，可以在确认无其它 Git 命令运行后，串行执行普通 `git status --short --branch`。
+
+以下 Git 写操作必须独占执行：
+
+- `git add`
+- `git commit`
+- `git switch` / `git checkout`
+- `git merge`
+- `git rebase`
+- `git reset`
+- `git stash`
+- `git fetch` / `git pull`
+- `git gc`
+- `git update-index`
+
+遇到 index lock 时，必须按以下顺序恢复：
+
+1. 停止继续运行其它 Git 命令。
+2. 串行执行 `git rev-parse --git-path index.lock`，获取当前仓库或 worktree 的精确 lock 路径。
+3. 确认目标路径是单个精确 `index.lock` 文件；禁止使用通配符、递归删除或删除其它 `.lock` 文件。
+4. 检查 lock 文件存在、大小和 mtime；短暂等待后复查，确认文件状态稳定。
+5. 检查是否存在活跃 `git` / `git.exe` 进程。若存在当前仓库相关 Git 进程，或存在无法判断归属的未知 Git 进程，不得删除 lock，必须等待或停止相关进程。
+6. 确认无活跃 Git 进程且 lock 文件稳定后，只删除第 2 步解析出的精确 lock 文件。
+7. 删除后立即串行执行 `git --no-optional-locks status --short --branch`；如状态异常，停止并记录到 `execution-plan.md`。
+8. 将恢复动作写入 `Git Lock Recovery Log`，包括 lock 路径、文件大小、mtime、进程检查、删除动作和后续 status 结果。
+
+如果确实需要多个 agent 或脚本并行处理同一个仓库，优先使用独立 `git worktree` 隔离 working tree 和 index；不要在同一个 working tree 内并发运行 Git。
 
 ## 执行计划质量
 

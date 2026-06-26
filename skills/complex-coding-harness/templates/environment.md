@@ -32,6 +32,25 @@ Harness 分支策略（Harness branch policy）:
 
 - dev -> main -> master -> origin/HEAD
 
+Git 命令串行化（Git command serialization）:
+
+- 同一仓库、同一 working tree 内所有 Git 命令必须串行执行。
+- 禁止通过并发工具、子 agent、后台任务、多 shell 或脚本并发任务同时运行同仓库 Git。
+- 非 Git 文件读取、文本搜索和普通测试命令可以并发，但不能和 Git 命令混在同一并发批次。
+
+只读 Git 默认选项（Read-only Git defaults）:
+
+- 状态检查优先：`git --no-optional-locks status --short --branch`
+- diff 检查优先：`git -c diff.autoRefreshIndex=false diff <range>`
+- 最终提交前需要精确状态时，可在确认无其它 Git 命令运行后串行执行普通 `git status --short --branch`。
+
+Index lock 恢复策略（Index lock recovery policy）:
+
+- 使用 `git rev-parse --git-path index.lock` 解析当前仓库或 worktree 的精确 lock 路径。
+- 删除前必须检查 lock 文件存在、大小/mtime 稳定，并确认无活跃或未知归属 Git 进程。
+- 只允许删除解析出的精确 `index.lock`；禁止通配符、递归删除或删除其它 `.lock` 文件。
+- 删除后必须立即串行执行 `git --no-optional-locks status --short --branch`，并记录恢复结果。
+
 Git 待确认问题（Git open questions）:
 
 -
