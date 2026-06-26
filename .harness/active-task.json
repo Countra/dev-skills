@@ -2,16 +2,14 @@
   "task_id": "2026-06-26-feature-complex-coding-harness-git-serial-index-lock",
   "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-git-serial-index-lock",
   "title": "complex-coding-harness Git 串行和 index.lock 恢复规则",
-  "status": "in_progress",
+  "status": "completed",
   "execution_mode": "run-to-completion",
-  "overall_status": "in_progress",
-  "current_stage": "Stage 4：记录、验证和提交",
-  "remaining_stages": [
-    "Stage 4：提交和记录收口"
-  ],
-  "next_action": "提交实现并回填 changelog 与 Commit Log",
-  "next_automatic_action": "commit implementation",
-  "stop_condition": "none",
+  "overall_status": "completed",
+  "current_stage": "Final Delivery",
+  "remaining_stages": [],
+  "next_action": "任务完成；等待用户验收或后续使用反馈",
+  "next_automatic_action": "none",
+  "stop_condition": "all_approved_stages_completed",
   "state_source": "execution-plan.md",
   "planning_review": {
     "status": "pass",

@@ -575,11 +575,11 @@ Changelog 计划:
 
 整体任务状态（Overall status）:
 
-- in_progress
+- completed
 
 当前阶段（Current stage）:
 
-- Stage 1：核心规则和 workflow
+- Final Delivery
 
 已完成阶段（Completed stages）:
 
@@ -587,18 +587,15 @@ Changelog 计划:
 
 剩余阶段（Remaining stages）:
 
-- Stage 1：核心规则和 workflow
-- Stage 2：模板更新
-- Stage 3：eval 覆盖
-- Stage 4：记录、验证和提交
+- none
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 1
+- none
 
 当前停止条件（Current stop condition）:
 
-- none
+- all_approved_stages_completed
 
 状态来源（State source of truth）:
 
@@ -616,7 +613,7 @@ Changelog 计划:
 | Stage 1 | completed | 已新增核心规则和 workflow Git 串行/index lock 恢复章节，并同步旧 Git 示例 | rg pass | SKILL.md、workflow.md | 进入 Stage 2 |
 | Stage 2 | completed | 已更新 execution-plan/environment 模板的 Git 策略、只读选项和 Lock Recovery Log | rg pass | templates | 进入 Stage 3 |
 | Stage 3 | completed | 已新增 8 条 Git 串行和 index lock eval 场景 | JSONL pass | prompts.jsonl | 进入 Stage 4 |
-| Stage 4 | completed | 已完成验证、changelog 更新和 code review，等待提交 hash 回填 | quick_validate、JSONL、rg、diff check pass | 验证证据表 | 提交实现 |
+| Stage 4 | completed | 已完成验证、changelog 更新、code review 和提交，commit `0f75841` | quick_validate、JSONL、rg、diff check pass | 验证证据表 | 最终交付 |
 
 ## 代码审查（Code Review）
 
@@ -631,13 +628,13 @@ Changelog 计划:
 
 - 整体目标（Overall goal）: 为 `complex-coding-harness` 增加 Git 命令串行和 index lock 精确恢复规则。
 - 执行模式（Execution mode）: run-to-completion。
-- 整体任务状态（Overall status）: in_progress，等待提交记录回填。
-- 已完成阶段（Completed stages）: Planning、Stage 1、Stage 2、Stage 3、Stage 4 验证。
-- 当前阶段（Current stage）: Stage 4 commit。
-- 剩余阶段（Remaining stages）: 提交实现、回填 changelog 和 Commit Log。
-- 最新 commit（Latest commit）: none。
-- 下一步自动动作（Next automatic action）: commit implementation。
-- 当前停止条件（Current stop condition）: none。
+- 整体任务状态（Overall status）: completed。
+- 已完成阶段（Completed stages）: Planning、Stage 1、Stage 2、Stage 3、Stage 4。
+- 当前阶段（Current stage）: Final Delivery。
+- 剩余阶段（Remaining stages）: none。
+- 最新 commit（Latest commit）: `0f75841`。
+- 下一步自动动作（Next automatic action）: none。
+- 当前停止条件（Current stop condition）: all_approved_stages_completed。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: 本任务不涉及长期进程。
 - Git 规则（Git rule）: 后续所有 Git 命令必须串行；只读 status 用 `--no-optional-locks`，diff 检查用 `diff.autoRefreshIndex=false`。
@@ -655,5 +652,5 @@ Changelog 计划:
 
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
-| Planning | dev-skills | pending | `docs(harness): 规划 Git 串行和 index.lock 恢复规则` | 仅规划时如提交则记录 |
-| Stage 4 | dev-skills | pending | `docs(complex-coding-harness): 增加 Git 串行和 index.lock 恢复规则` | Stage 42 |
+| Planning | dev-skills | included in `0f75841` | `docs(complex-coding-harness): 增加 Git 串行和 index.lock 恢复规则` | Stage 42 |
+| Stage 4 | dev-skills | `0f75841` | `docs(complex-coding-harness): 增加 Git 串行和 index.lock 恢复规则` | Stage 42 |

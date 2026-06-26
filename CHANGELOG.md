@@ -7,7 +7,7 @@
 - 新增同一仓库 Git 命令串行化规则，禁止通过并发工具、子 agent、后台任务、多 shell 或脚本并发任务同时运行同仓库 Git。
 - 增加只读 Git 检查的 `--no-optional-locks` 和 `diff.autoRefreshIndex=false` 规则，并同步模板中的旧 Git 示例。
 - 补充 `index.lock` 精确恢复流程和 8 条 eval 场景，覆盖 stale lock、未知 Git 进程和 worktree 并行建议。
-- Commit: `pending`
+- Commit: `0f75841`
 - Commit message: `docs(complex-coding-harness): 增加 Git 串行和 index.lock 恢复规则`
 
 ### Stage 41: complex-coding-harness 分段判断模板优化
