@@ -2,6 +2,14 @@
 
 ## 2026-06-26
 
+### Stage 40: complex-coding-harness 分段 patch 递进式设计
+
+- 明确分段 patch 不要求一次性生成全部细节，但首次写入前必须有全局框架。
+- 允许分模块递进式细化、实现和验证，避免把整体规划误解为一次性全量生成。
+- 更新 eval 场景，约束大型模块先明确模块边界、接口关系和验证策略。
+- Commit: `pending`
+- Commit message: `docs(complex-coding-harness): 精确分段 patch 设计边界`
+
 ### Stage 39: complex-coding-harness 分段 patch 语义强化
 
 - 明确分段 patch 是落盘策略，不是思考策略；大内容必须先整体规划，再分段写入。
