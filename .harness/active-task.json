@@ -1,7 +1,7 @@
 {
-  "task_id": "2026-06-26-feature-complex-coding-harness-segmented-patch-policy",
-  "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-segmented-patch-policy",
-  "title": "complex-coding-harness 分段 patch 写入策略",
+  "task_id": "2026-06-26-feature-complex-coding-harness-git-serial-index-lock",
+  "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-git-serial-index-lock",
+  "title": "complex-coding-harness Git 串行和 index.lock 恢复规则",
   "status": "completed",
   "execution_mode": "run-to-completion",
   "overall_status": "completed",
@@ -17,7 +17,7 @@
     "missing_items": "fixed",
     "optimizations": "fixed",
     "consistency": "fixed",
-    "latest_review": "已清理临时拆分文件，详细规划已合并回单一 execution-plan.md，并按小 patch 分段写入",
+    "latest_review": "已复查并优化 Git 串行方案，补充旧命令示例同步、最终普通 status 场景、未知 Git 进程禁止删锁等风险处理",
     "updated_at": "2026-06-26"
   },
   "updated_at": "2026-06-26"
