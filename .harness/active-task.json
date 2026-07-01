@@ -1,24 +1,18 @@
 {
-  "task_id": "2026-06-26-feature-complex-coding-harness-git-serial-index-lock",
-  "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-git-serial-index-lock",
-  "title": "complex-coding-harness Git 串行和 index.lock 恢复规则",
-  "status": "completed",
+  "task_id": "2026-07-01-feature-electron-ui-verifier-skill",
+  "task_dir": ".harness/tasks/2026-07-01/feature/electron-ui-verifier-skill",
+  "title": "Electron UI verifier skill 实现",
+  "status": "blocked",
   "execution_mode": "run-to-completion",
-  "overall_status": "completed",
-  "current_stage": "Final Delivery",
-  "remaining_stages": [],
-  "next_action": "任务完成；等待用户验收或后续使用反馈",
-  "next_automatic_action": "none",
-  "stop_condition": "all_approved_stages_completed",
+  "overall_status": "blocked",
+  "current_stage": "Stage 7",
+  "remaining_stages": [
+    "Stage 7",
+    "Stage 8"
+  ],
+  "next_action": "等待用户以管理员权限启动 VideoForensic CDP endpoint",
+  "next_automatic_action": "run Stage 7 smoke after http://127.0.0.1:9223 is reachable",
+  "stop_condition": "VideoForensic requires elevated manual start",
   "state_source": "execution-plan.md",
-  "planning_review": {
-    "status": "pass",
-    "defects": "fixed",
-    "missing_items": "fixed",
-    "optimizations": "fixed",
-    "consistency": "fixed",
-    "latest_review": "已复查并优化 Git 串行方案，补充旧命令示例同步、最终普通 status 场景、未知 Git 进程禁止删锁等风险处理",
-    "updated_at": "2026-06-26"
-  },
-  "updated_at": "2026-06-26"
+  "updated_at": "2026-07-01"
 }

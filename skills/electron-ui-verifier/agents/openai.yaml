@@ -1,0 +1,3 @@
+display_name: Electron UI Verifier
+short_description: Verify Electron UI workflows
+default_prompt: Verify this Electron app UI workflow and produce screenshots plus a structured report.
