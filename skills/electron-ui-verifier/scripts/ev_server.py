@@ -1379,6 +1379,30 @@ class VerifierController:
         path = Path(session.latest_report)
         return {"ok": True, "report": str(path), "result": read_json(path)}
 
+    def safe_state_path(self, value: str) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            raise VerifyError("path must be absolute")
+        resolved = path.resolve()
+        state_root = self.config.state_root.resolve()
+        if state_root not in resolved.parents and resolved != state_root:
+            raise VerifyError(f"path must be under verifier state root: {state_root}")
+        if not resolved.exists():
+            raise VerifyError(f"path does not exist: {resolved}")
+        return resolved
+
+    def get_report(self, payload: dict[str, Any]) -> dict[str, Any]:
+        path_text = str(payload.get("path") or "")
+        path = self.safe_state_path(path_text)
+        return {"ok": True, "report": str(path), "result": read_json(path)}
+
+    def get_artifact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        path_text = str(payload.get("path") or "")
+        path = self.safe_state_path(path_text)
+        if path.is_dir():
+            raise VerifyError("artifact path must be a file")
+        return {"ok": True, "artifact": str(path), "bytes": path.stat().st_size}
+
 
 def ensure_workflow(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
@@ -1442,6 +1466,12 @@ class VerifierHandler(http.server.BaseHTTPRequestHandler):
                 return
             if method == "GET" and path == "/reports/latest":
                 self._json(200, controller.latest_report(query))
+                return
+            if method == "GET" and path == "/reports/get":
+                self._json(200, controller.get_report(query))
+                return
+            if method == "GET" and path == "/artifacts/get":
+                self._json(200, controller.get_artifact(query))
                 return
             if method == "POST" and path == "/targets/probe":
                 self._json(200, controller.probe(self._body()))

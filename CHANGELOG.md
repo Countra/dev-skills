@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 6: electron-ui-verifier 报告和诊断收口
+
+- 新增 `ev_artifact.py` 和 `ev_doctor.py`，补齐 artifact 元数据查询和本机配置诊断入口。
+- 增强 `ev_report.py`，支持读取最新 session 报告或 stateRoot 下指定报告。
+- server 限制 report/artifact 读取范围必须位于 verifier stateRoot，避免任意文件读取。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 补齐报告和诊断入口`
+
 ### Stage 5: electron-ui-verifier workflow server 化
 
 - 新增 `ev_workflow.py`，支持在已有 session 内执行 workflow JSON 文件或 JSON 字符串。
 - server `/workflows/run` 统一执行 readiness 和 steps，并补充 workflow 条目类型校验。
 - 验证 workflow 缺失 session 错误路径，确保失败不会被 shell 误判为成功。
-- Commit: pending
+- Commit: `39e0394`
 - Commit message: `feat(electron-ui-verifier): 增加 workflow 客户端入口`
 
 ### Stage 4: electron-ui-verifier action server 化

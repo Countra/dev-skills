@@ -619,7 +619,7 @@ flowchart TD
 - 已增强 workflow 输入校验，readiness 和 steps 中的条目必须是 JSON object。
 - 验证通过：`ev_workflow.py` 和 `ev_server.py` `py_compile`、缺失 session workflow 错误路径退出码 2。
 - 真实 workflow 验证留到 Stage 8。
-- Commit: pending，Stage 6 开始时回填真实哈希。
+- Commit: `39e0394`
 
 ### Stage 6：报告、artifact 和快捷入口
 
@@ -638,6 +638,14 @@ flowchart TD
 - 快捷脚本输出 JSON。
 - latest report 能找到最后一次 action/workflow。
 - artifact 存在且非空。
+
+完成记录:
+
+- 已补充 `/reports/get` 和 `/artifacts/get`，并限制只能读取 verifier stateRoot 下的文件。
+- 已增强 `ev_report.py`，支持 `--latest --session` 和 `--path`。
+- 已新增 `ev_artifact.py` 和 `ev_doctor.py`。
+- 已验证 `ev_doctor.py`、process-manager ready、report/artifact stateRoot 外路径拒绝和非零退出码。
+- Commit: pending，Stage 7 开始时回填真实哈希。
 
 ### Stage 7：文档和废弃 one-shot
 
@@ -759,18 +767,17 @@ flowchart TD
 
 当前阶段:
 
-- Stage 6
+- Stage 7
 
 剩余阶段:
 
-- Stage 6 报告、artifact 和快捷入口
 - Stage 7 文档和废弃 one-shot
 - Stage 8 真实和 mock 验证
 - Stage 9 最终审查和提交
 
 下一步:
 
-- 开始 Stage 6 报告、artifact 和快捷入口。
+- 开始 Stage 7 文档和废弃 one-shot。
 
 停止条件:
 
@@ -786,4 +793,5 @@ flowchart TD
 - Stage 2 server 基础设施已完成并提交 `4c5a468`。
 - Stage 3 session 和 target 管理已完成并提交 `250c844`。
 - Stage 4 action server 化已完成并提交 `9978beb`。
-- Stage 5 workflow server 化已完成并通过验证；下一步从 Stage 6 报告、artifact 和快捷入口开始。
+- Stage 5 workflow server 化已完成并提交 `39e0394`。
+- Stage 6 报告、artifact 和快捷入口已完成并通过验证；下一步从 Stage 7 文档和废弃 one-shot 开始。
