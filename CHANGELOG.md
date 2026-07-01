@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 8: electron-ui-verifier 端到端验证
+
+- 使用临时 mock CDP 服务完成 probe、attach、snapshot、workflow、report 和 detach 端到端验证。
+- 完成 verifier server readiness、`ev_doctor.py`、全部 `ev_*.py` 编译、示例 JSON 解析和旧入口引用搜索。
+- 尝试 VideoForensic 真实 smoke 时 `http://127.0.0.1:9223/json/version` 返回 503，真实应用 endpoint 当前不可用。
+- Commit: pending
+- Commit message: `test(electron-ui-verifier): 完成 server 验证`
+
 ### Stage 7: electron-ui-verifier 文档 server-only 收口
 
 - 重写 `SKILL.md` 为 server-only 必须流程，明确 verifier server 由 process-manager 管理，Electron GUI 本体不托管。
 - 新增 `references/server.md`，并更新 workflow、actions、troubleshooting 和示例 workflow。
 - 删除 `ev_server.py` 中旧 standalone one-shot 逻辑，搜索确认不再引用 `electron_verify.py`。
-- Commit: pending
+- Commit: `948b42a`
 - Commit message: `docs(electron-ui-verifier): 收口 server-only 文档`
 
 ### Stage 6: electron-ui-verifier 报告和诊断收口

@@ -674,7 +674,7 @@ flowchart TD
 - 已更新 `workflow.md`、`actions.md`、`troubleshooting.md` 和 workflow 示例，移除旧 one-shot 连接语义。
 - 已删除 `ev_server.py` 中旧 standalone `probe/run_workflow/one_shot` 函数。
 - 验证通过：旧入口引用搜索无结果、全部 `ev_*.py` `py_compile`、示例 JSON 解析。
-- Commit: pending，Stage 8 开始时回填真实哈希。
+- Commit: `948b42a`
 
 ### Stage 8：真实和 mock 验证
 
@@ -700,6 +700,14 @@ flowchart TD
 - `ev_attach.py --name videoForensic`。
 - `ev_workflow.py` 进入第二个案件并统计。
 - `ev_snapshot.py` / `ev_report.py`。
+
+完成记录:
+
+- 已完成 mock CDP 端到端验证：`ev_probe.py`、`ev_attach.py`、`ev_snapshot.py`、`ev_workflow.py`、`ev_report.py`、`ev_detach.py` 均通过。
+- 已完成 verifier server `pm_ready.py` 和 `ev_doctor.py` 验证。
+- 已完成全部 `ev_*.py` `py_compile`、示例 JSON 解析、旧入口引用搜索。
+- 真实 VideoForensic smoke 未执行：`http://127.0.0.1:9223/json/version` 当前返回 503，说明测试时真实应用 endpoint 不可用。
+- Commit: pending，Stage 9 开始时回填真实哈希。
 
 ### Stage 9：最终审查和提交
 
@@ -776,16 +784,15 @@ flowchart TD
 
 当前阶段:
 
-- Stage 8
+- Stage 9
 
 剩余阶段:
 
-- Stage 8 真实和 mock 验证
 - Stage 9 最终审查和提交
 
 下一步:
 
-- 开始 Stage 8 真实和 mock 验证。
+- 开始 Stage 9 最终审查和提交。
 
 停止条件:
 
@@ -803,4 +810,5 @@ flowchart TD
 - Stage 4 action server 化已完成并提交 `9978beb`。
 - Stage 5 workflow server 化已完成并提交 `39e0394`。
 - Stage 6 报告、artifact 和快捷入口已完成并提交 `e4961d5`。
-- Stage 7 文档和废弃 one-shot 已完成并通过验证；下一步从 Stage 8 真实和 mock 验证开始。
+- Stage 7 文档和废弃 one-shot 已完成并提交 `948b42a`。
+- Stage 8 真实和 mock 验证已完成；下一步从 Stage 9 最终审查和提交开始。
