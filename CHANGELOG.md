@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 9: electron-ui-verifier 最终审查收口
+
+- 完成最终审查，确认旧 `electron_verify.py` 入口无残留引用，全部 `ev_*.py` 编译通过。
+- 停止验证期间启动的 `electron-ui-verifier` process-manager 服务，避免留下后台进程。
+- 回填 harness 执行计划和 active task 的完成状态。
+- Commit: pending
+- Commit message: `docs(harness): 完成 electron verifier 重构收口`
+
 ### Stage 8: electron-ui-verifier 端到端验证
 
 - 使用临时 mock CDP 服务完成 probe、attach、snapshot、workflow、report 和 detach 端到端验证。
 - 完成 verifier server readiness、`ev_doctor.py`、全部 `ev_*.py` 编译、示例 JSON 解析和旧入口引用搜索。
 - 尝试 VideoForensic 真实 smoke 时 `http://127.0.0.1:9223/json/version` 返回 503，真实应用 endpoint 当前不可用。
-- Commit: pending
+- Commit: `fa4606f`
 - Commit message: `test(electron-ui-verifier): 完成 server 验证`
 
 ### Stage 7: electron-ui-verifier 文档 server-only 收口

@@ -707,7 +707,7 @@ flowchart TD
 - 已完成 verifier server `pm_ready.py` 和 `ev_doctor.py` 验证。
 - 已完成全部 `ev_*.py` `py_compile`、示例 JSON 解析、旧入口引用搜索。
 - 真实 VideoForensic smoke 未执行：`http://127.0.0.1:9223/json/version` 当前返回 503，说明测试时真实应用 endpoint 不可用。
-- Commit: pending，Stage 9 开始时回填真实哈希。
+- Commit: `fa4606f`
 
 ### Stage 9：最终审查和提交
 
@@ -720,6 +720,13 @@ flowchart TD
 - 本任务采用分阶段提交。
 - 每阶段提交前完成审查和验证。
 - 提交使用 `git commit -F`，bullet 之间不空行。
+
+完成记录:
+
+- 已完成最终审查：旧入口搜索无结果、全部 `ev_*.py` 编译通过、分阶段提交记录已回填。
+- 已停止验证期间启动的 `electron-ui-verifier` process-manager 服务。
+- 已确认 `electron_verify.py` 已删除，最终入口为 server + `ev_*` 脚本。
+- Commit: pending，最终提交后回填真实哈希。
 
 ## 风险和处理（Risks）
 
@@ -780,23 +787,23 @@ flowchart TD
 
 整体状态:
 
-- approved-for-implementation
+- complete
 
 当前阶段:
 
-- Stage 9
+- complete
 
 剩余阶段:
 
-- Stage 9 最终审查和提交
+- none
 
 下一步:
 
-- 开始 Stage 9 最终审查和提交。
+- none
 
 停止条件:
 
-- none
+- complete
 
 ## 恢复摘要（Resume Summary）
 
@@ -811,4 +818,5 @@ flowchart TD
 - Stage 5 workflow server 化已完成并提交 `39e0394`。
 - Stage 6 报告、artifact 和快捷入口已完成并提交 `e4961d5`。
 - Stage 7 文档和废弃 one-shot 已完成并提交 `948b42a`。
-- Stage 8 真实和 mock 验证已完成；下一步从 Stage 9 最终审查和提交开始。
+- Stage 8 真实和 mock 验证已完成并提交 `fa4606f`。
+- Stage 9 最终审查已完成，等待最终收口提交哈希回填。
