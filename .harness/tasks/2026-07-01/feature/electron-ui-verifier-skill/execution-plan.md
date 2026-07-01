@@ -1114,4 +1114,4 @@ active-task 同步字段（active-task sync fields）:
 
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
-| Stage 1 | dev-skills | not committed | planning-only | not applicable |
+| Stage 2-6 | dev-skills | 8e7e64c | feat(electron-ui-verifier): 实现 Electron UI 验证 skill | execution-plan.md |
