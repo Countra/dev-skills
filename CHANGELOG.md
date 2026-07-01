@@ -2,6 +2,14 @@
 
 ## 2026-07-01
 
+### Stage 2: electron-ui-verifier server 基础设施
+
+- 新增 verifier server 基础设施，包含本机环境文件、config/token/runtime 生成、server `/health` 和 token 客户端。
+- 将旧 `electron_verify.py` 移动为 `ev_server.py`，删除旧 one-shot 文件入口，后续只通过 server 和 `ev_*` 脚本调用。
+- 生成 process-manager service，并使用 `EV_READY` log readiness 适配端口重试后的真实 health URL。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 建立 server 基础设施`
+
 ### Stage 7-8: electron-ui-verifier VideoForensic 真实验证
 
 - 使用 `D:\VideoForensic\VideoForensic.exe` 完成 CDP probe、首页快照、首个案件点击和结果页文本/表格抽取验证。

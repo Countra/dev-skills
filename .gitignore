@@ -3,6 +3,7 @@
 .harness/tasks/**/logs/
 .harness/tasks/**/tmp/
 .harness/tasks/**/scratch/
+.harness/electron-ui-verifier/
 .harness/process-manager/config.json
 .harness/process-manager/token
 .harness/process-manager/manager.pid

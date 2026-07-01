@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Electron UI 验证 runner。"""
+"""Electron UI verifier server。"""
 
 from __future__ import annotations
 
 import argparse
 import base64
 import hashlib
+import http.server
 import json
 import os
 import socket
 import struct
 import sys
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -18,6 +20,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from ev_common import EVConfig, EVError, config_from_data, iso_now as common_iso_now, load_config, read_token, write_json as write_runtime_json
 
 
 SCHEMA_VERSION = 1
@@ -1133,47 +1137,353 @@ def one_shot(cdp: str, out_dir: Path, action: str, name: str | None = None) -> i
     return run_workflow(temp, out_dir)
 
 
+@dataclass
+class VerifierSession:
+    """服务端持有的 CDP 会话，进程退出后不会伪装恢复。"""
+
+    session_id: str
+    name: str
+    cdp: str
+    target: TargetInfo
+    client: CDPClient
+    created_at: str
+    last_used_at: str
+    enabled_domains: set[str] = field(default_factory=set)
+    latest_report: str | None = None
+    lock: threading.RLock = field(default_factory=threading.RLock)
+
+    def record(self) -> dict[str, Any]:
+        return {
+            "sessionId": self.session_id,
+            "name": self.name,
+            "cdp": self.cdp,
+            "targetId": self.target.id,
+            "targetTitle": self.target.title,
+            "targetUrl": self.target.url,
+            "status": "attached",
+            "createdAt": self.created_at,
+            "lastUsedAt": self.last_used_at,
+            "enabledDomains": sorted(self.enabled_domains),
+            "latestReport": self.latest_report,
+            "eventCounts": self.client.event_counts(),
+        }
+
+
+class VerifierController:
+    """HTTP handler 背后的业务控制器。"""
+
+    def __init__(self, config: EVConfig, config_path: Path) -> None:
+        self.config = config
+        self.config_path = config_path
+        self.token = read_token(config)
+        self.sessions: dict[str, VerifierSession] = {}
+        self.lock = threading.RLock()
+        for folder in (config.state_root, config.reports_dir, config.artifacts_dir, config.logs_dir, config.tmp_dir):
+            folder.mkdir(parents=True, exist_ok=True)
+        self.persist_sessions()
+
+    def set_actual_port(self, port: int) -> None:
+        if port != self.config.port:
+            data = read_json(self.config_path)
+            data["port"] = port
+            write_runtime_json(self.config_path, data)
+            self.config = config_from_data(data)
+        write_runtime_json(
+            self.config.server_file,
+            {
+                "host": self.config.host,
+                "port": port,
+                "pid": os.getpid(),
+                "processManagerService": "electron-ui-verifier",
+                "startedAt": iso_now(),
+            },
+        )
+
+    def health(self) -> dict[str, Any]:
+        return {
+            "ok": True,
+            "service": "electron-ui-verifier",
+            "pid": os.getpid(),
+            "host": self.config.host,
+            "port": self.config.port,
+            "sessions": len(self.sessions),
+        }
+
+    def persist_sessions(self) -> None:
+        records = [session.record() for session in self.sessions.values()]
+        write_runtime_json(self.config.sessions_file, {"updatedAt": iso_now(), "sessions": records})
+
+    def list_sessions(self) -> dict[str, Any]:
+        with self.lock:
+            return {"ok": True, "sessions": [session.record() for session in self.sessions.values()]}
+
+    def get_session(self, payload: dict[str, Any]) -> VerifierSession:
+        name = str(payload.get("session") or payload.get("name") or payload.get("sessionId") or "")
+        if not name:
+            raise VerifyError("session is required")
+        with self.lock:
+            session = self.sessions.get(name)
+            if session is None:
+                for item in self.sessions.values():
+                    if item.session_id == name:
+                        session = item
+                        break
+            if session is None:
+                raise VerifyError(f"session not found: {name}")
+            return session
+
+    def probe(self, payload: dict[str, Any]) -> dict[str, Any]:
+        cdp = normalize_cdp_endpoint(str(payload.get("cdp") or ""))
+        version = get_version(cdp)
+        targets = get_targets(cdp)
+        selected: dict[str, Any] | None = None
+        selection_error: str | None = None
+        try:
+            selected = select_target(targets, payload).__dict__
+        except VerifyError as exc:
+            selection_error = str(exc)
+        return {
+            "ok": True,
+            "version": version,
+            "targets": [target.__dict__ for target in targets],
+            "selectedTarget": selected,
+            "selectionError": selection_error,
+        }
+
+    def attach(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = str(payload.get("name") or payload.get("session") or "").strip()
+        if not name:
+            raise VerifyError("session name is required")
+        reuse = payload.get("reuse", True) is not False
+        with self.lock:
+            if reuse and name in self.sessions:
+                return {"ok": True, "session": self.sessions[name].record(), "reused": True}
+        cdp = normalize_cdp_endpoint(str(payload.get("cdp") or ""))
+        targets = get_targets(cdp)
+        target = select_target(targets, payload)
+        client = CDPClient(target.web_socket_debugger_url, allow_remote=bool(payload.get("allowRemoteCdp")))
+        client.ws.connect()
+        session = VerifierSession(
+            session_id=f"ev-{int(time.time())}-{len(self.sessions) + 1}",
+            name=name,
+            cdp=cdp,
+            target=target,
+            client=client,
+            created_at=iso_now(),
+            last_used_at=iso_now(),
+        )
+        with session.lock:
+            self.ensure_domains(session, {"Runtime", "Page"})
+        with self.lock:
+            old = self.sessions.get(name)
+            if old is not None:
+                old.client.ws.close()
+            self.sessions[name] = session
+            self.persist_sessions()
+        return {"ok": True, "session": session.record(), "reused": False}
+
+    def detach(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session = self.get_session(payload)
+        with self.lock:
+            self.sessions.pop(session.name, None)
+            session.client.ws.close()
+            self.persist_sessions()
+        return {"ok": True, "session": session.record()}
+
+    def ensure_domains(self, session: VerifierSession, domains: set[str]) -> None:
+        for domain in domains:
+            if domain in session.enabled_domains:
+                continue
+            session.client.call(f"{domain}.enable")
+            session.enabled_domains.add(domain)
+
+    def report_dir(self, session: VerifierSession, prefix: str) -> Path:
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        path = self.config.reports_dir / session.name / f"{stamp}-{prefix}"
+        ensure_dir(path)
+        return path
+
+    def run_steps(self, session: VerifierSession, steps_payload: list[dict[str, Any]], prefix: str) -> dict[str, Any]:
+        with session.lock:
+            actions = set()
+            for step in steps_payload:
+                for action in SUPPORTED_ACTIONS:
+                    if action in step:
+                        actions.add(action)
+            required = {"Runtime", "Page"}
+            if "collectNetwork" in actions:
+                required.add("Network")
+            self.ensure_domains(session, required)
+            out_dir = self.report_dir(session, prefix)
+            ctx = RunContext(cdp=session.cdp, out_dir=out_dir)
+            ctx.backend_attempts.append({"backend": "raw-cdp", "status": "selected"})
+            version = get_version(session.cdp)
+            targets = get_targets(session.cdp)
+            steps: list[StepResult] = []
+            for step in steps_payload:
+                result = run_step(session.client, ctx, step)
+                steps.append(result)
+                if result.status == "failed" and step.get("continueOnFailure") is not True:
+                    break
+            session.client.drain_events(50, 100)
+            ctx.diagnostics["enabledDomains"] = sorted(session.enabled_domains)
+            ctx.diagnostics["eventCounts"] = session.client.event_counts()
+            report = build_report(ctx, version, targets, session.target, steps)
+            report["session"] = session.record()
+            persist_report(ctx, report)
+            session.latest_report = str(out_dir / "report.json")
+            session.last_used_at = iso_now()
+            self.persist_sessions()
+            return {"ok": report["status"] == "passed", "report": session.latest_report, "summary": str(out_dir / "summary.md"), "result": report}
+
+    def run_action(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session = self.get_session(payload)
+        step = payload.get("step") or payload.get("action")
+        if not isinstance(step, dict):
+            raise VerifyError("action step must be an object")
+        return self.run_steps(session, [step], "action")
+
+    def run_workflow(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session = self.get_session(payload)
+        workflow = ensure_workflow(payload.get("workflow"))
+        steps_payload: list[dict[str, Any]] = []
+        for index, item in enumerate(workflow.get("readiness", []), start=1):
+            if "waitText" in item:
+                steps_payload.append({"id": f"readiness-{index}", "waitText": {"text": item["waitText"], "timeoutMs": item.get("timeoutMs", 30000)}})
+            elif "waitUrlContains" in item:
+                steps_payload.append({"id": f"readiness-{index}", "waitUrlContains": {"text": item["waitUrlContains"], "timeoutMs": item.get("timeoutMs", 30000)}})
+        steps_payload.extend(item for item in workflow.get("steps", []) if isinstance(item, dict))
+        return self.run_steps(session, steps_payload, "workflow")
+
+    def latest_report(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session = self.get_session(payload)
+        if not session.latest_report:
+            raise VerifyError(f"session has no report yet: {session.name}")
+        path = Path(session.latest_report)
+        return {"ok": True, "report": str(path), "result": read_json(path)}
+
+
+def ensure_workflow(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise VerifyError("workflow must be an object")
+    return value
+
+
+class VerifierHTTPServer(http.server.ThreadingHTTPServer):
+    def __init__(self, server_address: tuple[str, int], controller: VerifierController) -> None:
+        self.controller = controller
+        super().__init__(server_address, VerifierHandler)
+
+
+class VerifierHandler(http.server.BaseHTTPRequestHandler):
+    server: VerifierHTTPServer
+
+    def log_message(self, format: str, *args: Any) -> None:
+        return
+
+    def _json(self, status: int, data: dict[str, Any]) -> None:
+        body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _authorized(self) -> bool:
+        if self.path.split("?", 1)[0] == "/health":
+            return True
+        auth = self.headers.get("Authorization", "")
+        return auth == f"Bearer {self.server.controller.token}"
+
+    def _body(self) -> dict[str, Any]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length).decode("utf-8")
+        value = json.loads(raw)
+        if not isinstance(value, dict):
+            raise VerifyError("request body must be a JSON object")
+        return value
+
+    def _handle(self, method: str) -> None:
+        if not self._authorized():
+            self._json(401, {"ok": False, "code": "unauthorized", "error": "invalid bearer token"})
+            return
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path
+        query = dict(urllib.parse.parse_qsl(parsed.query))
+        controller = self.server.controller
+        try:
+            if method == "GET" and path == "/health":
+                self._json(200, controller.health())
+                return
+            if method == "GET" and path == "/sessions":
+                self._json(200, controller.list_sessions())
+                return
+            if method == "GET" and path == "/reports/latest":
+                self._json(200, controller.latest_report(query))
+                return
+            if method == "POST" and path == "/targets/probe":
+                self._json(200, controller.probe(self._body()))
+                return
+            if method == "POST" and path == "/sessions/attach":
+                self._json(200, controller.attach(self._body()))
+                return
+            if method == "POST" and path == "/sessions/detach":
+                self._json(200, controller.detach(self._body()))
+                return
+            if method == "POST" and path == "/actions/run":
+                result = controller.run_action(self._body())
+                self._json(200 if result.get("ok") else 500, result)
+                return
+            if method == "POST" and path == "/workflows/run":
+                result = controller.run_workflow(self._body())
+                self._json(200 if result.get("ok") else 500, result)
+                return
+            self._json(404, {"ok": False, "code": "not_found", "error": f"unknown endpoint: {path}"})
+        except VerifyError as exc:
+            self._json(400, {"ok": False, "code": "request_failed", "error": str(exc)})
+        except Exception as exc:
+            self._json(500, {"ok": False, "code": "internal_error", "error": str(exc)})
+
+    def do_GET(self) -> None:
+        self._handle("GET")
+
+    def do_POST(self) -> None:
+        self._handle("POST")
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="通过 CDP 验证 Electron UI，并输出证据报告。")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    probe_cmd = sub.add_parser("probe", help="探测 CDP endpoint 并选择 target。")
-    probe_cmd.add_argument("--cdp", required=True)
-    probe_cmd.add_argument("--out", required=True)
-    probe_cmd.add_argument("--workflow")
-
-    run_cmd = sub.add_parser("run", help="执行 workflow JSON。")
-    run_cmd.add_argument("--workflow", required=True)
-    run_cmd.add_argument("--out", required=True)
-
-    snap_cmd = sub.add_parser("snapshot", help="采集 DOM 文本 snapshot。")
-    snap_cmd.add_argument("--cdp", required=True)
-    snap_cmd.add_argument("--out", required=True)
-
-    shot_cmd = sub.add_parser("screenshot", help="采集截图。")
-    shot_cmd.add_argument("--cdp", required=True)
-    shot_cmd.add_argument("--out", required=True)
-    shot_cmd.add_argument("--name", default="screenshot.png")
+    parser = argparse.ArgumentParser(description="启动 Electron UI verifier HTTP server。")
+    parser.add_argument("--config", required=True, help="config.json 的绝对路径")
     return parser
+
+
+def serve(config_path: Path) -> int:
+    config = load_config(config_path)
+    controller = VerifierController(config, config_path)
+    max_switches = config.port_retry_max_switches if config.port_retry_enabled else 0
+    last_error: OSError | None = None
+    for offset in range(max_switches + 1):
+        port = config.port + offset
+        try:
+            server = VerifierHTTPServer((config.host, port), controller)
+        except OSError as exc:
+            last_error = exc
+            continue
+        controller.set_actual_port(port)
+        print(f"EV_READY http://{config.host}:{port}/health", flush=True)
+        server.serve_forever()
+        return 0
+    raise VerifyError(f"failed to bind verifier server port after retries: {last_error}")
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        if args.command == "probe":
-            out_dir = require_absolute(args.out, "--out")
-            workflow = read_json(require_absolute(args.workflow, "--workflow")) if args.workflow else None
-            return probe(args.cdp, out_dir, workflow)
-        if args.command == "run":
-            workflow_path = require_absolute(args.workflow, "--workflow")
-            out_dir = require_absolute(args.out, "--out")
-            return run_workflow(workflow_path, out_dir)
-        if args.command == "snapshot":
-            return one_shot(args.cdp, require_absolute(args.out, "--out"), "snapshot")
-        if args.command == "screenshot":
-            return one_shot(args.cdp, require_absolute(args.out, "--out"), "screenshot", args.name)
-        raise VerifyError(f"unknown command: {args.command}")
-    except VerifyError as exc:
+        config_path = require_absolute(args.config, "--config")
+        return serve(config_path)
+    except (VerifyError, EVError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
 
