@@ -10,7 +10,7 @@ Use this skill to verify Electron desktop UI behavior and produce auditable arti
 ## Required Workflow
 
 1. Read `references/workflow.md` before starting, connecting to, or validating an Electron app.
-2. If you need a long-running app or dev server started by the agent, use `process-manager` when available. If the user already started the app and provided a CDP endpoint, connect only.
+2. Start packaged Electron GUI apps with the normal terminal command requested by the user, or connect to an app the user already started. Do not use `process-manager` for the Electron GUI app itself.
 3. Probe the target first with `scripts/electron_verify.py probe`. Do not click or type until the probe identifies a single target or the workflow specifies target selection.
 4. Run validation with a workflow JSON or a narrow one-shot command. Store artifacts under the current harness task `artifacts/` directory or another ignored runtime directory.
 5. Report the backend used, fallback decisions, screenshots, extracted content, and uncovered scope. Do not claim real UI verification passed without artifacts.
@@ -29,6 +29,8 @@ Record every fallback reason in `report.json` and the harness validation evidenc
 ## Hard Rules
 
 - Use absolute paths for executable paths, working directories, workflow files, and output directories.
+- Packaged Electron GUI apps are a special case: launch them directly in a normal terminal or ask the user to launch them when elevation is required. `process-manager` is not used for the GUI app.
+- Non-GUI companion services, such as backend APIs, dev servers, workers, or watchers, still follow the workspace harness/process-manager rules when they must keep running.
 - Default to local CDP endpoints only. Remote endpoints require explicit user approval and must be recorded.
 - Do not guess when multiple Electron targets exist. Provide target selection or stop with the candidate list.
 - Do not export cookies, tokens, localStorage, request headers, or large sensitive text unless the user explicitly asks.
@@ -38,7 +40,7 @@ Record every fallback reason in `report.json` and the harness validation evidenc
 ## Resources
 
 - `scripts/electron_verify.py`: CLI runner for probe, workflow execution, screenshots, extraction, and reports.
-- `references/workflow.md`: planning, backend selection, process-manager integration, and evidence rules.
+- `references/workflow.md`: planning, backend selection, Electron GUI launch rules, and evidence rules.
 - `references/actions.md`: workflow JSON actions and examples.
 - `references/troubleshooting.md`: common failures and recovery rules.
 - `assets/workflow.example.json`: minimal workflow template.

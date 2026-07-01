@@ -10,19 +10,23 @@ Use this workflow to inspect and validate Electron desktop applications with rep
 2. Confirm whether the app is already running.
 3. Confirm the CDP endpoint, usually `http://127.0.0.1:<port>`.
 4. Confirm where artifacts should be stored.
-5. Check whether `process-manager` is available before starting any long-running process.
+5. Confirm whether the Electron GUI app should be launched by the agent or manually by the user.
 
 Finite commands such as `python -m py_compile`, `--help`, JSON parsing, and report checks do not use `process-manager`.
 
 ## Starting or Connecting
 
-Prefer connecting to an app the user already started. If the agent must start a long-running Electron app, and `process-manager` is available, use it. Do not hand-roll background PowerShell, `Start-Process`, `cmd /c start`, or hidden launchers.
+Prefer connecting to an app the user already started. Packaged Electron GUI apps are a special case: do not use `process-manager` for the GUI app itself. Start them with the normal terminal command requested by the user, or ask the user to start them when elevation, desktop interaction, licensing, or user profile access is required.
+
+Use `process-manager` only for non-GUI companion processes that must keep running, such as backend APIs, dev servers, workers, watchers, or model services. Do not use it for the Electron window process being visually verified.
 
 Packaged apps usually need a remote debugging argument:
 
 ```powershell
 D:\App\App.exe --remote-debugging-port=9223
 ```
+
+For elevated apps, ask the user to run the command in an elevated terminal, then connect to the resulting CDP endpoint.
 
 When the app depends on a backend service, validate backend readiness separately. If the UI displays a loading screen because the backend is unavailable, record that as environment readiness failure, not as a UI verification pass.
 

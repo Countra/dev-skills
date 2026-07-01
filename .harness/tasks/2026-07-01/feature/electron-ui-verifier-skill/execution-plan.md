@@ -25,7 +25,7 @@
 - 遵守当前 `complex-coding-harness` managed 任务流程。
 - 遵守全局 `AGENTS.md`：中文注释、最小变更、分段写入、真实验证、规范 commit。
 - 遵守 `skill-creator`：skill 保持精简，`SKILL.md` + 必要 `scripts/`、`references/`、`assets/`、`agents/openai.yaml`。
-- 如果后续启动长期 Electron 进程或 dev server，且 `process-manager` skill 可用，必须通过 `process-manager` 管理。
+- Electron GUI 应用本体是本 skill 的特殊场景，不使用 `process-manager`；需要由 agent 或用户用普通终端命令启动。后端 API、dev server、worker 等非 GUI 伴随长期进程仍按 harness/process-manager 规则管理。
 - 规划和实现写文件都必须使用分段 patch；大文件不得一次性整文件重写。
 
 待确认项（Open uncertainties）:
@@ -532,7 +532,7 @@ skills/
 
 - 优先做 finite command 验证：Python 编译、help、JSON parse、dry-run、mock action。
 - 如果用户允许，使用 `D:\VideoForensic\VideoForensic.exe --remote-debugging-port=<port>` 或用户已启动的 endpoint 做真实 smoke。
-- 如果需要启动长期 Electron 进程，先读取 `process-manager`，通过 `pm_*` 管理；如果用户手动启动，则 verifier 只连接 endpoint。
+- Electron GUI 应用本体不走 `process-manager`；使用普通终端命令启动，或在需要管理员权限时要求用户手动启动。若存在后端 API、dev server、worker 等非 GUI 伴随长期进程，再按 `process-manager` 管理。
 
 原因（Why）:
 
@@ -630,7 +630,7 @@ Workspace 环境来源（Workspace environment source）:
 - Playwright：可选后端；如果当前 Python 或 Node 环境已安装则使用，否则不强制作为 v1 必需依赖。
 - Playwright MCP：可选验证工具；只有用户明确要求或环境可用时启用。
 - Chrome DevTools Protocol：raw CDP fallback 的基础能力。
-- process-manager：如果后续需要由 agent 启动长期 Electron 进程或 dev server，则必须使用。
+- process-manager：只用于后端 API、dev server、worker、watcher 等非 GUI 伴随长期进程；不用于 Electron GUI 应用本体。
 
 临时覆盖（Temporary overrides）:
 
@@ -730,14 +730,14 @@ Git Lock Recovery Log:
 | Playwright MCP | agent UI 操作后端 | 3-7 | optional | MCP 与目标 Electron 不兼容 | runner raw CDP | 使用需确认 |
 | CDP | raw fallback | 3-7 | required for packaged exe | 协议差异 | Playwright Electron dev mode | 不需额外确认 |
 | stdlib WebSocket transport | raw CDP 通信 | 3-7 | planned | 协议实现缺陷 | 重新批准后使用第三方库 | 新增依赖需确认 |
-| process-manager | 长期进程管理 | 7 | available | manager 离线 | 用户手动启动 app 后仅连接 | 启动 manager 需确认 |
+| process-manager | 非 GUI 伴随长期进程管理 | 7 | available | manager 离线 | 用户手动启动 app 后仅连接 | 仅伴随服务需要确认 |
 
 ## 长期进程管理（Process Manager Gate）
 
 是否需要长期后台进程（Needs long-running processes）:
 
 - planning 阶段：no
-- implementation 验证阶段：conditional
+- implementation 验证阶段：Electron GUI 本体不使用 process-manager；非 GUI 伴随服务 conditional
 
 process-manager skill 是否存在（process-manager skill available）:
 
@@ -745,7 +745,8 @@ process-manager skill 是否存在（process-manager skill available）:
 
 规则结论（Rule decision）:
 
-- 如果后续由 agent 启动 Electron exe、Electron dev app、前端 dev server 或后端服务，必须使用 `process-manager`。
+- Electron GUI 应用本体不使用 `process-manager`，用普通终端命令启动，或由用户在需要管理员权限时手动启动。
+- 如果后续由 agent 启动后端服务、前端 dev server、worker、watcher 或模型服务，必须使用 `process-manager`。
 - 如果用户已手动启动 Electron 应用并提供 CDP endpoint，verifier 只连接，不需要管理该进程。
 - finite command，例如 Python 编译、help、dry-run、JSON parse，不进入 `process-manager`。
 
@@ -753,11 +754,11 @@ process-manager skill 是否存在（process-manager skill available）:
 
 | 服务（Service） | 类型（Type） | 阶段（Stage） | service config | readiness | processKey | 日志/证据（Logs/evidence） | 清理状态（Cleanup） |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Electron app smoke | other | 7 | conditional | CDP endpoint / log / process | pending | artifacts/report | pending |
+| Electron app smoke | GUI app | 7 | not-applicable | CDP endpoint | not-applicable | artifacts/report | 用户或普通终端启动 |
 
 禁止 shell 后台启动确认（No shell background start）:
 
-- yes
+- applies to non-GUI companion services only; Electron GUI app uses normal foreground terminal/manual launch
 
 历史视图需求（Needs `pm_list --history`）:
 
@@ -774,7 +775,7 @@ process-manager skill 是否存在（process-manager skill available）:
 每阶段复查要求（Per-stage reread requirement）:
 
 - 每个实现阶段开始前复查本节。
-- 任何启动长期 Electron 或 dev server 前必须复查本节和 `process-manager` workflow。
+- 启动 Electron GUI app 前复查本节，确认不使用 process-manager；启动非 GUI 伴随长期服务前复查 `process-manager` workflow。
 - 上下文压缩或中断恢复后必须复查本节和 `Resume Summary`。
 
 ## 验证（Validation）
@@ -806,7 +807,7 @@ process-manager skill 是否存在（process-manager skill available）:
 | Stage 3 | raw CDP transport mock | pass | WebSocket/CDP 基础通信 | 真实 Electron 协议差异 | `artifacts/mock-cdp/report.json` | 已通过 |
 | Stage 4 | mock workflow | pass | snapshot、screenshot、report 输出 | 真实 Electron 差异 | `artifacts/mock-cdp/report.json` | 已通过 |
 | Stage 5 | report schema check | pass | schemaVersion、target、step 状态 | 报告语义正确性 | `artifacts/mock-cdp/report.json` | 已通过 |
-| Stage 7 | VideoForensic smoke | blocked | 真实 Electron 应用 | 管理员权限启动 | process-manager WinError 740 | 等待用户手动启动 9223 |
+| Stage 7 | VideoForensic smoke | pending | 真实 Electron 应用 | 等待 9223 endpoint | Electron GUI 不使用 process-manager | 使用普通终端或用户手动启动后执行 |
 
 可选验证（Optional）:
 
@@ -1050,7 +1051,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 4 | completed | workflow action DSL | mock workflow pass | `artifacts/mock-cdp/report.json` | Stage 5 已继续 |
 | Stage 5 | completed | evidence reporting | report schema check pass | `artifacts/mock-cdp/report.json` | Stage 6 已继续 |
 | Stage 6 | completed | skill docs | quick_validate pass | `SKILL.md`、references、assets | Stage 7 已开始 |
-| Stage 7 | blocked | validation and smoke | mock pass；VideoForensic blocked | WinError 740 | 等待用户手动启动 `D:\VideoForensic\VideoForensic.exe --remote-debugging-port=9223` |
+| Stage 7 | pending | validation and smoke | mock pass；等待 VideoForensic CDP endpoint | 9223 未监听 | 用普通终端命令或用户手动启动 `D:\VideoForensic\VideoForensic.exe --remote-debugging-port=9223` |
 | Stage 8 | pending | final review and delivery | pending | pending | Stage 7 后 |
 
 ## 阶段进入门禁（Stage Entry Gate）
@@ -1096,11 +1097,11 @@ active-task 同步字段（active-task sync fields）:
 - 当前阶段（Current stage）: Stage 7。
 - 剩余阶段（Remaining stages）: Stage 7-8。
 - 最新 commit（Latest commit）: none。
-- 下一步自动动作（Next automatic action）: wait for VideoForensic CDP endpoint, then run Stage 7 smoke。
-- 当前停止条件（Current stop condition）: VideoForensic requires elevated manual start。
+- 下一步自动动作（Next automatic action）: start or wait for VideoForensic CDP endpoint, then run Stage 7 smoke。
+- 当前停止条件（Current stop condition）: waiting for VideoForensic CDP endpoint。
 - 状态来源（State source of truth）: execution-plan.md。
-- 长期进程规则（Process manager rule）: 后续启动长期 Electron/dev server 必须使用 process-manager；用户手动启动 endpoint 时只连接。
-- 未覆盖/风险（Not covered/risks）: 真实 VideoForensic smoke 尚未完成；process-manager 启动外部 exe 返回 WinError 740，需要用户以管理员权限手动启动 9223 endpoint；Windows 原生窗口自动化不属于 v1。
+- 长期进程规则（Process manager rule）: Electron GUI app itself does not use process-manager; non-GUI companion services still use process-manager when needed.
+- 未覆盖/风险（Not covered/risks）: 真实 VideoForensic smoke 尚未完成；当前 9223 endpoint 未监听，需要用普通终端命令或用户手动启动；Windows 原生窗口自动化不属于 v1。
 - 不得停止说明（Do not stop note）:
   - 当前 planning-only 必须等待批准；批准后 run-to-completion，阶段边界不是停止条件。
 
