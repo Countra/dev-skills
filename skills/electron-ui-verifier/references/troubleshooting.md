@@ -1,35 +1,51 @@
-# Troubleshooting
+# 故障排查
 
-## CDP Endpoint Unreachable
+## CDP Endpoint 不可达
 
-Check that the app was started with `--remote-debugging-port=<port>` and that the port is listening on `127.0.0.1`.
+检查应用是否以 `--remote-debugging-port=<port>` 启动，并确认端口监听在 `127.0.0.1`。
 
-For the Electron GUI app itself, start it with the normal terminal command or ask the user to start it; do not use `process-manager`. Use `process-manager` only for non-GUI companion services such as backend APIs, dev servers, workers, or watchers. If the user started the GUI app manually, do not kill or restart it without permission.
+Electron GUI 应用本体使用普通终端命令启动，或要求用户启动；不要使用 `process-manager`。`process-manager` 只用于后端 API、dev server、worker、watcher 等非 GUI 伴随服务。如果 GUI 应用由用户手动启动，未经允许不要 kill 或重启。
 
-## Playwright Attach Fails
+## Playwright Attach 失败
 
-Older Electron builds can expose CDP but reject Playwright browser context operations. Record the Playwright error and fall back to raw CDP. This is not a UI failure unless raw CDP also fails to validate the requested workflow.
+旧 Electron 版本可能暴露 CDP，但拒绝 Playwright browser context 操作。记录 Playwright 错误并回退到 raw CDP。除非 raw CDP 也无法验证请求的 workflow，否则这不算 UI 失败。
 
-## Playwright MCP Fails
+## Playwright MCP 失败
 
-MCP may connect but fail on snapshot or browser context setup. Record the failed tool call and use `electron_verify.py` raw CDP fallback.
+MCP 可能能连接，但在 snapshot 或 browser context 初始化时失败。记录失败的 tool call，并使用 `electron_verify.py` 的 raw CDP fallback。
 
-## Multiple Targets
+## 多个 Target
 
-If probe shows multiple page targets, add `targetUrlContains`, `targetTitleContains`, or `targetIndex` to the workflow. Do not guess which window is the product UI.
+如果 probe 显示多个 page targets，在 workflow 中加入 `targetUrlContains`、`targetTitleContains` 或 `targetIndex`。不要猜哪个窗口是产品 UI。
 
-## Backend Loading Screen
+## 后端加载页
 
-If the UI remains on loading text such as "正在启动", inspect whether the app backend is ready. Record this as environment readiness failure when the product UI never becomes available.
+如果 UI 停留在“正在启动”等加载文本，检查应用后端是否就绪。如果产品 UI 一直不可用，应记录为环境 readiness 失败。
 
-## Native Dialogs
+## 原生对话框
 
-System file dialogs, UAC prompts, tray menus, and non-Electron windows are out of scope for v1. Ask for a separate native Windows automation plan before using Appium or WinAppDriver.
+系统文件对话框、UAC 提示、托盘菜单和非 Electron 窗口不属于 v1 范围。使用 Appium 或 WinAppDriver 前，应先制定单独的 Windows 原生自动化方案。
 
-## Screenshots Are Blank
+## 截图为空
 
-Check target selection, window visibility, device scale, and whether the page has rendered. The runner should record screenshot size; if possible, verify non-empty pixels before claiming visual evidence.
+检查 target 选择、窗口可见性、device scale，以及页面是否已经渲染。runner 应记录截图大小；可行时，在声称有视觉证据前验证非空白像素。
 
-## Sensitive Data
+## 敏感数据
 
-Do not dump cookies, tokens, localStorage, request headers, or broad page data unless explicitly requested. Keep artifacts ignored by default.
+除非用户明确要求，不要导出 cookies、tokens、localStorage、请求头或大范围页面数据。artifact 默认保存在已忽略目录中。
+
+## Console 或 Network 事件缺失
+
+`collectConsole` 和 `collectExceptions` 依赖 CDP `Runtime` event。`collectNetwork` 依赖 CDP `Network` event，并且必须在请求发生前启用。runner 会预扫描 workflow，只要存在 `collectNetwork` 就在 readiness 前启用 `Network.enable`。如果仍然缺失，检查 action 是否放在了目标页面加载之后很久才运行，或目标请求是否发生在其它 target/window 中。
+
+## DOMSnapshot 不支持
+
+旧 Electron/Chromium 可能不支持 `DOMSnapshot.captureSnapshot` 或部分参数。必需 step 会失败；如果它只是辅助证据，给该 step 设置 `continueOnFailure: true`。不要把 JS `snapshot` 伪装成等价的完整 DOMSnapshot。
+
+## Accessibility Tree 不支持
+
+`Accessibility.getFullAXTree` 在不同 CDP 版本中支持度可能不同。作为辅助证据时建议设置 `continueOnFailure: true`。如果任务要求严格检查可访问性，应把该 step 作为必需验证，并在失败时记录 CDP 版本。
+
+## Evaluate 结果过大
+
+大数组、大对象或整页文本不应完整塞进 `report.json`。使用 `maxInlineChars`、`artifact` 或默认 artifact 策略，把完整结果写入运行产物目录。需要复用结果时使用 `saveAs` 写入 `namedResults`。

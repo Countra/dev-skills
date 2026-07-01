@@ -21,6 +21,24 @@ from typing import Any
 
 
 SCHEMA_VERSION = 1
+SUPPORTED_ACTIONS = (
+    "snapshot",
+    "screenshot",
+    "clickText",
+    "clickXY",
+    "fillText",
+    "pressKey",
+    "extractText",
+    "extractTable",
+    "waitText",
+    "waitUrlContains",
+    "evaluate",
+    "collectConsole",
+    "collectExceptions",
+    "collectNetwork",
+    "domSnapshot",
+    "accessibilitySnapshot",
+)
 
 
 class VerifyError(RuntimeError):
@@ -110,6 +128,9 @@ class RunContext:
     artifacts: list[str] = field(default_factory=list)
     not_covered: list[str] = field(default_factory=list)
     backend_attempts: list[dict[str, Any]] = field(default_factory=list)
+    diagnostics: dict[str, Any] = field(default_factory=lambda: {"enabledDomains": [], "eventCounts": {}})
+    named_results: dict[str, Any] = field(default_factory=dict)
+    step_event_indexes: dict[str, int] = field(default_factory=dict)
 
     def artifact(self, name: str) -> Path:
         safe = name.replace("\\", "/").split("/")[-1]
@@ -129,8 +150,46 @@ def cap_text(text: str, limit: int = 20000) -> str:
     return text[:limit] + f"\n[truncated {len(text) - limit} chars]"
 
 
+def json_text(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2)
+
+
+def write_json_limited(path: Path, data: Any, max_bytes: int | None = None, on_too_large: str = "artifact") -> dict[str, Any]:
+    text = json_text(data)
+    original_bytes = len(text.encode("utf-8"))
+    if max_bytes and original_bytes > max_bytes:
+        if on_too_large == "fail":
+            raise VerifyError(f"artifact is too large: {original_bytes} bytes > {max_bytes} bytes")
+        preview = text.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+        data = {"truncated": True, "originalBytes": original_bytes, "preview": preview}
+    write_json(path, data)
+    return {"bytes": path.stat().st_size, "truncated": bool(max_bytes and original_bytes > max_bytes), "originalBytes": original_bytes}
+
+
+def write_ndjson(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 def js_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
+
+
+def set_named_result(target: dict[str, Any], dotted_path: str, value: Any) -> None:
+    parts = [part for part in dotted_path.split(".") if part]
+    if not parts:
+        raise VerifyError("saveAs must not be empty")
+    cursor = target
+    for part in parts[:-1]:
+        current = cursor.get(part)
+        if current is None:
+            current = {}
+            cursor[part] = current
+        if not isinstance(current, dict):
+            raise VerifyError(f"saveAs path conflicts with non-object value: {dotted_path}")
+        cursor = current
+    cursor[parts[-1]] = value
 
 
 class MinimalWebSocket:
@@ -267,6 +326,7 @@ class CDPClient:
     def __init__(self, ws_url: str, allow_remote: bool = False) -> None:
         self.ws = MinimalWebSocket(ws_url, allow_remote=allow_remote)
         self.next_id = 1
+        self.events: list[dict[str, Any]] = []
 
     def __enter__(self) -> "CDPClient":
         self.ws.connect()
@@ -284,10 +344,46 @@ class CDPClient:
             raw = self.ws.recv_text()
             payload = json.loads(raw)
             if payload.get("id") != msg_id:
+                self._record_event(payload)
                 continue
             if "error" in payload:
                 raise VerifyError(f"CDP {method} failed: {payload['error']}")
             return payload.get("result", {})
+
+    def _record_event(self, payload: dict[str, Any]) -> None:
+        if "method" not in payload:
+            return
+        self.events.append({"receivedAt": iso_now(), **payload})
+
+    def drain_events(self, duration_ms: int = 100, max_messages: int = 100) -> int:
+        if self.ws.sock is None:
+            return 0
+        original_timeout = self.ws.sock.gettimeout()
+        deadline = time.time() + max(duration_ms, 0) / 1000.0
+        count = 0
+        try:
+            while count < max_messages and time.time() < deadline:
+                remaining = max(deadline - time.time(), 0.001)
+                self.ws.sock.settimeout(remaining)
+                try:
+                    payload = json.loads(self.ws.recv_text())
+                except socket.timeout:
+                    break
+                self._record_event(payload)
+                count += 1
+        finally:
+            self.ws.sock.settimeout(original_timeout)
+        return count
+
+    def event_counts(self) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for event in self.events:
+            method = str(event.get("method", ""))
+            counts[method] = counts.get(method, 0) + 1
+        return counts
+
+    def events_by_method(self, methods: set[str]) -> list[dict[str, Any]]:
+        return [event for event in self.events if event.get("method") in methods]
 
 
 def get_version(cdp: str) -> dict[str, Any]:
@@ -369,11 +465,27 @@ SNAPSHOT_SCRIPT = r"""
 """
 
 
-def evaluate(client: CDPClient, expression: str) -> Any:
-    result = client.call("Runtime.evaluate", {"expression": expression, "returnByValue": True, "awaitPromise": True})
+def evaluate(
+    client: CDPClient,
+    expression: str,
+    return_by_value: bool = True,
+    await_promise: bool = True,
+    timeout: float = 10.0,
+) -> Any:
+    result = client.call(
+        "Runtime.evaluate",
+        {"expression": expression, "returnByValue": return_by_value, "awaitPromise": await_promise},
+        timeout=timeout,
+    )
+    if "exceptionDetails" in result:
+        details = result["exceptionDetails"]
+        text = details.get("text") or details.get("exception", {}).get("description") or "unknown evaluate exception"
+        raise VerifyError(f"Runtime.evaluate exception: {text}")
     remote = result.get("result", {})
     if "value" in remote:
         return remote["value"]
+    if "unserializableValue" in remote:
+        return remote["unserializableValue"]
     if "description" in remote:
         return remote["description"]
     return None
@@ -444,6 +556,129 @@ def extract_table(snapshot: dict[str, Any]) -> list[str]:
     return rows
 
 
+def remote_object_preview(remote: dict[str, Any], max_chars: int = 2000) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "type": remote.get("type"),
+        "subtype": remote.get("subtype"),
+    }
+    if "value" in remote:
+        item["value"] = cap_text(str(remote["value"]), max_chars)
+    if "unserializableValue" in remote:
+        item["unserializableValue"] = str(remote["unserializableValue"])
+    if "description" in remote:
+        item["description"] = cap_text(str(remote["description"]), max_chars)
+    return {key: value for key, value in item.items() if value is not None}
+
+
+def console_event_record(event: dict[str, Any]) -> dict[str, Any]:
+    params = event.get("params") or {}
+    args = [remote_object_preview(arg) for arg in params.get("args", []) if isinstance(arg, dict)]
+    text_parts = []
+    for arg in args:
+        if "value" in arg:
+            text_parts.append(str(arg["value"]))
+        elif "description" in arg:
+            text_parts.append(str(arg["description"]))
+    return {
+        "receivedAt": event.get("receivedAt"),
+        "timestamp": params.get("timestamp"),
+        "type": params.get("type"),
+        "level": params.get("type"),
+        "text": cap_text(" ".join(text_parts), 2000),
+        "args": args,
+        "stackTrace": params.get("stackTrace"),
+        "source": "runtime",
+    }
+
+
+def exception_event_record(event: dict[str, Any]) -> dict[str, Any]:
+    params = event.get("params") or {}
+    details = params.get("exceptionDetails") or {}
+    exception = details.get("exception") if isinstance(details.get("exception"), dict) else {}
+    return {
+        "receivedAt": event.get("receivedAt"),
+        "timestamp": params.get("timestamp"),
+        "text": details.get("text"),
+        "url": details.get("url"),
+        "lineNumber": details.get("lineNumber"),
+        "columnNumber": details.get("columnNumber"),
+        "exception": remote_object_preview(exception) if exception else None,
+        "stackTrace": details.get("stackTrace"),
+    }
+
+
+def network_entries(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entries: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for event in events:
+        method = event.get("method")
+        params = event.get("params") or {}
+        request_id = str(params.get("requestId", ""))
+        if not request_id:
+            continue
+        if request_id not in entries:
+            entries[request_id] = {"requestId": request_id}
+            order.append(request_id)
+        entry = entries[request_id]
+        if method == "Network.requestWillBeSent":
+            request = params.get("request") or {}
+            entry.update(
+                {
+                    "url": request.get("url"),
+                    "method": request.get("method"),
+                    "resourceType": params.get("type"),
+                    "startedAt": params.get("timestamp"),
+                    "wallTime": params.get("wallTime"),
+                }
+            )
+        elif method == "Network.responseReceived":
+            response = params.get("response") or {}
+            entry.update(
+                {
+                    "url": entry.get("url") or response.get("url"),
+                    "resourceType": entry.get("resourceType") or params.get("type"),
+                    "status": response.get("status"),
+                    "statusText": response.get("statusText"),
+                    "mimeType": response.get("mimeType"),
+                    "fromDiskCache": response.get("fromDiskCache"),
+                    "fromServiceWorker": response.get("fromServiceWorker"),
+                }
+            )
+        elif method == "Network.loadingFailed":
+            entry.update(
+                {
+                    "failed": True,
+                    "failureText": params.get("errorText"),
+                    "canceled": params.get("canceled"),
+                    "resourceType": entry.get("resourceType") or params.get("type"),
+                    "finishedAt": params.get("timestamp"),
+                }
+            )
+        elif method == "Network.loadingFinished":
+            entry.update({"finishedAt": params.get("timestamp"), "encodedDataLength": params.get("encodedDataLength")})
+    result = []
+    for request_id in order:
+        entry = entries[request_id]
+        entry["failed"] = bool(entry.get("failed"))
+        result.append(entry)
+    return result
+
+
+def status_counts(entries: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for entry in entries:
+        status = entry.get("status")
+        key = str(status if status is not None else ("failed" if entry.get("failed") else "pending"))
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def events_since(client: CDPClient, ctx: RunContext, methods: set[str], options: dict[str, Any]) -> list[dict[str, Any]]:
+    since_step = options.get("sinceStep")
+    start = ctx.step_event_indexes.get(str(since_step), 0) if since_step else 0
+    return [event for event in client.events[start:] if event.get("method") in methods]
+
+
 def detect_playwright(cdp: str) -> dict[str, Any]:
     try:
         from playwright.sync_api import sync_playwright  # type: ignore
@@ -459,10 +694,64 @@ def detect_playwright(cdp: str) -> dict[str, Any]:
 
 def normalize_step(step: dict[str, Any]) -> tuple[str, str, Any]:
     step_id = str(step.get("id") or f"step-{now_ms()}")
-    for action in ("snapshot", "screenshot", "clickText", "clickXY", "fillText", "pressKey", "extractText", "extractTable", "waitText", "waitUrlContains", "evaluate"):
+    for action in SUPPORTED_ACTIONS:
         if action in step:
             return step_id, action, step[action]
     raise VerifyError(f"step has no supported action: {step_id}")
+
+
+def workflow_actions(workflow: dict[str, Any]) -> set[str]:
+    actions: set[str] = set()
+    for section in ("readiness", "steps"):
+        for step in workflow.get(section, []):
+            if isinstance(step, dict):
+                for action in SUPPORTED_ACTIONS:
+                    if action in step:
+                        actions.add(action)
+    return actions
+
+
+def normalize_object_payload(payload: Any, action: str) -> dict[str, Any]:
+    if payload is True or payload is None:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    raise VerifyError(f"{action} payload must be an object")
+
+
+def timeout_seconds(options: dict[str, Any], default_ms: int = 10000) -> float:
+    return int(options.get("timeoutMs", default_ms)) / 1000.0
+
+
+def inline_or_artifact(ctx: RunContext, step_id: str, suffix: str, value: Any, payload: dict[str, Any]) -> dict[str, Any]:
+    max_inline_chars = int(payload.get("maxInlineChars", 2000))
+    on_too_large = str(payload.get("onTooLarge", "artifact"))
+    text = json.dumps(value, ensure_ascii=False)
+    result: dict[str, Any] = {"valueType": type(value).__name__, "truncated": False}
+    if len(text) <= max_inline_chars and on_too_large != "artifact":
+        result["inlineValue"] = value
+        return result
+    if len(text) <= max_inline_chars and "artifact" not in payload:
+        result["inlineValue"] = value
+        return result
+    if len(text) > max_inline_chars and on_too_large == "fail":
+        raise VerifyError(f"evaluate result is too large: {len(text)} chars > {max_inline_chars} chars")
+    if len(text) > max_inline_chars and on_too_large == "truncate":
+        result.update({"valuePreview": cap_text(text, max_inline_chars), "truncated": True, "chars": len(text)})
+        return result
+    artifact_name = str(payload.get("artifact") or f"{step_id}.{suffix}.json")
+    path = ctx.artifact(artifact_name)
+    write_json(path, value)
+    result.update(
+        {
+            "valuePreview": cap_text(text, max_inline_chars),
+            "truncated": len(text) > max_inline_chars,
+            "artifact": str(path),
+            "chars": len(text),
+            "bytes": path.stat().st_size,
+        }
+    )
+    return result
 
 
 def run_step(client: CDPClient, ctx: RunContext, step: dict[str, Any]) -> StepResult:
@@ -527,6 +816,73 @@ def run_step(client: CDPClient, ctx: RunContext, step: dict[str, Any]) -> StepRe
             snapshot = page_snapshot(client)
             name = payload.get("name", step_id) if isinstance(payload, dict) else step_id
             data = {"name": name, "rows": extract_table(snapshot)}
+        elif action == "collectConsole":
+            options = normalize_object_payload(payload, action)
+            client.drain_events(int(options.get("drainMs", 100)), int(options.get("maxDrainMessages", 200)))
+            levels = set(str(item) for item in options.get("levels", []))
+            rows = [console_event_record(event) for event in events_since(client, ctx, {"Runtime.consoleAPICalled"}, options)]
+            if levels:
+                rows = [row for row in rows if str(row.get("level")) in levels]
+            max_events = int(options.get("maxEvents", 200))
+            truncated = len(rows) > max_events
+            rows = rows[-max_events:]
+            path = ctx.artifact(f"{step_id}.console.ndjson")
+            write_ndjson(path, rows)
+            artifacts.append(str(path))
+            data = {
+                "name": options.get("name", step_id),
+                "count": len(rows),
+                "levels": sorted(levels) if levels else "all",
+                "truncated": truncated,
+                "artifact": str(path),
+                "sample": rows[: min(len(rows), 20)],
+            }
+        elif action == "collectExceptions":
+            options = normalize_object_payload(payload, action)
+            client.drain_events(int(options.get("drainMs", 100)), int(options.get("maxDrainMessages", 200)))
+            rows = [exception_event_record(event) for event in events_since(client, ctx, {"Runtime.exceptionThrown"}, options)]
+            max_events = int(options.get("maxEvents", 100))
+            truncated = len(rows) > max_events
+            rows = rows[-max_events:]
+            path = ctx.artifact(f"{step_id}.exceptions.json")
+            write_json(path, rows)
+            artifacts.append(str(path))
+            data = {
+                "name": options.get("name", step_id),
+                "count": len(rows),
+                "hasException": bool(rows),
+                "truncated": truncated,
+                "artifact": str(path),
+                "sample": rows[: min(len(rows), 20)],
+            }
+            if rows and options.get("failOnException") is True:
+                raise VerifyError(f"page exceptions collected: {len(rows)}")
+        elif action == "collectNetwork":
+            options = normalize_object_payload(payload, action)
+            client.drain_events(int(options.get("drainMs", 200)), int(options.get("maxDrainMessages", 500)))
+            methods = {"Network.requestWillBeSent", "Network.responseReceived", "Network.loadingFailed", "Network.loadingFinished"}
+            rows = network_entries(events_since(client, ctx, methods, options))
+            url_contains = options.get("urlContains")
+            if url_contains:
+                rows = [row for row in rows if str(url_contains) in str(row.get("url", ""))]
+            if options.get("includeFailedOnly") is True:
+                rows = [row for row in rows if row.get("failed")]
+            max_events = int(options.get("maxEvents", 300))
+            truncated = len(rows) > max_events
+            rows = rows[-max_events:]
+            path = ctx.artifact(f"{step_id}.network.json")
+            write_json(path, rows)
+            artifacts.append(str(path))
+            failed_count = sum(1 for row in rows if row.get("failed"))
+            data = {
+                "name": options.get("name", step_id),
+                "requestCount": len(rows),
+                "failedCount": failed_count,
+                "statusCounts": status_counts(rows),
+                "truncated": truncated,
+                "artifact": str(path),
+                "sample": rows[: min(len(rows), 20)],
+            }
         elif action == "waitText":
             text = payload["text"] if isinstance(payload, dict) else str(payload)
             timeout_ms = int(payload.get("timeoutMs", 30000)) if isinstance(payload, dict) else 30000
@@ -546,18 +902,88 @@ def run_step(client: CDPClient, ctx: RunContext, step: dict[str, Any]) -> StepRe
             else:
                 raise VerifyError(f"timed out waiting for URL containing {text}; last={current_url}")
             data = {"urlContains": text, "url": current_url}
+        elif action == "domSnapshot":
+            options = normalize_object_payload(payload, action)
+            params = {
+                "computedStyles": options.get("computedStyles", []),
+                "includeDOMRects": bool(options.get("includeDOMRects", False)),
+                "includePaintOrder": bool(options.get("includePaintOrder", False)),
+            }
+            snapshot = client.call("DOMSnapshot.captureSnapshot", params, timeout=timeout_seconds(options, 20000))
+            path = ctx.artifact(f"{step_id}.dom-snapshot.json")
+            meta = write_json_limited(path, snapshot, int(options.get("maxBytes", 0)) or None, str(options.get("onTooLarge", "artifact")))
+            artifacts.append(str(path))
+            documents = snapshot.get("documents", []) if isinstance(snapshot, dict) else []
+            node_count = 0
+            layout_count = 0
+            for document in documents:
+                if isinstance(document, dict):
+                    nodes = document.get("nodes") or {}
+                    layout = document.get("layout") or {}
+                    node_names = nodes.get("nodeName") if isinstance(nodes, dict) else None
+                    layout_nodes = layout.get("nodeIndex") if isinstance(layout, dict) else None
+                    node_count += len(node_names) if isinstance(node_names, list) else 0
+                    layout_count += len(layout_nodes) if isinstance(layout_nodes, list) else 0
+            data = {
+                "name": options.get("name", step_id),
+                "documentCount": len(documents),
+                "nodeCount": node_count,
+                "layoutCount": layout_count,
+                "artifact": str(path),
+                **meta,
+            }
+        elif action == "accessibilitySnapshot":
+            options = normalize_object_payload(payload, action)
+            result = client.call("Accessibility.getFullAXTree", {}, timeout=timeout_seconds(options, 20000))
+            nodes = result.get("nodes", []) if isinstance(result, dict) else []
+            max_nodes = int(options.get("maxNodes", 2000))
+            truncated = len(nodes) > max_nodes
+            rows = nodes[:max_nodes]
+            path = ctx.artifact(f"{step_id}.accessibility.json")
+            write_json(path, rows)
+            artifacts.append(str(path))
+            ignored_count = sum(1 for node in rows if isinstance(node, dict) and node.get("ignored"))
+            data = {
+                "name": options.get("name", step_id),
+                "nodeCount": len(rows),
+                "ignoredCount": ignored_count,
+                "truncated": truncated,
+                "artifact": str(path),
+                "sample": rows[: min(len(rows), 20)],
+            }
         elif action == "evaluate":
             if not isinstance(payload, dict):
                 raise VerifyError("evaluate payload must be an object")
             if payload.get("allow") is not True:
                 raise VerifyError("evaluate requires allow=true")
             expression = str(payload["expression"])
-            value = evaluate(client, expression)
-            data = {"value": value}
+            timeout_ms = int(payload.get("timeoutMs", 10000))
+            value = evaluate(
+                client,
+                expression,
+                return_by_value=bool(payload.get("returnByValue", True)),
+                await_promise=bool(payload.get("awaitPromise", True)),
+                timeout=timeout_ms / 1000.0,
+            )
+            data = inline_or_artifact(ctx, step_id, "evaluate", value, payload)
+            data["name"] = payload.get("name", step_id)
+            if "inlineValue" in data:
+                data["value"] = data["inlineValue"]
+            if "saveAs" in payload:
+                save_as = str(payload["saveAs"])
+                if "artifact" in data and data.get("truncated"):
+                    set_named_result(ctx.named_results, save_as, {"artifact": data["artifact"], "truncated": True})
+                elif data.get("truncated"):
+                    set_named_result(ctx.named_results, save_as, {"valuePreview": data.get("valuePreview"), "truncated": True})
+                else:
+                    set_named_result(ctx.named_results, save_as, value)
+                data["saveAs"] = save_as
         else:
             raise VerifyError(f"unsupported action: {action}")
+        ctx.step_event_indexes[step_id] = len(client.events)
         return StepResult(step_id, action, "passed", started, iso_now(), ctx.backend, artifacts, data)
     except Exception as exc:
+        ctx.step_event_indexes[step_id] = len(client.events)
         if step.get("continueOnFailure") is True:
             data["continueOnFailure"] = True
             ctx.not_covered.append(f"optional step skipped: {step_id} ({action}) - {exc}")
@@ -583,6 +1009,8 @@ def build_report(
         "backendAttempts": ctx.backend_attempts,
         "steps": [step.__dict__ for step in steps],
         "artifacts": ctx.artifacts,
+        "diagnostics": ctx.diagnostics,
+        "namedResults": ctx.named_results,
         "events": ctx.events,
         "notCovered": ctx.not_covered,
         "status": "failed" if any(step.status == "failed" for step in steps) else "passed",
@@ -591,22 +1019,22 @@ def build_report(
 
 def write_summary(path: Path, report: dict[str, Any]) -> None:
     lines = [
-        "# Electron UI Verification Summary",
+        "# Electron UI 验证摘要",
         "",
-        f"- Status: {report['status']}",
+        f"- 状态: {report['status']}",
         f"- Backend: {report['backend']}",
         f"- CDP: {report['cdp']}",
     ]
     target = report.get("selectedTarget")
     if target:
         lines.extend([f"- Target title: {target.get('title')}", f"- Target URL: {target.get('url')}"])
-    lines.extend(["", "## Steps", ""])
+    lines.extend(["", "## 步骤", ""])
     for step in report.get("steps", []):
         lines.append(f"- {step['status']}: {step['id']} ({step['action']})")
         if step.get("error"):
             lines.append(f"  - Error: {step['error']}")
     if report.get("notCovered"):
-        lines.extend(["", "## Not Covered", ""])
+        lines.extend(["", "## 未覆盖", ""])
         lines.extend(f"- {item}" for item in report["notCovered"])
     write_text(path, "\n".join(lines) + "\n")
 
@@ -657,9 +1085,15 @@ def run_workflow(workflow_path: Path, out_dir: Path) -> int:
     target = select_target(targets, workflow)
     ctx.event("target selected", target=target.__dict__)
     steps: list[StepResult] = []
+    actions = workflow_actions(workflow)
     with CDPClient(target.web_socket_debugger_url, allow_remote=bool(workflow.get("allowRemoteCdp"))) as client:
         client.call("Runtime.enable")
+        ctx.diagnostics["enabledDomains"].append("Runtime")
         client.call("Page.enable")
+        ctx.diagnostics["enabledDomains"].append("Page")
+        if "collectNetwork" in actions:
+            client.call("Network.enable")
+            ctx.diagnostics["enabledDomains"].append("Network")
         for item in workflow.get("readiness", []):
             if "waitText" in item:
                 payload = {"text": item["waitText"], "timeoutMs": item.get("timeoutMs", 30000)}
@@ -677,6 +1111,8 @@ def run_workflow(workflow_path: Path, out_dir: Path) -> int:
                 steps.append(result)
                 if result.status == "failed" and step.get("continueOnFailure") is not True:
                     break
+        client.drain_events(50, 100)
+        ctx.diagnostics["eventCounts"] = client.event_counts()
     report = build_report(ctx, version, targets, target, steps)
     persist_report(ctx, report)
     print(json.dumps({"ok": report["status"] == "passed", "report": str(out_dir / "report.json")}, ensure_ascii=False))
@@ -698,23 +1134,23 @@ def one_shot(cdp: str, out_dir: Path, action: str, name: str | None = None) -> i
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify Electron UI through CDP and evidence reports.")
+    parser = argparse.ArgumentParser(description="通过 CDP 验证 Electron UI，并输出证据报告。")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    probe_cmd = sub.add_parser("probe", help="Probe a CDP endpoint and select a target.")
+    probe_cmd = sub.add_parser("probe", help="探测 CDP endpoint 并选择 target。")
     probe_cmd.add_argument("--cdp", required=True)
     probe_cmd.add_argument("--out", required=True)
     probe_cmd.add_argument("--workflow")
 
-    run_cmd = sub.add_parser("run", help="Run a workflow JSON.")
+    run_cmd = sub.add_parser("run", help="执行 workflow JSON。")
     run_cmd.add_argument("--workflow", required=True)
     run_cmd.add_argument("--out", required=True)
 
-    snap_cmd = sub.add_parser("snapshot", help="Capture a DOM text snapshot.")
+    snap_cmd = sub.add_parser("snapshot", help="采集 DOM 文本 snapshot。")
     snap_cmd.add_argument("--cdp", required=True)
     snap_cmd.add_argument("--out", required=True)
 
-    shot_cmd = sub.add_parser("screenshot", help="Capture a screenshot.")
+    shot_cmd = sub.add_parser("screenshot", help="采集截图。")
     shot_cmd.add_argument("--cdp", required=True)
     shot_cmd.add_argument("--out", required=True)
     shot_cmd.add_argument("--name", default="screenshot.png")

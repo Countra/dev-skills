@@ -1,3 +1,3 @@
-display_name: Electron UI Verifier
-short_description: Verify Electron UI workflows
-default_prompt: Verify this Electron app UI workflow and produce screenshots plus a structured report.
+display_name: Electron UI 验证器
+short_description: 验证 Electron UI 和诊断信息
+default_prompt: 验证这个 Electron 应用的 UI 流程，按需收集截图、DOM、console、异常、网络和结构化报告。
