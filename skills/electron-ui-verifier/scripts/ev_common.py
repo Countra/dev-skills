@@ -273,6 +273,10 @@ def request_json(config: EVConfig, method: str, path: str, payload: Any | None =
         raise EVError(f"server returned non-JSON response: {text[:200]}") from exc
 
 
+def result_exit_code(result: dict[str, Any]) -> int:
+    return 0 if result.get("ok") is not False else 2
+
+
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", help="verifier config.json 的绝对路径")
     parser.add_argument("--workspace", help="workspace 根目录绝对路径；未指定时使用当前目录")

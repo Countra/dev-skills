@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 3: electron-ui-verifier session 和 target 管理
+
+- 新增 `ev_probe.py`、`ev_attach.py`、`ev_detach.py` 和 `ev_sessions.py`，通过 server API 管理 CDP target 与 session。
+- 补充 `/sessions/status`，支持列出 session、检查连接状态和断开 session。
+- 统一 `ev_*` 客户端退出码，server 返回 `ok: false` 时不再被 shell 误判为成功。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加 session 管理脚本`
+
 ### Stage 2: electron-ui-verifier server 基础设施
 
 - 新增 verifier server 基础设施，包含本机环境文件、config/token/runtime 生成、server `/health` 和 token 客户端。
 - 将旧 `electron_verify.py` 移动为 `ev_server.py`，删除旧 one-shot 文件入口，后续只通过 server 和 `ev_*` 脚本调用。
 - 生成 process-manager service，并使用 `EV_READY` log readiness 适配端口重试后的真实 health URL。
-- Commit: pending
+- Commit: `4c5a468`
 - Commit message: `feat(electron-ui-verifier): 建立 server 基础设施`
 
 ### Stage 7-8: electron-ui-verifier VideoForensic 真实验证

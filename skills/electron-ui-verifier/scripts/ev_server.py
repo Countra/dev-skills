@@ -1217,6 +1217,18 @@ class VerifierController:
         with self.lock:
             return {"ok": True, "sessions": [session.record() for session in self.sessions.values()]}
 
+    def session_status(self, payload: dict[str, Any]) -> dict[str, Any]:
+        session = self.get_session(payload)
+        with session.lock:
+            try:
+                session.client.call("Runtime.evaluate", {"expression": "location.href", "returnByValue": True}, timeout=5.0)
+                connected = True
+                error = None
+            except Exception as exc:
+                connected = False
+                error = str(exc)
+        return {"ok": connected, "session": session.record(), "connected": connected, "error": error}
+
     def get_session(self, payload: dict[str, Any]) -> VerifierSession:
         name = str(payload.get("session") or payload.get("name") or payload.get("sessionId") or "")
         if not name:
@@ -1419,6 +1431,9 @@ class VerifierHandler(http.server.BaseHTTPRequestHandler):
                 return
             if method == "GET" and path == "/sessions":
                 self._json(200, controller.list_sessions())
+                return
+            if method == "GET" and path == "/sessions/status":
+                self._json(200, controller.session_status(query))
                 return
             if method == "GET" and path == "/reports/latest":
                 self._json(200, controller.latest_report(query))

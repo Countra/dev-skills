@@ -533,7 +533,7 @@ flowchart TD
 - 已新增 `.harness/electron-ui-verifier/` git ignore，避免 token、绝对路径和运行状态进入仓库。
 - 已修正 process-manager readiness 为 log readiness，server 绑定成功后输出 `EV_READY <health-url>`，避免端口重试后静态 health URL 失效。
 - 验证通过：`py_compile`、`ev_init.py`、`pm_health.py`、`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`ev_health.py`。
-- Commit: pending，Stage 3 开始时回填真实哈希。
+- Commit: `4c5a468`
 
 ### Stage 3：session 和 target 管理
 
@@ -555,6 +555,15 @@ flowchart TD
 - 多 target ambiguity 必须失败并给候选。
 - 同名 session 复用。
 - target 失效时返回 `session_disconnected`。
+
+完成记录:
+
+- 已实现 `ev_probe.py`、`ev_attach.py`、`ev_detach.py`、`ev_sessions.py`。
+- 已补充 server `/sessions/status`，session 列表和状态检查均通过 server API。
+- 已统一客户端脚本退出码，server 返回 `ok: false` 时 CLI 退出码为 2，避免自动化误判。
+- 验证通过：`py_compile`、process-manager stop/start/ready、`ev_sessions.py`、`ev_health.py`、不可达 CDP probe 错误路径。
+- 未做真实 CDP attach；真实 VideoForensic smoke 留到 Stage 8。
+- Commit: pending，Stage 4 开始时回填真实哈希。
 
 ### Stage 4：action server 化
 
@@ -732,11 +741,10 @@ flowchart TD
 
 当前阶段:
 
-- Stage 3
+- Stage 4
 
 剩余阶段:
 
-- Stage 3 session 和 target 管理
 - Stage 4 action server 化
 - Stage 5 workflow server 化
 - Stage 6 报告、artifact 和快捷入口
@@ -746,7 +754,7 @@ flowchart TD
 
 下一步:
 
-- 开始 Stage 3 session 和 target 管理。
+- 开始 Stage 4 action server 化。
 
 停止条件:
 
@@ -759,4 +767,5 @@ flowchart TD
 - 最终形态：verifier server 常驻，`ev_*` 脚本封装 API，server 由 process-manager 托管。
 - Electron GUI 本体仍不使用 process-manager。
 - 用户已确认实现：Python 解释器写入 `.harness/electron-ui-verifier/environment.json`；删除 `electron_verify.py`；分阶段提交；允许 VideoForensic smoke。
-- Stage 2 server 基础设施已完成并通过验证；下一步从 Stage 3 session 和 target 管理开始。
+- Stage 2 server 基础设施已完成并提交 `4c5a468`。
+- Stage 3 session 和 target 管理已完成并通过验证；下一步从 Stage 4 action server 化开始。
