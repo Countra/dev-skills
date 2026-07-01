@@ -632,7 +632,7 @@ process-manager skill 是否存在（process-manager skill available）:
 | 阶段（Stage） | 命令/工具（Command/tool） | 结果（Result） | 覆盖内容（Covers） | 未覆盖（Not covered） | 证据/日志（Evidence/log） | 处理（Action） |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | `python -m py_compile ...` + `python ev_knowledge_smoke.py --temp --workspace ...` | pass | schema、manifest、CRUD、FTS5/LIKE 查询、cleanup | 真实 UI | `.harness/electron-ui-verifier/tmp/ev-knowledge-20260701-103106/` | completed |
-| Stage 2 | learn fixture + VideoForensic report | pending | 抽取和敏感过滤 | 自动提升 | pending | pending |
+| Stage 2 | `python -m py_compile ...` + `python ev_learn.py --dry-run` + `python ev_learn.py ...` | pass | report 抽取、artifact 去重、真实 VideoForensic 学习、候选 workflow | 自动提升 stable | `.harness/electron-ui-verifier/knowledge/manifest.json` | completed |
 | Stage 3 | query/suggest/promote smoke | pending | 快速命中和状态流转 | 真实点击 | pending | pending |
 | Stage 4 | server/workflow smoke | pending | 兼容和 learn 集成 | 长期压测 | pending | pending |
 | Stage 5 | docs + VideoForensic e2e | pending | 使用流程和真实样本 | 跨应用泛化 | pending | pending |
@@ -857,7 +857,7 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- | --- |
 | Planning | complete | 完成知识库增强方案 | Plan gates pass | this file | request approval |
 | Stage 1 | complete | 新增知识库存储模块和 smoke 脚本 | py_compile + smoke pass | runtime tmp knowledge db | continue Stage 2 |
-| Stage 2 | pending | 学习入口和知识抽取 | pending | pending | wait Stage 1 |
+| Stage 2 | complete | 新增 report 抽取模块和 `ev_learn.py` | py_compile + dry-run + real learn pass | VideoForensic knowledge runtime | continue Stage 3 |
 | Stage 3 | pending | 查询、建议和提升 | pending | pending | wait Stage 2 |
 | Stage 4 | pending | server/workflow 集成 | pending | pending | wait Stage 3 |
 | Stage 5 | pending | 文档和 VideoForensic 验证 | pending | pending | wait Stage 4 |
@@ -867,7 +867,7 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 长期进程门禁（Process manager gate） | 范围匹配（Scope match） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | pass | pass | pass | not-applicable | pass | pass |
-| Stage 2 | pending | pending | pending | not-applicable | pending | pending |
+| Stage 2 | pass | pass | pass | not-applicable | pass | pass |
 | Stage 3 | pending | pending | pending | not-applicable | pending | pending |
 | Stage 4 | pending | pending | pending | required if server smoke | pending | pending |
 | Stage 5 | pending | pending | pending | required if verifier server starts | pending | pending |
@@ -876,8 +876,8 @@ active-task 同步字段（active-task sync fields）:
 
 | 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 长期进程清理和证据（Process cleanup/evidence） | 关键日志已沉淀（Log evidence persisted） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Stage 1 | pass | pass | pass | n/a | n/a | pass | pending commit | pass |
-| Stage 2 | pending | pending | pending | n/a | n/a | pending | pending | pending |
+| Stage 1 | pass | pass | pass | n/a | n/a | pass | `7ae901e` | pass |
+| Stage 2 | pass | pass | pass | n/a | n/a | pass | pending commit | pass |
 | Stage 3 | pending | pending | pending | n/a | n/a | pending | pending | pending |
 | Stage 4 | pending | pending | pending | pending | pending | pending | pending | pending |
 | Stage 5 | pending | pending | pending | pending | pending | pending | pending | pending |
@@ -887,7 +887,8 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 当前阶段已完成（Stage done） | Review 已完成（Review done） | 验证已完成或替代证据已记录（Validation done） | 提交或未提交原因已记录（Commit recorded） | 是否还有 pending stage（Pending remains） | 是否存在停止条件（Stop Condition） | 是否需要重新批准（Reapproval needed） | Execution Control 已更新 | active-task 已同步 | 阶段边界允许停止（May stop） | 下一动作（Next action） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass | pass | pass | not-authorized | yes | yes | no | pass | pass | yes | wait approval |
-| Stage 1 | pass | pass | pass | pending commit | yes | no | no | pending | pending | no | continue Stage 2 |
+| Stage 1 | pass | pass | pass | `7ae901e` | yes | no | no | pass | pending | no | continue Stage 2 |
+| Stage 2 | pass | pass | pass | pending commit | yes | no | no | pending | pending | no | continue Stage 3 |
 
 结论（Decision）:
 
@@ -899,17 +900,18 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- |
 | Planning | 暂未进入代码修改 | follow-up | 实施阶段逐阶段 review |
 | Stage 1 | FTS5 MATCH 特殊字符可能导致查询异常 | minor | 已在 `search()` 中捕获 sqlite3 错误并降级 LIKE |
+| Stage 2 | artifact 重复加载和 set 顺序可能导致候选重复或指纹不稳定 | minor | 已增加 artifact 路径去重，并将特征词改为稳定顺序 |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 为 `electron-ui-verifier` 增加本地应用 UI 知识库，让 Electron 应用验证能学习页面、入口、元素和流程。
 - 执行模式（Execution mode）: planning-only until user approval.
 - 整体任务状态（Overall status）: in_progress.
-- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, Stage 1.
-- 当前阶段（Current stage）: Stage 1 commit.
-- 剩余阶段（Remaining stages）: Stage 2-5.
-- 最新 commit（Latest commit）: none for this task.
-- 下一步自动动作（Next automatic action）: commit Stage 1, then continue Stage 2.
+- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, Stage 1, Stage 2.
+- 当前阶段（Current stage）: Stage 2 commit.
+- 剩余阶段（Remaining stages）: Stage 3-5.
+- 最新 commit（Latest commit）: `7ae901e`
+- 下一步自动动作（Next automatic action）: commit Stage 2, then continue Stage 3.
 - 当前停止条件（Current stop condition）: none.
 - 状态来源（State source of truth）: execution-plan.md.
 - 长期进程规则（Process manager rule）: verifier server 必须用 process-manager；Electron GUI 本体不用 process-manager。
@@ -928,3 +930,4 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | not committed | planning only | not applicable |
+| Stage 1 | dev-skills | `7ae901e` | `feat(electron-ui-verifier): 增加知识库存储层` | `CHANGELOG.md` Stage 1 |

@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 2: electron-ui-verifier report 学习入口
+
+- 新增 report 知识抽取模块，支持从 snapshot/evaluate artifact 生成 app、screen、element、workflow 和 evidence 候选。
+- 新增 `ev_learn.py`，支持 report dry-run、真实写入、session latest report 解析和 appId 覆盖。
+- 使用 VideoForensic 首页和结果页 report 验证离线学习流程，确认可抽取页面、工具入口和打开案件候选 workflow。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加 report 学习入口`
+
 ### Stage 1: electron-ui-verifier 知识库存储层
 
 - 新增本地知识库存储模块，支持 SQLite schema、manifest、应用/页面/元素/workflow/evidence 写入和查询。
 - 增加 FTS5 探测和 LIKE 降级，避免本地环境不支持 FTS 或查询语法异常时中断。
 - 新增知识库 smoke 脚本，使用 ignored runtime 目录验证 schema、写入、搜索和清理。
-- Commit: pending
+- Commit: `7ae901e`
 - Commit message: `feat(electron-ui-verifier): 增加知识库存储层`
 
 ### Stage 9: electron-ui-verifier 最终审查收口
