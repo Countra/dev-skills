@@ -982,7 +982,7 @@ patch 失败处理（Patch failure handling）:
 
 整体任务状态（Overall status）:
 
-- ready_for_final_commit
+- complete
 
 当前阶段（Current stage）:
 
@@ -1000,11 +1000,11 @@ patch 失败处理（Patch failure handling）:
 
 剩余阶段（Remaining stages）:
 
-- Stage 8 final review and delivery
+- none
 
 下一步自动动作（Next automatic action）:
 
-- commit Stage 7/8 fixes and delivery records
+- none
 
 当前停止条件（Current stop condition）:
 
@@ -1023,10 +1023,10 @@ active-task 同步字段（active-task sync fields）:
 ```json
 {
   "execution_mode": "run-to-completion",
-  "overall_status": "ready_for_final_commit",
+  "overall_status": "complete",
   "current_stage": "Stage 8",
-  "remaining_stages": ["Stage 8"],
-  "next_automatic_action": "commit Stage 7/8 fixes and delivery records",
+  "remaining_stages": [],
+  "next_automatic_action": "none",
   "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
@@ -1049,7 +1049,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 5 | completed | evidence reporting | report schema check pass | `artifacts/mock-cdp/report.json` | Stage 6 已继续 |
 | Stage 6 | completed | skill docs | quick_validate pass | `SKILL.md`、references、assets | Stage 7 已开始 |
 | Stage 7 | completed | validation and VideoForensic smoke | py_compile pass；mock CDP pass；VideoForensic result workflow pass | `artifacts/video-forensic-result-page-after-fix/report.json` | Stage 8 已开始 |
-| Stage 8 | in_progress | final review and delivery | final diff/review pending | pending commit | 提交本阶段修复和记录 |
+| Stage 8 | completed | final review and delivery | py_compile pass；help pass；mock CDP pass；VideoForensic report parse pass；diff review pass | commit `e6850ab` | complete |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -1091,12 +1091,12 @@ active-task 同步字段（active-task sync fields）:
 
 - 整体目标（Overall goal）: 规划并准备实现 `electron-ui-verifier` skill。
 - 执行模式（Execution mode）: run-to-completion。
-- 整体任务状态（Overall status）: ready_for_final_commit。
+- 整体任务状态（Overall status）: complete。
 - 已完成阶段（Completed stages）: Stage 1-7。
 - 当前阶段（Current stage）: Stage 8。
-- 剩余阶段（Remaining stages）: Stage 8 final commit and delivery。
-- 最新 commit（Latest commit）: pending。
-- 下一步自动动作（Next automatic action）: commit Stage 7/8 fixes and delivery records。
+- 剩余阶段（Remaining stages）: none。
+- 最新 commit（Latest commit）: e6850ab。
+- 下一步自动动作（Next automatic action）: none。
 - 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: Electron GUI app itself does not use process-manager; non-GUI companion services still use process-manager when needed.
@@ -1116,4 +1116,4 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- |
 | Stage 2-6 | dev-skills | 8e7e64c | feat(electron-ui-verifier): 实现 Electron UI 验证 skill | execution-plan.md |
 | Stage 6 | dev-skills | efd7e8e | docs(electron-ui-verifier): 明确 Electron GUI 启动规则 | execution-plan.md |
-| Stage 7-8 | dev-skills | pending | fix(electron-ui-verifier): 稳定 VideoForensic 验证流程 | execution-plan.md |
+| Stage 7-8 | dev-skills | e6850ab | fix(electron-ui-verifier): 稳定 VideoForensic 验证流程 | execution-plan.md、CHANGELOG.md |
