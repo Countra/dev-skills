@@ -794,11 +794,11 @@ Changelog 计划（Changelog plan）:
 
 整体任务状态（Overall status）:
 
-- in_progress
+- complete
 
 当前阶段（Current stage）:
 
-- Stage 5
+- complete
 
 已完成阶段（Completed stages）:
 
@@ -813,7 +813,7 @@ Changelog 计划（Changelog plan）:
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 5 docs/examples/final validation
+- none
 
 当前停止条件（Current stop condition）:
 
@@ -832,12 +832,12 @@ active-task 同步字段（active-task sync fields）:
 ```json
 {
   "execution_mode": "run-to-completion",
-  "overall_status": "in_progress",
-  "current_stage": "Stage 5",
+  "overall_status": "complete",
+  "current_stage": "complete",
   "remaining_stages": [
     "Stage 5"
   ],
-  "next_automatic_action": "continue Stage 5 docs/examples/final validation",
+  "next_automatic_action": "none",
   "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
@@ -872,7 +872,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | pass | pass | pass | n/a | n/a | pass | `83f4788` | pass |
 | Stage 3 | pass | pass | pass | n/a | n/a | pass | `3df22a0` | pass |
 | Stage 4 | pass | pass | pass | stopped via process-manager | pass | pass | `ff4ded9` | pass |
-| Stage 5 | pass | pass | pass | no active verifier server | pass | pass | pending commit | pass |
+| Stage 5 | pass | pass | pass | no active verifier server | pass | pass | `766df01` | pass |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -883,7 +883,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | pass | pass | pass | `83f4788` | yes | no | no | pass | pass | no | continue Stage 3 |
 | Stage 3 | pass | pass | pass | `3df22a0` | yes | no | no | pass | pass | no | continue Stage 4 |
 | Stage 4 | pass | pass | pass | `ff4ded9` | yes | no | no | pass | pass | no | continue Stage 5 |
-| Stage 5 | pass | pass | pass | pending commit | no | no | no | pending | pending | no | finalize task |
+| Stage 5 | pass | pass | pass | `766df01` | no | no | no | pass | pass | no | task complete |
 
 结论（Decision）:
 
@@ -904,12 +904,12 @@ active-task 同步字段（active-task sync fields）:
 
 - 整体目标（Overall goal）: 为 `electron-ui-verifier` 增加本地应用 UI 知识库，让 Electron 应用验证能学习页面、入口、元素和流程。
 - 执行模式（Execution mode）: run-to-completion.
-- 整体任务状态（Overall status）: in_progress.
+- 整体任务状态（Overall status）: complete.
 - 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, Stage 1, Stage 2, Stage 3, Stage 4, Stage 5.
-- 当前阶段（Current stage）: Stage 5 commit.
+- 当前阶段（Current stage）: complete.
 - 剩余阶段（Remaining stages）: none.
-- 最新 commit（Latest commit）: `ff4ded9`
-- 下一步自动动作（Next automatic action）: commit Stage 5, then finalize task records.
+- 最新 commit（Latest commit）: `766df01`
+- 下一步自动动作（Next automatic action）: none.
 - 当前停止条件（Current stop condition）: none.
 - 状态来源（State source of truth）: execution-plan.md.
 - 长期进程规则（Process manager rule）: verifier server 必须用 process-manager；Electron GUI 本体不用 process-manager。
@@ -932,3 +932,4 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | dev-skills | `83f4788` | `feat(electron-ui-verifier): 增加 report 学习入口` | `CHANGELOG.md` Stage 2 |
 | Stage 3 | dev-skills | `3df22a0` | `feat(electron-ui-verifier): 增加知识查询和建议入口` | `CHANGELOG.md` Stage 3 |
 | Stage 4 | dev-skills | `ff4ded9` | `feat(electron-ui-verifier): 集成知识学习流程` | `CHANGELOG.md` Stage 4 |
+| Stage 5 | dev-skills | `766df01` | `docs(electron-ui-verifier): 完成知识库使用文档` | `CHANGELOG.md` Stage 5 |

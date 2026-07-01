@@ -7,7 +7,7 @@
 - 新增 `references/knowledge.md`，说明知识库学习、查询、建议、提升、清理和安全边界。
 - 更新 `SKILL.md`、server、workflow 和 actions 文档，明确默认不自动学习，建议不能替代真实 UI 验证。
 - 新增 `knowledge.workflow.example.json`，并完成全部 `ev_*.py` 编译、示例 JSON 解析和 VideoForensic 知识建议 smoke。
-- Commit: pending
+- Commit: `766df01`
 - Commit message: `docs(electron-ui-verifier): 完成知识库使用文档`
 
 ### Stage 4: electron-ui-verifier server/workflow 知识集成
