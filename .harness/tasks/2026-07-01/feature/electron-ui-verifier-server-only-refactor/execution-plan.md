@@ -645,7 +645,7 @@ flowchart TD
 - 已增强 `ev_report.py`，支持 `--latest --session` 和 `--path`。
 - 已新增 `ev_artifact.py` 和 `ev_doctor.py`。
 - 已验证 `ev_doctor.py`、process-manager ready、report/artifact stateRoot 外路径拒绝和非零退出码。
-- Commit: pending，Stage 7 开始时回填真实哈希。
+- Commit: `e4961d5`
 
 ### Stage 7：文档和废弃 one-shot
 
@@ -666,6 +666,15 @@ flowchart TD
 
 - 搜索 `electron_verify.py run`、`snapshot --cdp` 等旧用法，确保不再推荐。
 - skill metadata 仍符合 `skill-creator`。
+
+完成记录:
+
+- 已将 `SKILL.md` 改为 server-only 必须流程。
+- 已新增 `references/server.md`，说明环境文件、process-manager 托管、session 和脚本顺序。
+- 已更新 `workflow.md`、`actions.md`、`troubleshooting.md` 和 workflow 示例，移除旧 one-shot 连接语义。
+- 已删除 `ev_server.py` 中旧 standalone `probe/run_workflow/one_shot` 函数。
+- 验证通过：旧入口引用搜索无结果、全部 `ev_*.py` `py_compile`、示例 JSON 解析。
+- Commit: pending，Stage 8 开始时回填真实哈希。
 
 ### Stage 8：真实和 mock 验证
 
@@ -767,17 +776,16 @@ flowchart TD
 
 当前阶段:
 
-- Stage 7
+- Stage 8
 
 剩余阶段:
 
-- Stage 7 文档和废弃 one-shot
 - Stage 8 真实和 mock 验证
 - Stage 9 最终审查和提交
 
 下一步:
 
-- 开始 Stage 7 文档和废弃 one-shot。
+- 开始 Stage 8 真实和 mock 验证。
 
 停止条件:
 
@@ -794,4 +802,5 @@ flowchart TD
 - Stage 3 session 和 target 管理已完成并提交 `250c844`。
 - Stage 4 action server 化已完成并提交 `9978beb`。
 - Stage 5 workflow server 化已完成并提交 `39e0394`。
-- Stage 6 报告、artifact 和快捷入口已完成并通过验证；下一步从 Stage 7 文档和废弃 one-shot 开始。
+- Stage 6 报告、artifact 和快捷入口已完成并提交 `e4961d5`。
+- Stage 7 文档和废弃 one-shot 已完成并通过验证；下一步从 Stage 8 真实和 mock 验证开始。

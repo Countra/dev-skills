@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 7: electron-ui-verifier 文档 server-only 收口
+
+- 重写 `SKILL.md` 为 server-only 必须流程，明确 verifier server 由 process-manager 管理，Electron GUI 本体不托管。
+- 新增 `references/server.md`，并更新 workflow、actions、troubleshooting 和示例 workflow。
+- 删除 `ev_server.py` 中旧 standalone one-shot 逻辑，搜索确认不再引用 `electron_verify.py`。
+- Commit: pending
+- Commit message: `docs(electron-ui-verifier): 收口 server-only 文档`
+
 ### Stage 6: electron-ui-verifier 报告和诊断收口
 
 - 新增 `ev_artifact.py` 和 `ev_doctor.py`，补齐 artifact 元数据查询和本机配置诊断入口。
 - 增强 `ev_report.py`，支持读取最新 session 报告或 stateRoot 下指定报告。
 - server 限制 report/artifact 读取范围必须位于 verifier stateRoot，避免任意文件读取。
-- Commit: pending
+- Commit: `e4961d5`
 - Commit message: `feat(electron-ui-verifier): 补齐报告和诊断入口`
 
 ### Stage 5: electron-ui-verifier workflow server 化

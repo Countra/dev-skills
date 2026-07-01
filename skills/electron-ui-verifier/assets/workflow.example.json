@@ -1,9 +1,4 @@
 {
-  "app": {
-    "cdp": "http://127.0.0.1:9223"
-  },
-  "targetType": "page",
-  "targetUrlContains": "index.html",
   "readiness": [
     {
       "waitText": "案件",

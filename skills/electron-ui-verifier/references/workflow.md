@@ -2,7 +2,7 @@
 
 ## 目的
 
-使用本工作流检查和验证 Electron 桌面应用，并产出可复现证据。主要目标是暴露 Chrome DevTools Protocol（CDP）的打包 Electron `.exe` 和开发版 Electron 应用。
+使用本工作流检查和验证 Electron 桌面应用，并产出可复现证据。主要目标是连接暴露 Chrome DevTools Protocol（CDP）的打包 Electron `.exe` 和开发版 Electron 应用，并通过 verifier server 复用同一 UI session。
 
 ## 前置检查
 
@@ -13,6 +13,7 @@
 5. 确认 Electron GUI 应用由 agent 启动，还是由用户手动启动。
 
 `python -m py_compile`、`--help`、JSON 解析、报告检查等会立即返回的有限命令不使用 `process-manager`。
+verifier server 是长期后台服务，必须用 `process-manager` 管理；Electron GUI 应用本体不要用 `process-manager`。
 
 ## 启动或连接
 
@@ -37,7 +38,7 @@ D:\App\App.exe --remote-debugging-port=9223
 1. 开发版或源码应用使用 Playwright Electron。
 2. 兼容的打包应用使用 Playwright CDP。
 3. 环境明确要求 MCP UI 工具时使用 Playwright MCP。
-4. 通过 `scripts/electron_verify.py` 使用 raw CDP fallback。
+4. verifier server 内部使用 raw CDP 执行最终操作；agent 仍只调用 `ev_*` 脚本。
 
 始终记录：
 
@@ -51,7 +52,7 @@ D:\App\App.exe --remote-debugging-port=9223
 Electron 可能暴露多个 target。必须先运行 probe：
 
 ```powershell
-python skills/electron-ui-verifier/scripts/electron_verify.py probe --cdp http://127.0.0.1:9223 --out .harness/tasks/<task>/artifacts/electron
+python skills/electron-ui-verifier/scripts/ev_probe.py --workspace E:/work/hl/videoForensic/AI/dev-skills --cdp http://127.0.0.1:9223
 ```
 
 如果存在多个 page target，必须指定以下规则之一：
@@ -80,7 +81,7 @@ python skills/electron-ui-verifier/scripts/electron_verify.py probe --cdp http:/
 - 与用户请求相关的 snapshot 或抽取文本。
 - 如任务涉及错误分析，补充 console、exception、network、DOMSnapshot 或 accessibility artifact。
 
-`report.json` 必须包含 `schemaVersion: 1`、backend 信息、target metadata、step-level statuses、artifacts 和 errors。
+`report.json` 必须包含 `schemaVersion: 1`、session、backend 信息、target metadata、step-level statuses、artifacts 和 errors。
 
 诊断类 action 的完整数据默认写入 artifact，报告中只保留摘要。`collectNetwork` 会在 workflow 开始前预扫描并提前启用 CDP `Network` domain，避免点击后才采集导致漏请求。默认不采集请求头、请求体、响应体、cookie、token 或 localStorage。
 
@@ -94,3 +95,18 @@ python skills/electron-ui-verifier/scripts/electron_verify.py probe --cdp http:/
 - `not covered`
 
 如果应用不可达、target 有歧义，或所有 driver backend 都失败，不得声称验证通过。
+
+## Server Workflow
+
+典型顺序：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_init.py --workspace E:/work/hl/videoForensic/AI/dev-skills --python F:/env/anaconda/python.exe
+python skills/process-manager/scripts/pm_validate.py --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
+python skills/process-manager/scripts/pm_start.py --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
+python skills/process-manager/scripts/pm_ready.py --service electron-ui-verifier
+python skills/electron-ui-verifier/scripts/ev_attach.py --workspace E:/work/hl/videoForensic/AI/dev-skills --name app --cdp http://127.0.0.1:9223 --target-index 0
+python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session app --workflow E:/work/task/workflow.json
+```
+
+workflow JSON 不再负责创建 CDP 连接；它只描述 readiness 和 steps。CDP endpoint 与 target 选择在 `ev_probe.py` 和 `ev_attach.py` 阶段完成。

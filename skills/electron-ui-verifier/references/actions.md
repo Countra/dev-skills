@@ -1,14 +1,11 @@
 # Workflow Actions 说明
 
-Workflow 文件是供 `scripts/electron_verify.py run` 使用的 JSON 文档。
+Workflow 文件供 `scripts/ev_workflow.py` 在已 attach 的 verifier session 内执行。CDP endpoint 和 target 选择应先由 `ev_probe.py`、`ev_attach.py` 完成；workflow 本身只描述 readiness 和 steps。
 
 ## 结构
 
 ```json
 {
-  "app": {
-    "cdp": "http://127.0.0.1:9223"
-  },
   "targetUrlContains": "index.html",
   "readiness": [
     {"waitText": "案件", "timeoutMs": 30000}
