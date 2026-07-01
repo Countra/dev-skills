@@ -563,7 +563,7 @@ flowchart TD
 - 已统一客户端脚本退出码，server 返回 `ok: false` 时 CLI 退出码为 2，避免自动化误判。
 - 验证通过：`py_compile`、process-manager stop/start/ready、`ev_sessions.py`、`ev_health.py`、不可达 CDP probe 错误路径。
 - 未做真实 CDP attach；真实 VideoForensic smoke 留到 Stage 8。
-- Commit: pending，Stage 4 开始时回填真实哈希。
+- Commit: `250c844`
 
 ### Stage 4：action server 化
 
@@ -583,6 +583,15 @@ flowchart TD
 - mock session action 单测。
 - 长结果 artifact。
 - Network 在需要时启用且不重复启用。
+
+完成记录:
+
+- 已新增 `ev_action.py`，支持通过绝对 JSON 文件或 JSON 字符串执行单个 action。
+- 已新增 `ev_snapshot.py`、`ev_screenshot.py`、`ev_console.py`、`ev_exceptions.py`、`ev_network.py` 和 `ev_report.py` 的基础入口。
+- 已复用 server `/actions/run` 和 `/reports/latest`，快捷脚本不直接访问 CDP。
+- 已修复 Windows UTF-8 BOM JSON 文件读取兼容性。
+- 验证通过：全部 `ev_*.py` `py_compile`、缺失 session 错误路径、`ev_action.py` 绝对 JSON 文件读取。
+- Commit: pending，Stage 5 开始时回填真实哈希。
 
 ### Stage 5：workflow server 化
 
@@ -741,11 +750,10 @@ flowchart TD
 
 当前阶段:
 
-- Stage 4
+- Stage 5
 
 剩余阶段:
 
-- Stage 4 action server 化
 - Stage 5 workflow server 化
 - Stage 6 报告、artifact 和快捷入口
 - Stage 7 文档和废弃 one-shot
@@ -754,7 +762,7 @@ flowchart TD
 
 下一步:
 
-- 开始 Stage 4 action server 化。
+- 开始 Stage 5 workflow server 化。
 
 停止条件:
 
@@ -768,4 +776,5 @@ flowchart TD
 - Electron GUI 本体仍不使用 process-manager。
 - 用户已确认实现：Python 解释器写入 `.harness/electron-ui-verifier/environment.json`；删除 `electron_verify.py`；分阶段提交；允许 VideoForensic smoke。
 - Stage 2 server 基础设施已完成并提交 `4c5a468`。
-- Stage 3 session 和 target 管理已完成并通过验证；下一步从 Stage 4 action server 化开始。
+- Stage 3 session 和 target 管理已完成并提交 `250c844`。
+- Stage 4 action server 化已完成并通过验证；下一步从 Stage 5 workflow server 化开始。

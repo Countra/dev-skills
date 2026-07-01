@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 4: electron-ui-verifier action server 化
+
+- 新增 `ev_action.py`，支持在已有 session 内执行单个 action JSON 文件或 JSON 字符串。
+- 新增 snapshot、screenshot、console、exceptions、network 和 report 快捷入口，均通过 verifier server API 执行。
+- 修复 Windows UTF-8 BOM JSON 文件读取兼容性，避免 PowerShell 生成的 JSON 文件解析失败。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加 action 客户端入口`
+
 ### Stage 3: electron-ui-verifier session 和 target 管理
 
 - 新增 `ev_probe.py`、`ev_attach.py`、`ev_detach.py` 和 `ev_sessions.py`，通过 server API 管理 CDP target 与 session。
 - 补充 `/sessions/status`，支持列出 session、检查连接状态和断开 session。
 - 统一 `ev_*` 客户端退出码，server 返回 `ok: false` 时不再被 shell 误判为成功。
-- Commit: pending
+- Commit: `250c844`
 - Commit message: `feat(electron-ui-verifier): 增加 session 管理脚本`
 
 ### Stage 2: electron-ui-verifier server 基础设施

@@ -77,8 +77,18 @@ def fail(error: str, code: str = "error", exit_code: int = 2) -> int:
 
 
 def read_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as handle:
+    with path.open("r", encoding="utf-8-sig") as handle:
         return json.load(handle)
+
+
+def read_json_arg(value: str, label: str) -> Any:
+    path = Path(value)
+    if path.is_absolute() and path.exists():
+        return read_json(path)
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise EVError(f"{label} must be an absolute JSON file path or JSON string") from exc
 
 
 def write_json(path: Path, data: Any) -> None:
