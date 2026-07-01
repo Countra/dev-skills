@@ -2,6 +2,14 @@
 
 ## 2026-07-01
 
+### Stage 1: electron-ui-verifier 知识库存储层
+
+- 新增本地知识库存储模块，支持 SQLite schema、manifest、应用/页面/元素/workflow/evidence 写入和查询。
+- 增加 FTS5 探测和 LIKE 降级，避免本地环境不支持 FTS 或查询语法异常时中断。
+- 新增知识库 smoke 脚本，使用 ignored runtime 目录验证 schema、写入、搜索和清理。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加知识库存储层`
+
 ### Stage 9: electron-ui-verifier 最终审查收口
 
 - 完成最终审查，确认旧 `electron_verify.py` 入口无残留引用，全部 `ev_*.py` 编译通过。

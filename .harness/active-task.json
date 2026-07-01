@@ -1,16 +1,21 @@
 {
-  "task_id": "2026-07-01-feature-electron-ui-verifier-server-only-refactor",
-  "task_dir": ".harness/tasks/2026-07-01/feature/electron-ui-verifier-server-only-refactor",
-  "title": "Electron UI verifier server-only 重构",
-  "status": "complete",
+  "task_id": "2026-07-01-feature-electron-ui-verifier-knowledge-base",
+  "task_dir": ".harness/tasks/2026-07-01/feature/electron-ui-verifier-knowledge-base",
+  "title": "Electron UI verifier 应用知识库增强",
+  "status": "in_progress",
   "execution_mode": "run-to-completion",
-  "overall_status": "complete",
-  "current_stage": "complete",
+  "overall_status": "in_progress",
+  "current_stage": "Stage 1",
   "remaining_stages": [
+    "Stage 1",
+    "Stage 2",
+    "Stage 3",
+    "Stage 4",
+    "Stage 5"
   ],
-  "next_action": "none",
-  "next_automatic_action": "none",
-  "stop_condition": "complete",
+  "next_action": "continue Stage 1",
+  "next_automatic_action": "continue Stage 1",
+  "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-01"
 }
