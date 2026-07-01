@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 5: electron-ui-verifier workflow server 化
+
+- 新增 `ev_workflow.py`，支持在已有 session 内执行 workflow JSON 文件或 JSON 字符串。
+- server `/workflows/run` 统一执行 readiness 和 steps，并补充 workflow 条目类型校验。
+- 验证 workflow 缺失 session 错误路径，确保失败不会被 shell 误判为成功。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加 workflow 客户端入口`
+
 ### Stage 4: electron-ui-verifier action server 化
 
 - 新增 `ev_action.py`，支持在已有 session 内执行单个 action JSON 文件或 JSON 字符串。
 - 新增 snapshot、screenshot、console、exceptions、network 和 report 快捷入口，均通过 verifier server API 执行。
 - 修复 Windows UTF-8 BOM JSON 文件读取兼容性，避免 PowerShell 生成的 JSON 文件解析失败。
-- Commit: pending
+- Commit: `9978beb`
 - Commit message: `feat(electron-ui-verifier): 增加 action 客户端入口`
 
 ### Stage 3: electron-ui-verifier session 和 target 管理

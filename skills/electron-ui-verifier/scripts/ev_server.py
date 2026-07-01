@@ -1360,11 +1360,16 @@ class VerifierController:
         workflow = ensure_workflow(payload.get("workflow"))
         steps_payload: list[dict[str, Any]] = []
         for index, item in enumerate(workflow.get("readiness", []), start=1):
+            if not isinstance(item, dict):
+                raise VerifyError(f"workflow readiness item must be an object: {index}")
             if "waitText" in item:
                 steps_payload.append({"id": f"readiness-{index}", "waitText": {"text": item["waitText"], "timeoutMs": item.get("timeoutMs", 30000)}})
             elif "waitUrlContains" in item:
                 steps_payload.append({"id": f"readiness-{index}", "waitUrlContains": {"text": item["waitUrlContains"], "timeoutMs": item.get("timeoutMs", 30000)}})
-        steps_payload.extend(item for item in workflow.get("steps", []) if isinstance(item, dict))
+        for index, item in enumerate(workflow.get("steps", []), start=1):
+            if not isinstance(item, dict):
+                raise VerifyError(f"workflow step must be an object: {index}")
+            steps_payload.append(item)
         return self.run_steps(session, steps_payload, "workflow")
 
     def latest_report(self, payload: dict[str, Any]) -> dict[str, Any]:

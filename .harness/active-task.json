@@ -5,16 +5,15 @@
   "status": "approved-for-implementation",
   "execution_mode": "run-to-completion",
   "overall_status": "approved-for-implementation",
-  "current_stage": "Stage 5",
+  "current_stage": "Stage 6",
   "remaining_stages": [
-    "Stage 5 workflow server 化",
     "Stage 6 报告、artifact 和快捷入口",
     "Stage 7 文档和废弃 one-shot",
     "Stage 8 真实和 mock 验证",
     "Stage 9 最终审查和提交"
   ],
-  "next_action": "开始 Stage 5 workflow server 化",
-  "next_automatic_action": "Stage 5 workflow server 化",
+  "next_action": "开始 Stage 6 报告、artifact 和快捷入口",
+  "next_automatic_action": "Stage 6 报告、artifact 和快捷入口",
   "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-01"
