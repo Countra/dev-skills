@@ -18,6 +18,19 @@ SCHEMA_VERSION = 1
 VALID_STATUSES = {"observed", "candidate", "verified", "stable", "stale", "deprecated"}
 DEFAULT_STATUS = "observed"
 TEXT_LIMIT = 2000
+KIND_TABLES = {
+    "app": ("apps", "app_id"),
+    "apps": ("apps", "app_id"),
+    "screen": ("screens", "screen_id"),
+    "screens": ("screens", "screen_id"),
+    "element": ("elements", "element_id"),
+    "elements": ("elements", "element_id"),
+    "workflow": ("workflows", "workflow_id"),
+    "workflows": ("workflows", "workflow_id"),
+    "evidence": ("evidences", "evidence_id"),
+    "evidences": ("evidences", "evidence_id"),
+}
+STATUS_TABLES = {"apps", "screens", "elements", "workflows"}
 
 
 @dataclass(frozen=True)
@@ -77,6 +90,13 @@ def normalize_status(value: Any) -> str:
     if status not in VALID_STATUSES:
         raise EVError(f"invalid knowledge status: {status}")
     return status
+
+
+def kind_table(kind: str) -> tuple[str, str]:
+    item = KIND_TABLES.get(str(kind or "").strip())
+    if item is None:
+        raise EVError(f"unsupported knowledge kind: {kind}")
+    return item
 
 
 def ensure_object(value: Any, label: str) -> dict[str, Any]:
@@ -462,6 +482,10 @@ class KnowledgeStore:
     def get_evidence(self, evidence_id: str) -> dict[str, Any]:
         return self._get_one("evidences", "evidence_id", evidence_id)
 
+    def get_item(self, kind: str, entity_id: str) -> dict[str, Any]:
+        table, key = kind_table(kind)
+        return self._get_one(table, key, entity_id)
+
     def _get_one(self, table: str, key: str, value: str) -> dict[str, Any]:
         row = self.conn.execute(f"SELECT * FROM {table} WHERE {key} = ?", (value,)).fetchone()
         if row is None:
@@ -469,16 +493,25 @@ class KnowledgeStore:
         return row_to_dict(row)
 
     def list_items(self, kind: str, app_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
-        table_map = {"apps": "apps", "screens": "screens", "elements": "elements", "workflows": "workflows", "evidences": "evidences"}
-        table = table_map.get(kind)
-        if table is None:
-            raise EVError(f"unsupported knowledge kind: {kind}")
+        table, _key = kind_table(kind)
         limit = max(1, min(200, int(limit)))
         if app_id and table in {"screens", "elements", "workflows"}:
             rows = self.conn.execute(f"SELECT * FROM {table} WHERE app_id = ? ORDER BY last_seen_at DESC LIMIT ?", (app_id, limit)).fetchall()
         else:
             rows = self.conn.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
         return [row_to_dict(row) for row in rows]
+
+    def update_status(self, kind: str, entity_id: str, status: str) -> dict[str, Any]:
+        table, key = kind_table(kind)
+        if table not in STATUS_TABLES:
+            raise EVError(f"knowledge kind does not support status update: {kind}")
+        normalized = normalize_status(status)
+        cursor = self.conn.execute(f"UPDATE {table} SET status = ?, last_seen_at = ? WHERE {key} = ?", (normalized, utc_now(), entity_id))
+        if cursor.rowcount < 1:
+            raise EVError(f"knowledge item not found: {kind}.{entity_id}")
+        self.conn.commit()
+        self.write_manifest()
+        return self.get_item(kind, entity_id)
 
     def search(self, query: str, app_id: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
         query = str(query or "").strip()

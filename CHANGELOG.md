@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 3: electron-ui-verifier 知识查询和建议入口
+
+- 新增 `ev_knowledge.py`，支持知识库 meta、列表、单项读取、搜索和 cleanup。
+- 新增 `ev_suggest.py`，支持按目标生成候选 workflow、元素和 current report 临时上下文。
+- 新增 `ev_promote.py`，要求 evidence 或用户确认后才允许提升到 verified/stable。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 增加知识查询和建议入口`
+
 ### Stage 2: electron-ui-verifier report 学习入口
 
 - 新增 report 知识抽取模块，支持从 snapshot/evaluate artifact 生成 app、screen、element、workflow 和 evidence 候选。
 - 新增 `ev_learn.py`，支持 report dry-run、真实写入、session latest report 解析和 appId 覆盖。
 - 使用 VideoForensic 首页和结果页 report 验证离线学习流程，确认可抽取页面、工具入口和打开案件候选 workflow。
-- Commit: pending
+- Commit: `83f4788`
 - Commit message: `feat(electron-ui-verifier): 增加 report 学习入口`
 
 ### Stage 1: electron-ui-verifier 知识库存储层

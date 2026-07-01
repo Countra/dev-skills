@@ -633,7 +633,7 @@ process-manager skill 是否存在（process-manager skill available）:
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | `python -m py_compile ...` + `python ev_knowledge_smoke.py --temp --workspace ...` | pass | schema、manifest、CRUD、FTS5/LIKE 查询、cleanup | 真实 UI | `.harness/electron-ui-verifier/tmp/ev-knowledge-20260701-103106/` | completed |
 | Stage 2 | `python -m py_compile ...` + `python ev_learn.py --dry-run` + `python ev_learn.py ...` | pass | report 抽取、artifact 去重、真实 VideoForensic 学习、候选 workflow | 自动提升 stable | `.harness/electron-ui-verifier/knowledge/manifest.json` | completed |
-| Stage 3 | query/suggest/promote smoke | pending | 快速命中和状态流转 | 真实点击 | pending | pending |
+| Stage 3 | `py_compile` + `ev_knowledge.py meta/search/workflows` + `ev_suggest.py` + `ev_promote.py` | pass | 快速命中、current report 上下文、提升保护和状态流转 | 真实点击 | VideoForensic knowledge runtime | completed |
 | Stage 4 | server/workflow smoke | pending | 兼容和 learn 集成 | 长期压测 | pending | pending |
 | Stage 5 | docs + VideoForensic e2e | pending | 使用流程和真实样本 | 跨应用泛化 | pending | pending |
 
@@ -798,7 +798,7 @@ Changelog 计划（Changelog plan）:
 
 当前阶段（Current stage）:
 
-- Stage 1
+- Stage 3 commit
 
 已完成阶段（Completed stages）:
 
@@ -809,15 +809,13 @@ Changelog 计划（Changelog plan）:
 
 剩余阶段（Remaining stages）:
 
-- Stage 1：知识存储和数据模型
-- Stage 2：学习入口和知识抽取
 - Stage 3：查询、建议和提升
 - Stage 4：server/workflow 集成和报告沉淀
 - Stage 5：文档、示例和 VideoForensic 端到端验证
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 1
+- commit Stage 3, then continue Stage 4
 
 当前停止条件（Current stop condition）:
 
@@ -837,15 +835,13 @@ active-task 同步字段（active-task sync fields）:
 {
   "execution_mode": "run-to-completion",
   "overall_status": "in_progress",
-  "current_stage": "Stage 1",
+  "current_stage": "Stage 3 commit",
   "remaining_stages": [
-    "Stage 1",
-    "Stage 2",
     "Stage 3",
     "Stage 4",
     "Stage 5"
   ],
-  "next_automatic_action": "continue Stage 1",
+  "next_automatic_action": "commit Stage 3, then continue Stage 4",
   "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
@@ -858,7 +854,7 @@ active-task 同步字段（active-task sync fields）:
 | Planning | complete | 完成知识库增强方案 | Plan gates pass | this file | request approval |
 | Stage 1 | complete | 新增知识库存储模块和 smoke 脚本 | py_compile + smoke pass | runtime tmp knowledge db | continue Stage 2 |
 | Stage 2 | complete | 新增 report 抽取模块和 `ev_learn.py` | py_compile + dry-run + real learn pass | VideoForensic knowledge runtime | continue Stage 3 |
-| Stage 3 | pending | 查询、建议和提升 | pending | pending | wait Stage 2 |
+| Stage 3 | complete | 新增知识查询、建议和提升入口 | py_compile + query/suggest/promote smoke pass | VideoForensic knowledge runtime | continue Stage 4 |
 | Stage 4 | pending | server/workflow 集成 | pending | pending | wait Stage 3 |
 | Stage 5 | pending | 文档和 VideoForensic 验证 | pending | pending | wait Stage 4 |
 
@@ -868,7 +864,7 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | pass | pass | pass | not-applicable | pass | pass |
 | Stage 2 | pass | pass | pass | not-applicable | pass | pass |
-| Stage 3 | pending | pending | pending | not-applicable | pending | pending |
+| Stage 3 | pass | pass | pass | not-applicable | pass | pass |
 | Stage 4 | pending | pending | pending | required if server smoke | pending | pending |
 | Stage 5 | pending | pending | pending | required if verifier server starts | pending | pending |
 
@@ -877,8 +873,8 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 目标完成（Goal done） | Review 完成（Review done） | 验证完成（Validation done） | 长期进程清理和证据（Process cleanup/evidence） | 关键日志已沉淀（Log evidence persisted） | 记录更新（Records updated） | 提交记录（Commit recorded） | 结论（Result） |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Stage 1 | pass | pass | pass | n/a | n/a | pass | `7ae901e` | pass |
-| Stage 2 | pass | pass | pass | n/a | n/a | pass | pending commit | pass |
-| Stage 3 | pending | pending | pending | n/a | n/a | pending | pending | pending |
+| Stage 2 | pass | pass | pass | n/a | n/a | pass | `83f4788` | pass |
+| Stage 3 | pass | pass | pass | n/a | n/a | pass | pending commit | pass |
 | Stage 4 | pending | pending | pending | pending | pending | pending | pending | pending |
 | Stage 5 | pending | pending | pending | pending | pending | pending | pending | pending |
 
@@ -888,7 +884,8 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Planning | pass | pass | pass | not-authorized | yes | yes | no | pass | pass | yes | wait approval |
 | Stage 1 | pass | pass | pass | `7ae901e` | yes | no | no | pass | pending | no | continue Stage 2 |
-| Stage 2 | pass | pass | pass | pending commit | yes | no | no | pending | pending | no | continue Stage 3 |
+| Stage 2 | pass | pass | pass | `83f4788` | yes | no | no | pass | pass | no | continue Stage 3 |
+| Stage 3 | pass | pass | pass | pending commit | yes | no | no | pending | pending | no | continue Stage 4 |
 
 结论（Decision）:
 
@@ -901,17 +898,18 @@ active-task 同步字段（active-task sync fields）:
 | Planning | 暂未进入代码修改 | follow-up | 实施阶段逐阶段 review |
 | Stage 1 | FTS5 MATCH 特殊字符可能导致查询异常 | minor | 已在 `search()` 中捕获 sqlite3 错误并降级 LIKE |
 | Stage 2 | artifact 重复加载和 set 顺序可能导致候选重复或指纹不稳定 | minor | 已增加 artifact 路径去重，并将特征词改为稳定顺序 |
+| Stage 3 | 状态提升如果没有 evidence 约束，可能把偶然候选升级为长期可信知识 | minor | `ev_promote.py` 对 verified/stable 强制要求 evidence 或用户确认 |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 为 `electron-ui-verifier` 增加本地应用 UI 知识库，让 Electron 应用验证能学习页面、入口、元素和流程。
-- 执行模式（Execution mode）: planning-only until user approval.
+- 执行模式（Execution mode）: run-to-completion.
 - 整体任务状态（Overall status）: in_progress.
-- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, Stage 1, Stage 2.
-- 当前阶段（Current stage）: Stage 2 commit.
-- 剩余阶段（Remaining stages）: Stage 3-5.
-- 最新 commit（Latest commit）: `7ae901e`
-- 下一步自动动作（Next automatic action）: commit Stage 2, then continue Stage 3.
+- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, Stage 1, Stage 2, Stage 3.
+- 当前阶段（Current stage）: Stage 3 commit.
+- 剩余阶段（Remaining stages）: Stage 4-5.
+- 最新 commit（Latest commit）: `83f4788`
+- 下一步自动动作（Next automatic action）: commit Stage 3, then continue Stage 4.
 - 当前停止条件（Current stop condition）: none.
 - 状态来源（State source of truth）: execution-plan.md.
 - 长期进程规则（Process manager rule）: verifier server 必须用 process-manager；Electron GUI 本体不用 process-manager。
@@ -931,3 +929,4 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | not committed | planning only | not applicable |
 | Stage 1 | dev-skills | `7ae901e` | `feat(electron-ui-verifier): 增加知识库存储层` | `CHANGELOG.md` Stage 1 |
+| Stage 2 | dev-skills | `83f4788` | `feat(electron-ui-verifier): 增加 report 学习入口` | `CHANGELOG.md` Stage 2 |
