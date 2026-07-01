@@ -23,6 +23,9 @@ def build_parser() -> argparse.ArgumentParser:
     add_common_args(parser)
     parser.add_argument("--session", required=True, help="session 名称或 sessionId")
     parser.add_argument("--action", required=True, help="action JSON 文件绝对路径或 JSON 字符串")
+    parser.add_argument("--learn", action="store_true", help="执行成功或失败后从 report 显式学习候选知识")
+    parser.add_argument("--learn-app-id", help="学习时覆盖 appId")
+    parser.add_argument("--learn-notes", help="写入 knowledge evidence 的说明")
     return parser
 
 
@@ -33,7 +36,10 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(step, dict):
             raise EVError("--action must resolve to a JSON object")
         config = load_config(resolve_config_path(args))
-        result = request_json(config, "POST", "/actions/run", {"session": args.session, "action": step}, timeout=120.0)
+        payload: dict[str, object] = {"session": args.session, "action": step}
+        if args.learn:
+            payload["learn"] = {"appId": args.learn_app_id, "notes": args.learn_notes}
+        result = request_json(config, "POST", "/actions/run", payload, timeout=120.0)
         print_json(result)
         return result_exit_code(result)
     except EVError as exc:

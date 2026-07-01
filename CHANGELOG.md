@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 4: electron-ui-verifier server/workflow 知识集成
+
+- 为 `ev_action.py` 和 `ev_workflow.py` 增加显式 `--learn` 参数，默认保持旧行为不写知识库。
+- 在 server report 落盘后接入可选学习流程，并把知识摘要写回 report 的 `knowledge` 字段。
+- 使用 process-manager 启动 verifier server 完成 readiness 和 health smoke，验证后已停止服务。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 集成知识学习流程`
+
 ### Stage 3: electron-ui-verifier 知识查询和建议入口
 
 - 新增 `ev_knowledge.py`，支持知识库 meta、列表、单项读取、搜索和 cleanup。
 - 新增 `ev_suggest.py`，支持按目标生成候选 workflow、元素和 current report 临时上下文。
 - 新增 `ev_promote.py`，要求 evidence 或用户确认后才允许提升到 verified/stable。
-- Commit: pending
+- Commit: `3df22a0`
 - Commit message: `feat(electron-ui-verifier): 增加知识查询和建议入口`
 
 ### Stage 2: electron-ui-verifier report 学习入口

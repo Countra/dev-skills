@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Any
 
 from ev_common import EVConfig, EVError, config_from_data, iso_now as common_iso_now, load_config, read_token, write_json as write_runtime_json
+from ev_knowledge_extract import extract_knowledge
+from ev_knowledge_store import knowledge_paths_from_config, open_store_from_paths
 
 
 SCHEMA_VERSION = 1
@@ -1052,6 +1054,27 @@ def persist_report(ctx: RunContext, report: dict[str, Any]) -> None:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
+def persist_report_knowledge(config: EVConfig, report_path: Path, app_id: str | None, notes: str | None) -> dict[str, Any]:
+    payload = extract_knowledge(report_path, app_id_override=app_id, notes=notes)
+    with open_store_from_paths(knowledge_paths_from_config(config)) as store:
+        app = store.upsert_app(payload["app"])
+        screens = [store.upsert_screen(item) for item in payload.get("screens", [])]
+        elements = [store.upsert_element(item) for item in payload.get("elements", [])]
+        workflows = [store.upsert_workflow(item) for item in payload.get("workflows", [])]
+        evidence = store.add_evidence(payload["evidence"])
+        meta = store.meta()
+    return {
+        "status": "learned",
+        "appId": app.get("app_id"),
+        "screenCount": len(screens),
+        "elementCount": len(elements),
+        "workflowCount": len(workflows),
+        "evidenceId": evidence.get("evidence_id"),
+        "stats": payload.get("stats"),
+        "meta": meta,
+    }
+
+
 @dataclass
 class VerifierSession:
     """服务端持有的 CDP 会话，进程退出后不会伪装恢复。"""
@@ -1230,7 +1253,13 @@ class VerifierController:
         ensure_dir(path)
         return path
 
-    def run_steps(self, session: VerifierSession, steps_payload: list[dict[str, Any]], prefix: str) -> dict[str, Any]:
+    def run_steps(
+        self,
+        session: VerifierSession,
+        steps_payload: list[dict[str, Any]],
+        prefix: str,
+        learn: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         with session.lock:
             actions = set()
             for step in steps_payload:
@@ -1259,6 +1288,17 @@ class VerifierController:
             report["session"] = session.record()
             persist_report(ctx, report)
             session.latest_report = str(out_dir / "report.json")
+            if learn:
+                try:
+                    report["knowledge"] = persist_report_knowledge(
+                        self.config,
+                        Path(session.latest_report),
+                        app_id=learn.get("appId"),
+                        notes=learn.get("notes"),
+                    )
+                except (EVError, VerifyError, OSError, ValueError) as exc:
+                    report["knowledge"] = {"status": "failed", "error": str(exc)}
+                persist_report(ctx, report)
             session.last_used_at = iso_now()
             self.persist_sessions()
             return {"ok": report["status"] == "passed", "report": session.latest_report, "summary": str(out_dir / "summary.md"), "result": report}
@@ -1268,7 +1308,8 @@ class VerifierController:
         step = payload.get("step") or payload.get("action")
         if not isinstance(step, dict):
             raise VerifyError("action step must be an object")
-        return self.run_steps(session, [step], "action")
+        learn = normalize_learn_options(payload.get("learn"))
+        return self.run_steps(session, [step], "action", learn=learn)
 
     def run_workflow(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
@@ -1285,7 +1326,8 @@ class VerifierController:
             if not isinstance(item, dict):
                 raise VerifyError(f"workflow step must be an object: {index}")
             steps_payload.append(item)
-        return self.run_steps(session, steps_payload, "workflow")
+        learn = normalize_learn_options(payload.get("learn") or workflow.get("learn"))
+        return self.run_steps(session, steps_payload, "workflow", learn=learn)
 
     def latest_report(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
@@ -1323,6 +1365,21 @@ def ensure_workflow(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise VerifyError("workflow must be an object")
     return value
+
+
+def normalize_learn_options(value: Any) -> dict[str, Any] | None:
+    if value in (None, False):
+        return None
+    if value is True:
+        return {"notes": "learned by verifier server"}
+    if not isinstance(value, dict):
+        raise VerifyError("learn must be a boolean or object")
+    app_id = value.get("appId")
+    notes = value.get("notes")
+    return {
+        "appId": str(app_id).strip() if app_id not in (None, "") else None,
+        "notes": str(notes).strip() if notes not in (None, "") else "learned by verifier server",
+    }
 
 
 class VerifierHTTPServer(http.server.ThreadingHTTPServer):
