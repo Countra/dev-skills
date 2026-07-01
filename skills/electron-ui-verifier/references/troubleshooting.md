@@ -4,7 +4,7 @@
 
 Check that the app was started with `--remote-debugging-port=<port>` and that the port is listening on `127.0.0.1`.
 
-If the app is long-running and agent-started, use `process-manager`. If the user started it manually, do not kill or restart it without permission.
+For the Electron GUI app itself, start it with the normal terminal command or ask the user to start it; do not use `process-manager`. Use `process-manager` only for non-GUI companion services such as backend APIs, dev servers, workers, or watchers. If the user started the GUI app manually, do not kill or restart it without permission.
 
 ## Playwright Attach Fails
 

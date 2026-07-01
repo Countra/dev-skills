@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-01
+
+### Stage 7-8: electron-ui-verifier VideoForensic 真实验证
+
+- 使用 `D:\VideoForensic\VideoForensic.exe` 完成 CDP probe、首页快照、首个案件点击和结果页文本/表格抽取验证。
+- 修复 `clickText` 候选排序，优先点击精确文本和更小元素，避免命中包含目标文本的大容器。
+- 修复 `continueOnFailure` 语义，可选截图失败记录为 `skipped/notCovered`，不再误判核心 workflow 失败。
+- Commit: `pending`
+- Commit message: `fix(electron-ui-verifier): 稳定 VideoForensic 验证流程`
+
 ## 2026-06-26
 
 ### Stage 42: complex-coding-harness Git 串行和 index.lock 恢复规则

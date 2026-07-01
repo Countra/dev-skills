@@ -4,15 +4,14 @@
   "title": "Electron UI verifier skill 实现",
   "status": "in_progress",
   "execution_mode": "run-to-completion",
-  "overall_status": "in_progress",
-  "current_stage": "Stage 7",
+  "overall_status": "ready_for_final_commit",
+  "current_stage": "Stage 8",
   "remaining_stages": [
-    "Stage 7",
     "Stage 8"
   ],
-  "next_action": "用普通终端命令或等待用户启动 VideoForensic CDP endpoint",
-  "next_automatic_action": "start or wait for http://127.0.0.1:9223, then run Stage 7 smoke",
-  "stop_condition": "waiting for VideoForensic CDP endpoint",
+  "next_action": "提交 Stage 7/8 修复和验证记录",
+  "next_automatic_action": "commit Stage 7/8 fixes and delivery records",
+  "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-01"
 }

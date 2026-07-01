@@ -420,6 +420,15 @@ def find_text_candidate(snapshot: dict[str, Any], text: str, index: int = 0) -> 
     matches = [item for item in elements if text in str(item.get("text", ""))]
     if not matches:
         raise VerifyError(f"text candidate not found: {text}")
+    # 优先选择精确文本和面积更小的候选，避免点击包含目标文字的整页容器。
+    def rank(item: dict[str, Any]) -> tuple[int, int, float]:
+        item_text = str(item.get("text", "")).strip()
+        exact = 0 if item_text == text else 1
+        length = len(item_text)
+        area = float(item.get("width", 0)) * float(item.get("height", 0))
+        return exact, length, area
+
+    matches = sorted(matches, key=rank)
     if index < 0 or index >= len(matches):
         raise VerifyError(f"text candidate index out of range: {index}; matches={len(matches)}")
     return matches[index]
@@ -549,6 +558,10 @@ def run_step(client: CDPClient, ctx: RunContext, step: dict[str, Any]) -> StepRe
             raise VerifyError(f"unsupported action: {action}")
         return StepResult(step_id, action, "passed", started, iso_now(), ctx.backend, artifacts, data)
     except Exception as exc:
+        if step.get("continueOnFailure") is True:
+            data["continueOnFailure"] = True
+            ctx.not_covered.append(f"optional step skipped: {step_id} ({action}) - {exc}")
+            return StepResult(step_id, action, "skipped", started, iso_now(), ctx.backend, artifacts, data, str(exc))
         return StepResult(step_id, action, "failed", started, iso_now(), ctx.backend, artifacts, data, str(exc))
 
 

@@ -53,6 +53,8 @@ Readiness checks should prove the UI is usable, not just that the process is ali
 - `extractTable`: extract visible table/list rows.
 - `evaluate`: optional explicit JavaScript action; use only when necessary.
 
+Any step can set `continueOnFailure: true` when the step is useful evidence but not required for the business assertion. If such a step fails, the runner records it as `skipped`, adds the reason to `notCovered`, and keeps the workflow status based on the required steps. Use this mainly for flaky screenshot capture or secondary visual evidence, not for readiness, navigation, or core assertions.
+
 ## Selector Preference
 
 Prefer stable selectors or exact text when available:

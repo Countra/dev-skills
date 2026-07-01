@@ -5,12 +5,11 @@
 目标（Goal）:
 
 - 设计并实现一个 `electron-ui-verifier` skill，用于验证 Electron 桌面应用 UI、交互流程、截图、DOM/文本/表格提取和验证证据输出。
-- 当前阶段只落盘详尽规划文档，不创建或修改 `skills/electron-ui-verifier/` 实现文件。
-- 后续实现必须在用户明确批准方案后才能开始。
+- 当前已进入批准后的实现和真实应用验证阶段。
+- 使用 `D:\VideoForensic\VideoForensic.exe` 完成真实 Electron smoke 验证，并把发现的问题反馈到 skill 规则和 runner 行为中。
 
 非目标（Non-goals）:
 
-- 当前不实现 skill 代码、不创建 runner 脚本、不提交代码。
 - v1 不覆盖所有 Windows 原生控件自动化，例如系统文件选择器、UAC、托盘菜单和非 Electron 原生窗口。
 - v1 不把 Playwright MCP 当成唯一验证路径；它只作为可用后端之一。
 
@@ -18,7 +17,7 @@
 
 - 规划文档覆盖本地上下文、外部调研结论、候选方案、最终决策、分阶段实施、验证策略、风险、回滚和 harness 门禁。
 - 明确 Electron UI verifier skill 的仓库结构、核心脚本能力、workflow 格式、证据产物和 fallback 策略。
-- 明确后续实现阶段必须等待用户批准，且按 `run-to-completion` 完成所有批准阶段。
+- 已按用户批准进入实现，并按 `run-to-completion` 完成 Stage 2-8 的实现、验证、审查和提交准备。
 
 约束（Constraints）:
 
@@ -30,9 +29,7 @@
 
 待确认项（Open uncertainties）:
 
-- 后续实现阶段是否允许用本机 `D:\VideoForensic\VideoForensic.exe` 做真实 smoke 验证。
-- 后续实现阶段是否允许安装或使用 Playwright Python / Node Playwright 依赖。
-- 后续是否需要把 Windows 原生自动化作为 v2 计划，而不是 v1 范围。
+- Windows 原生自动化仍不纳入 v1，后续如需覆盖系统文件选择器、UAC 或非 Electron 原生窗口，应单独规划。
 
 ## 上下文（Context）
 
@@ -649,13 +646,11 @@ Workspace 环境来源（Workspace environment source）:
 
 工作分支（Working branch）:
 
-- 当前规划阶段仍在 `main` 写 planning state。
-- 后续实现阶段应切换或创建 `harness/feature`，并按规则同步 `main`。
+- `harness/feature`
 
 分支动作（Branch action）:
 
-- planning-only: not-applicable
-- implementation: create/reuse `harness/feature`
+- implementation: reused `harness/feature`
 
 同步来源（Sync source）:
 
@@ -663,12 +658,12 @@ Workspace 环境来源（Workspace environment source）:
 
 最近同步（Last sync）:
 
-- 当前规划阶段未执行 merge。
+- 本次 Stage 7/8 未执行主分支 merge；提交前已串行检查工作区。
 
 分支占用（Branch occupancy）:
 
-- 当前只做规划，不检查 `harness/feature` 占用。
-- 实施前必须串行检查 `git log main..HEAD` 和 `git -c diff.autoRefreshIndex=false diff main...HEAD --name-only`。
+- 当前工作停留在 `harness/feature`。
+- 本阶段只提交 `electron-ui-verifier` runner、action 文档和 harness 任务记录。
 
 Git 命令策略（Git command policy）:
 
@@ -695,8 +690,7 @@ Git Lock Recovery Log:
 
 提交策略（Commit policy）:
 
-- 当前规划阶段不提交，除非用户要求提交规划文件。
-- 后续实现阶段如获批准，阶段提交使用 `git commit -F .harness/tasks/<date>/<task-slug>/tmp/commit-message.txt`。
+- 阶段提交使用 `git commit -F .harness/tasks/<date>/<task-slug>/tmp/commit-message.txt`。
 - 禁止使用多个 `-m` 分别传入 bullet。
 
 分支收口（Branch closure）:
@@ -707,7 +701,7 @@ Git Lock Recovery Log:
 
 分支安全（Branch safety）:
 
-- 切换前已检查工作区：planning 阶段已串行检查 status。
+- 提交前已检查工作区：使用串行 Git 命令检查 status。
 - 不自动 stash：yes
 - 不自动 rebase：yes
 - 不自动 reset：yes
@@ -719,7 +713,7 @@ Git Lock Recovery Log:
 
 未解决问题（Open issues）:
 
-- 当前规划阶段未进入实现分支；实现前需要重新检查 Git 安全状态。
+- `.harness/.harness/`、`.harness/electron-feasibility/`、`.tmp/` 为既有未跟踪运行目录，本次不提交。
 
 ## 工具（Tooling）
 
@@ -794,8 +788,8 @@ process-manager skill 是否存在（process-manager skill available）:
 
 已执行（Executed）:
 
-- 当前规划阶段：未执行实现验证。
-- 当前已执行：读取 harness、process-manager、skill-creator 规则；完成外部资料调研；串行 `git status`；完整复读本计划；校验 `.harness/active-task.json` 可解析。
+- 已执行：读取 harness、process-manager、skill-creator 和 electron-ui-verifier 规则；完成外部资料调研；串行 `git status`；完整复读本计划；校验 `.harness/active-task.json` 可解析。
+- 已执行：Python 编译、CLI help、mock CDP workflow、VideoForensic probe、首页快照、点击首个案件、结果页文本/表格提取和报告解析。
 
 验证证据表（Validation Evidence）:
 
@@ -807,7 +801,10 @@ process-manager skill 是否存在（process-manager skill available）:
 | Stage 3 | raw CDP transport mock | pass | WebSocket/CDP 基础通信 | 真实 Electron 协议差异 | `artifacts/mock-cdp/report.json` | 已通过 |
 | Stage 4 | mock workflow | pass | snapshot、screenshot、report 输出 | 真实 Electron 差异 | `artifacts/mock-cdp/report.json` | 已通过 |
 | Stage 5 | report schema check | pass | schemaVersion、target、step 状态 | 报告语义正确性 | `artifacts/mock-cdp/report.json` | 已通过 |
-| Stage 7 | VideoForensic smoke | pending | 真实 Electron 应用 | 等待 9223 endpoint | Electron GUI 不使用 process-manager | 使用普通终端或用户手动启动后执行 |
+| Stage 7 | VideoForensic probe | pass | CDP version、target discovery、多 target 歧义处理 | Playwright CDP 不可用 | `artifacts/video-forensic-probe/report.json` | raw CDP fallback 正常 |
+| Stage 7 | VideoForensic home snapshot | pass | 首页工具入口、历史记录、DOM 快照 | 首页截图后续在复跑中超时 | `artifacts/video-forensic-smoke/home-snapshot.snapshot.json` | 记录截图不稳定 |
+| Stage 7 | VideoForensic click first case | pass | `clickText` 精确候选选择、点击首个 `查看` | 点击后页面跳转存在短延迟 | `artifacts/video-forensic-click-no-screenshot/report.json` | 已修复候选排序 |
+| Stage 7 | VideoForensic result page | pass | 首个案件 `20260623181748`、视频扫描结果 17、结果页工具区、文本和表格提取 | 结果页截图 `Page.captureScreenshot` 超时，作为可选证据 skipped | `artifacts/video-forensic-result-page-after-fix/report.json` | 已修复 `continueOnFailure` 语义 |
 
 可选验证（Optional）:
 
@@ -818,7 +815,7 @@ process-manager skill 是否存在（process-manager skill available）:
 
 产物（Artifacts）:
 
-- 截图（Screenshot）: `.harness/tasks/2026-07-01/feature/electron-ui-verifier-skill/artifacts/*.png`
+- 截图（Screenshot）: `.harness/tasks/2026-07-01/feature/electron-ui-verifier-skill/artifacts/video-forensic-smoke/home.png`；结果页截图在当前 Electron 会话中超时并记录为 skipped。
 - 日志（Log）: `events.ndjson`、stderr/stdout 摘要。
 - Trace: v1 不强制；Playwright 后端可选。
 - 报告（Report）: `report.json`、`summary.md`
@@ -985,29 +982,29 @@ patch 失败处理（Patch failure handling）:
 
 整体任务状态（Overall status）:
 
-- in_progress
+- ready_for_final_commit
 
 当前阶段（Current stage）:
 
-- Stage 2
+- Stage 8
 
 已完成阶段（Completed stages）:
 
 - Stage 1 planning document drafted
-
-剩余阶段（Remaining stages）:
-
 - Stage 2 skill scaffold
 - Stage 3 verifier runner core
 - Stage 4 workflow action DSL
 - Stage 5 evidence reporting
 - Stage 6 skill docs and troubleshooting
 - Stage 7 validation and smoke
+
+剩余阶段（Remaining stages）:
+
 - Stage 8 final review and delivery
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 2 skill scaffold
+- commit Stage 7/8 fixes and delivery records
 
 当前停止条件（Current stop condition）:
 
@@ -1025,12 +1022,12 @@ active-task 同步字段（active-task sync fields）:
 
 ```json
 {
-  "execution_mode": "planning-only",
-  "overall_status": "awaiting_plan_approval",
-  "current_stage": "Stage 1",
-  "remaining_stages": ["Stage 2", "Stage 3", "Stage 4", "Stage 5", "Stage 6", "Stage 7", "Stage 8"],
-  "next_automatic_action": "wait for user approval",
-  "stop_condition": "awaiting user approval",
+  "execution_mode": "run-to-completion",
+  "overall_status": "ready_for_final_commit",
+  "current_stage": "Stage 8",
+  "remaining_stages": ["Stage 8"],
+  "next_automatic_action": "commit Stage 7/8 fixes and delivery records",
+  "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
 ```
@@ -1051,8 +1048,8 @@ active-task 同步字段（active-task sync fields）:
 | Stage 4 | completed | workflow action DSL | mock workflow pass | `artifacts/mock-cdp/report.json` | Stage 5 已继续 |
 | Stage 5 | completed | evidence reporting | report schema check pass | `artifacts/mock-cdp/report.json` | Stage 6 已继续 |
 | Stage 6 | completed | skill docs | quick_validate pass | `SKILL.md`、references、assets | Stage 7 已开始 |
-| Stage 7 | pending | validation and smoke | mock pass；等待 VideoForensic CDP endpoint | 9223 未监听 | 用普通终端命令或用户手动启动 `D:\VideoForensic\VideoForensic.exe --remote-debugging-port=9223` |
-| Stage 8 | pending | final review and delivery | pending | pending | Stage 7 后 |
+| Stage 7 | completed | validation and VideoForensic smoke | py_compile pass；mock CDP pass；VideoForensic result workflow pass | `artifacts/video-forensic-result-page-after-fix/report.json` | Stage 8 已开始 |
+| Stage 8 | in_progress | final review and delivery | final diff/review pending | pending commit | 提交本阶段修复和记录 |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -1075,7 +1072,7 @@ active-task 同步字段（active-task sync fields）:
 
 结论（Decision）:
 
-- 当前只允许停在方案批准门禁；用户批准前不进入 Stage 2。
+- 当前已完成 Stage 7 验证，进入 Stage 8 最终审查和提交。
 
 规则（Rules）:
 
@@ -1087,23 +1084,25 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
 | --- | --- | --- | --- |
 | Stage 1 | 当前无代码改动 | follow-up | 已完整复读规划文档；无代码审查问题 |
+| Stage 7/8 | `clickText` 可能优先命中包含目标文本的大容器，导致点击坐标不稳定 | medium | 已按精确文本、文本长度和元素面积排序候选，并在 VideoForensic 首个 `查看` 点击中验证 |
+| Stage 7/8 | 可选截图步骤设置 `continueOnFailure` 后仍会让整体报告失败 | medium | 已把可选步骤失败记录为 `skipped` 和 `notCovered`，核心 workflow 保持通过 |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 规划并准备实现 `electron-ui-verifier` skill。
-- 执行模式（Execution mode）: planning-only。
-- 整体任务状态（Overall status）: awaiting_plan_approval。
-- 已完成阶段（Completed stages）: Stage 1 planning draft。
-- 当前阶段（Current stage）: Stage 7。
-- 剩余阶段（Remaining stages）: Stage 7-8。
-- 最新 commit（Latest commit）: none。
-- 下一步自动动作（Next automatic action）: start or wait for VideoForensic CDP endpoint, then run Stage 7 smoke。
-- 当前停止条件（Current stop condition）: waiting for VideoForensic CDP endpoint。
+- 执行模式（Execution mode）: run-to-completion。
+- 整体任务状态（Overall status）: ready_for_final_commit。
+- 已完成阶段（Completed stages）: Stage 1-7。
+- 当前阶段（Current stage）: Stage 8。
+- 剩余阶段（Remaining stages）: Stage 8 final commit and delivery。
+- 最新 commit（Latest commit）: pending。
+- 下一步自动动作（Next automatic action）: commit Stage 7/8 fixes and delivery records。
+- 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: Electron GUI app itself does not use process-manager; non-GUI companion services still use process-manager when needed.
-- 未覆盖/风险（Not covered/risks）: 真实 VideoForensic smoke 尚未完成；当前 9223 endpoint 未监听，需要用普通终端命令或用户手动启动；Windows 原生窗口自动化不属于 v1。
+- 未覆盖/风险（Not covered/risks）: 结果页截图在当前 Electron 会话中超时并记录为 skipped；Windows 原生窗口自动化不属于 v1；Playwright Python 当前环境不可用，已使用 raw CDP fallback。
 - 不得停止说明（Do not stop note）:
-  - 当前 planning-only 必须等待批准；批准后 run-to-completion，阶段边界不是停止条件。
+  - 当前只剩最终提交和交付，不得在提交前把 Stage 7 完成误当成整体完成。
 
 ## 提交记录（Commit Log）
 
@@ -1116,3 +1115,5 @@ active-task 同步字段（active-task sync fields）:
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Stage 2-6 | dev-skills | 8e7e64c | feat(electron-ui-verifier): 实现 Electron UI 验证 skill | execution-plan.md |
+| Stage 6 | dev-skills | efd7e8e | docs(electron-ui-verifier): 明确 Electron GUI 启动规则 | execution-plan.md |
+| Stage 7-8 | dev-skills | pending | fix(electron-ui-verifier): 稳定 VideoForensic 验证流程 | execution-plan.md |
