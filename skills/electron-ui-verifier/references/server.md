@@ -78,9 +78,18 @@ python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl
 python skills/electron-ui-verifier/scripts/ev_report.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --latest
 ```
 
+如果要把本次 report 沉淀到知识库，显式使用：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-app-id videoForensic --learn-notes "打开案件流程复验"
+```
+
+server 会先生成正常 report，再把知识学习摘要写入 `report.json` 的 `knowledge` 字段。学习失败不会把 UI 验证结果改成失败，但必须在最终说明里记录。
+
 ## 重要边界
 
 - server 进程退出后 session 失效，必须重新 attach。
 - 同名 session 默认复用；需要强制重新 attach 时用 `ev_attach.py --no-reuse`。
 - 远程 CDP 必须显式批准并传 `--allow-remote-cdp`。
 - `ev_report.py` 和 `ev_artifact.py` 只能读取 `.harness/electron-ui-verifier/` 下的运行产物。
+- 知识库默认不自动写入；只有 `ev_learn.py`、`ev_action.py --learn` 或 `ev_workflow.py --learn` 会写入。

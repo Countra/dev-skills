@@ -2,12 +2,20 @@
 
 ## 2026-07-01
 
+### Stage 5: electron-ui-verifier 知识库文档和最终验证
+
+- 新增 `references/knowledge.md`，说明知识库学习、查询、建议、提升、清理和安全边界。
+- 更新 `SKILL.md`、server、workflow 和 actions 文档，明确默认不自动学习，建议不能替代真实 UI 验证。
+- 新增 `knowledge.workflow.example.json`，并完成全部 `ev_*.py` 编译、示例 JSON 解析和 VideoForensic 知识建议 smoke。
+- Commit: pending
+- Commit message: `docs(electron-ui-verifier): 完成知识库使用文档`
+
 ### Stage 4: electron-ui-verifier server/workflow 知识集成
 
 - 为 `ev_action.py` 和 `ev_workflow.py` 增加显式 `--learn` 参数，默认保持旧行为不写知识库。
 - 在 server report 落盘后接入可选学习流程，并把知识摘要写回 report 的 `knowledge` 字段。
 - 使用 process-manager 启动 verifier server 完成 readiness 和 health smoke，验证后已停止服务。
-- Commit: pending
+- Commit: `ff4ded9`
 - Commit message: `feat(electron-ui-verifier): 集成知识学习流程`
 
 ### Stage 3: electron-ui-verifier 知识查询和建议入口

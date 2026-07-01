@@ -11,6 +11,7 @@
 3. 确认 CDP endpoint，通常是 `http://127.0.0.1:<port>`。
 4. 确认证据产物保存位置。
 5. 确认 Electron GUI 应用由 agent 启动，还是由用户手动启动。
+6. 如果任务可能复用历史经验，先查询 `references/knowledge.md` 中的知识库入口；查询结果只作为候选操作路径。
 
 `python -m py_compile`、`--help`、JSON 解析、报告检查等会立即返回的有限命令不使用 `process-manager`。
 verifier server 是长期后台服务，必须用 `process-manager` 管理；Electron GUI 应用本体不要用 `process-manager`。
@@ -110,3 +111,19 @@ python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl
 ```
 
 workflow JSON 不再负责创建 CDP 连接；它只描述 readiness 和 steps。CDP endpoint 与 target 选择在 `ev_probe.py` 和 `ev_attach.py` 阶段完成。
+
+## 知识库复用
+
+执行前可以先搜索或生成建议：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_suggest.py --workspace E:/work/hl/videoForensic/AI/dev-skills --app-id videoForensic --goal "打开第二个案件并统计数据"
+```
+
+建议命中的 workflow 或元素必须通过新的 action/workflow 验证。执行后如果要沉淀本次结果，显式加 `--learn`：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session app --workflow E:/work/task/workflow.json --learn --learn-app-id videoForensic --learn-notes "案件统计流程"
+```
+
+不要把知识库建议直接写成最终结论；最终结论必须引用本轮 report、artifact 或截图证据。
