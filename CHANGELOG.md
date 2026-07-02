@@ -2,13 +2,21 @@
 
 ## 2026-07-02
 
+### Stage 4: electron-ui-verifier workflow 导出
+
+- 新增 `ev_export_workflow.py`，支持从 workflow asset 或 report 导出标准 workflow JSON。
+- 导出默认拒绝覆盖、默认不写本机 evidence 路径，并记录 workflow export 元数据。
+- 新增 `exported-asset.workflow.example.json`，展示可分享 workflow metadata 和参数占位。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 3: electron-ui-verifier 资产检索和建议
 
 - `ev_assets.py` 支持按 app、screen、kind、status 和 goal 过滤 action/workflow 资产。
 - `ev_suggest.py` 输出 workflow、action 和组合候选，并明确候选必须复验。
 - 补充 cleanup dry-run/apply smoke，确认不会删除 candidate/verified/stable 资产。
-- Commit: pending
-- Commit message: pending
+- Commit: `e2d6ab9`
+- Commit message: `feat(electron-ui-verifier): 增强资产建议检索`
 
 ### Stage 2: electron-ui-verifier report 资产整理
 
