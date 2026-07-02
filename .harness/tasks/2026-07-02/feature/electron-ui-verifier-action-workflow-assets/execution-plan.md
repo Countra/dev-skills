@@ -819,11 +819,11 @@ patch 失败处理（Patch failure handling）:
 
 整体任务状态（Overall status）:
 
-- in_progress
+- complete
 
 当前阶段（Current stage）:
 
-- Stage 5 commit
+- Finalized
 
 已完成阶段（Completed stages）:
 
@@ -835,11 +835,11 @@ patch 失败处理（Patch failure handling）:
 
 剩余阶段（Remaining stages）:
 
-- Stage 5 commit
+- none
 
 下一步自动动作（Next automatic action）:
 
-- commit Stage 5 and finalize task
+- none
 
 当前停止条件（Current stop condition）:
 
@@ -858,12 +858,10 @@ active-task 同步字段（active-task sync fields）:
 ```json
 {
   "execution_mode": "run-to-completion",
-  "overall_status": "in_progress",
-  "current_stage": "Stage 5 commit",
-  "remaining_stages": [
-    "Stage 5 commit"
-  ],
-  "next_automatic_action": "commit Stage 5 and finalize task",
+  "overall_status": "complete",
+  "current_stage": "Finalized",
+  "remaining_stages": [],
+  "next_automatic_action": "none",
   "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
@@ -898,7 +896,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | pass | pass | pass | n/a | n/a | pass | `424e78c` | pass |
 | Stage 3 | pass | pass | pass | n/a | n/a | pass | `e2d6ab9` | pass |
 | Stage 4 | pass | pass | pass | n/a | n/a | pass | `2917010` | pass |
-| Stage 5 | pass | pass | pass | pass | pass | pass | pending commit | pass |
+| Stage 5 | pass | pass | pass | pass | pass | pass | `8fdd80c` | pass |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -909,7 +907,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | pass | pass | pass | `424e78c` | yes | no | no | pass | pass | no | continue Stage 3 |
 | Stage 3 | pass | pass | pass | `e2d6ab9` | yes | no | no | pass | pass | no | continue Stage 4 |
 | Stage 4 | pass | pass | pass | `2917010` | yes | no | no | pass | pass | no | continue Stage 5 |
-| Stage 5 | pass | pass | pass | pending commit | no | no | no | pass | pending | no | commit Stage 5 and finish final gate |
+| Stage 5 | pass | pass | pass | `8fdd80c` | no | no | no | pass | pass | no | finalize task |
 
 ## 代码审查（Code Review）
 
@@ -928,12 +926,12 @@ active-task 同步字段（active-task sync fields）:
 
 - 整体目标（Overall goal）: 为 `electron-ui-verifier` 增加 action/workflow 资产化、检索、导出和分享能力。
 - 执行模式（Execution mode）: run-to-completion.
-- 整体任务状态（Overall status）: in_progress.
-- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, approval, Stage 1 implementation/review/validation/commit, Stage 2 implementation/review/validation/commit, Stage 3 implementation/review/validation/commit, Stage 4 implementation/review/validation/commit.
-- 当前阶段（Current stage）: Stage 5.
-- 剩余阶段（Remaining stages）: Stage 5.
-- 最新 commit（Latest commit）: `2917010`.
-- 下一步自动动作（Next automatic action）: implement Stage 5 server learn integration and docs.
+- 整体任务状态（Overall status）: complete.
+- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, approval, Stage 1-5 implementation/review/validation/commit.
+- 当前阶段（Current stage）: Finalized.
+- 剩余阶段（Remaining stages）: none.
+- 最新 commit（Latest commit）: `8fdd80c`.
+- 下一步自动动作（Next automatic action）: none.
 - 当前停止条件（Current stop condition）: none.
 - 状态来源（State source of truth）: execution-plan.md.
 - 长期进程规则（Process manager rule）: verifier server 必须用 process-manager；Electron GUI 本体不用 process-manager；finite command 不用。
@@ -962,3 +960,4 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | dev-skills | `424e78c` | `feat(electron-ui-verifier): 增加 report 资产抽取` | pending changelog hash update |
 | Stage 3 | dev-skills | `e2d6ab9` | `feat(electron-ui-verifier): 增强资产建议检索` | pending changelog hash update |
 | Stage 4 | dev-skills | `2917010` | `feat(electron-ui-verifier): 增加 workflow 导出` | pending changelog hash update |
+| Stage 5 | dev-skills | `8fdd80c` | `feat(electron-ui-verifier): 接入资产学习入口` | pending changelog hash update |

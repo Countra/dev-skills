@@ -7,8 +7,8 @@
 - `ev_action.py`、`ev_workflow.py` 和 server learn hook 增加显式 `--learn-assets` / `includeAssets` 资产学习入口。
 - 更新 `SKILL.md`、server、workflow、actions 和 knowledge 文档，明确默认学习与资产学习边界。
 - 完成 full py_compile、示例 JSON 解析、离线 includeAssets 写入和 process-manager server health smoke。
-- Commit: pending
-- Commit message: pending
+- Commit: `8fdd80c`
+- Commit message: `feat(electron-ui-verifier): 接入资产学习入口`
 
 ### Stage 4: electron-ui-verifier workflow 导出
 
