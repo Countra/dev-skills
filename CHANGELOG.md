@@ -2,13 +2,21 @@
 
 ## 2026-07-02
 
+### Stage 2: electron-ui-verifier report 资产整理
+
+- 新增 `ev_asset_extract.py`，从 verifier report 保守生成 action/workflow 资产候选。
+- `ev_learn.py` 增加显式 `--include-assets`，默认 learn 不再隐式写入 workflow 资产。
+- 新增 `ev_asset_extract_smoke.py`，覆盖失败步骤过滤、evaluate 不反推、坐标风险、路径参数化和真实写入。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 1: electron-ui-verifier action/workflow 资产 schema
 
 - 将知识库升级为新 schema，新增 `action_assets`、`workflow_assets`、`asset_evidences` 和 `workflow_exports`。
 - 明确旧 knowledge DB 不自动迁移，新增显式 reset/rebuild 路径并验证旧 schema 默认拒绝。
 - 新增 `ev_assets.py` 资产 CLI，补充资产去重、cleanup dry-run/apply 和存储层 smoke 覆盖。
-- Commit: pending
-- Commit message: pending
+- Commit: `09d5ac2`
+- Commit message: `feat(electron-ui-verifier): 重建知识库资产 schema`
 
 ## 2026-07-01
 

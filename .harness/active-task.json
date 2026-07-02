@@ -5,16 +5,15 @@
   "status": "in_progress",
   "execution_mode": "run-to-completion",
   "overall_status": "in_progress",
-  "current_stage": "Stage 1 commit",
+  "current_stage": "Stage 2 commit",
   "remaining_stages": [
-    "Stage 1",
     "Stage 2",
     "Stage 3",
     "Stage 4",
     "Stage 5"
   ],
-  "next_action": "commit Stage 1 and continue Stage 2",
-  "next_automatic_action": "commit Stage 1 and continue Stage 2",
+  "next_action": "commit Stage 2 and continue Stage 3",
+  "next_automatic_action": "commit Stage 2 and continue Stage 3",
   "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-02"

@@ -4,6 +4,7 @@
 .harness/tasks/**/tmp/
 .harness/tasks/**/scratch/
 .harness/electron-ui-verifier/
+.harness/electron-ui-verifier-asset-smoke/
 .harness/process-manager/config.json
 .harness/process-manager/token
 .harness/process-manager/manager.pid
@@ -31,6 +32,7 @@ __pycache__/
 .ruff_cache/
 .coverage
 htmlcov/
+.tmp/
 
 # Node 和通用工具缓存
 node_modules/
