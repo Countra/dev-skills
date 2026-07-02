@@ -9,7 +9,7 @@
 1. 读取当前 harness 任务计划和环境规则。
 2. 确认应用是否已经运行。
 3. 确认 CDP endpoint，通常是 `http://127.0.0.1:<port>`。
-4. 确认证据产物保存位置。
+4. 确认证据产物保存位置。内部 report、artifact、log、tmp 和 knowledge 必须位于 `.harness/electron-ui-verifier/` 下。
 5. 确认 Electron GUI 应用由 agent 启动，还是由用户手动启动。
 6. 如果任务可能复用历史经验，先查询 `references/knowledge.md` 中的知识库入口；查询结果只作为候选操作路径。
 
@@ -71,6 +71,7 @@ python skills/electron-ui-verifier/scripts/ev_probe.py --workspace E:/work/hl/vi
 - 远程 CDP endpoint 必须经过用户明确批准。
 - 默认不导出 cookie、token、localStorage、请求头或大段敏感 payload。
 - 除非用户要求提交，否则 artifact 保存在已忽略的运行时目录。
+- 本 skill 的内部运行产物只写入 `.harness/electron-ui-verifier/`。不要为单次验证另建 `.harness/electron-*`、`.tmp` 或项目根目录下的内部产物目录。
 
 ## 证据
 

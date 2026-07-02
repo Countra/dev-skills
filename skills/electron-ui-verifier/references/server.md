@@ -36,6 +36,36 @@ python E:/work/hl/videoForensic/AI/dev-skills/skills/electron-ui-verifier/script
 
 这些都是本机运行产物，默认不提交。
 
+## 内部文件目录边界
+
+本 skill 自己生成和托管的内部文件固定写入：
+
+```text
+.harness/electron-ui-verifier/
+```
+
+该目录下包含：
+
+```text
+environment.json
+config.json
+token
+server.json
+sessions.json
+reports/
+artifacts/
+logs/
+tmp/
+knowledge/
+```
+
+不得为了单次任务、smoke、调试或知识库实验，在 `.harness` 下新建其它 electron-ui-verifier 内部目录，也不得把内部报告、截图、日志、临时文件或知识库写到项目根目录、`skills/` 目录、`.tmp/` 或其它 skill 的运行目录。
+
+例外只有两类：
+
+- verifier server 的进程托管 service 文件属于 process-manager，路径是 `.harness/process-manager/services/electron-ui-verifier.json`。
+- 用户明确指定的输入或输出文件，例如外部 action/workflow JSON、导出的可分享 workflow，可以使用用户给定的绝对路径；这些不是本 skill 内部托管文件。
+
 ## 启动 server
 
 按 process-manager 规则启动：

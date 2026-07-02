@@ -104,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    root = Path(args.workspace).resolve() if args.workspace else Path.cwd().resolve() / ".harness" / "electron-ui-verifier-asset-smoke"
+    root = Path(args.workspace).resolve() if args.workspace else Path.cwd().resolve() / ".harness" / "electron-ui-verifier" / "tmp" / "asset-smoke"
     if not args.workspace and root.exists():
         shutil.rmtree(root, ignore_errors=True)
     root.mkdir(parents=True, exist_ok=True)

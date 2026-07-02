@@ -4,7 +4,6 @@
 .harness/tasks/**/tmp/
 .harness/tasks/**/scratch/
 .harness/electron-ui-verifier/
-.harness/electron-ui-verifier-asset-smoke/
 .harness/process-manager/config.json
 .harness/process-manager/token
 .harness/process-manager/manager.pid
