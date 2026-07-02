@@ -26,6 +26,20 @@ python E:/work/hl/videoForensic/AI/dev-skills/skills/electron-ui-verifier/script
 
 如果用户在会话里口头指定新的 Python 解释器，必须立即重新运行 `ev_init.py --python <abs-python>`，不能只把路径留在对话中。
 
+`ev_init.py` 会先用目标 Python 执行依赖检查，检查通过后才写入 environment、config 和 process-manager service。必要依赖位于：
+
+```text
+skills/electron-ui-verifier/requirements.txt
+```
+
+也可以手工预检查：
+
+```powershell
+F:/env/anaconda/python.exe E:/work/hl/videoForensic/AI/dev-skills/skills/electron-ui-verifier/scripts/ev_check_env.py --requirements E:/work/hl/videoForensic/AI/dev-skills/skills/electron-ui-verifier/requirements.txt --json
+```
+
+如果输出 `ok: false`，必须停止当前验证任务，并把 `missing`、`pythonFailure` 和 `installCommand` 报告给用户。不得在依赖不完整时继续启动 verifier server 或执行 UI 验证。
+
 初始化会生成：
 
 ```text

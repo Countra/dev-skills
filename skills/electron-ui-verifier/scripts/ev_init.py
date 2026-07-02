@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -62,6 +64,59 @@ def service_config(workspace_root: Path, python_path: Path, config_file: Path, p
     }
 
 
+def format_dependency_error(result: dict[str, Any], stderr: str = "") -> str:
+    messages = []
+    python_failure = result.get("pythonFailure")
+    if isinstance(python_failure, dict):
+        messages.append(
+            f"Python 版本不满足要求：当前 {python_failure.get('actual')}，需要 {python_failure.get('required')}"
+        )
+    missing = result.get("missing")
+    if isinstance(missing, list):
+        for item in missing:
+            if isinstance(item, dict):
+                requirement = item.get("requirement") or item.get("package") or "unknown"
+                reason = item.get("reason") or item.get("detail") or "依赖检查失败"
+                messages.append(f"{requirement}: {reason}")
+    if result.get("error"):
+        messages.append(str(result["error"]))
+    if stderr.strip():
+        messages.append(f"stderr: {stderr.strip()}")
+    install_command = result.get("installCommand")
+    if install_command:
+        messages.append(f"安装命令：{install_command}")
+    return "verifier Python 环境依赖不完整，已阻塞初始化。缺失或不满足项：" + "；".join(messages)
+
+
+def check_python_environment(python_path: Path, workspace_root: Path) -> dict[str, Any]:
+    check_script = workspace_root / "skills" / "electron-ui-verifier" / "scripts" / "ev_check_env.py"
+    requirements_file = workspace_root / "skills" / "electron-ui-verifier" / "requirements.txt"
+    if not check_script.exists():
+        raise EVError(f"dependency check script does not exist: {check_script}")
+    if not requirements_file.exists():
+        raise EVError(f"requirements file does not exist: {requirements_file}")
+    try:
+        completed = subprocess.run(
+            [str(python_path), str(check_script), "--requirements", str(requirements_file), "--json"],
+            cwd=str(workspace_root),
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EVError(f"verifier Python 环境依赖检查超时：{python_path}") from exc
+    except OSError as exc:
+        raise EVError(f"无法执行 verifier Python 依赖检查：{python_path}: {exc}") from exc
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise EVError(f"verifier Python 依赖检查未返回 JSON：{completed.stdout[:500]} {completed.stderr[:500]}") from exc
+    if completed.returncode != 0 or result.get("ok") is not True:
+        raise EVError(format_dependency_error(result, completed.stderr))
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -70,6 +125,7 @@ def main(argv: list[str] | None = None) -> int:
         python_path = require_absolute_path(args.python_path, "--python", must_exist=True) if args.python_path else Path(sys.executable).resolve()
         if not python_path.exists():
             raise EVError(f"python does not exist: {python_path}")
+        dependency_check = check_python_environment(python_path, workspace_root)
         port = normalize_port(args.port)
         ensure_runtime_dirs(paths)
         environment = write_environment(paths, python_path=python_path, port=port)
@@ -86,6 +142,7 @@ def main(argv: list[str] | None = None) -> int:
                 "config": str(paths.config_file),
                 "service": str(paths.service_file),
                 "python": str(python_path),
+                "dependencyCheck": dependency_check,
                 "port": port,
             }
         )
