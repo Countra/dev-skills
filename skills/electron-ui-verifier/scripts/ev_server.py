@@ -133,6 +133,11 @@ class RunContext:
     backend: str = "raw-cdp"
     workflow_path: str | None = None
     workflow_source: dict[str, Any] | None = None
+    app_id: str | None = None
+    goal: str | None = None
+    knowledge_preflight: dict[str, Any] | None = None
+    knowledge_usage: dict[str, Any] | None = None
+    knowledge_writeback: dict[str, Any] | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
     not_covered: list[str] = field(default_factory=list)
@@ -1012,8 +1017,13 @@ def build_report(
         "generatedAt": iso_now(),
         "backend": ctx.backend,
         "cdp": ctx.cdp,
+        "appId": ctx.app_id,
+        "goal": ctx.goal,
         "workflow": {"path": ctx.workflow_path, "source": ctx.workflow_source} if ctx.workflow_path else None,
         "workflowPath": ctx.workflow_path,
+        "knowledgePreflight": ctx.knowledge_preflight,
+        "knowledgeUsage": ctx.knowledge_usage,
+        "knowledgeWriteback": ctx.knowledge_writeback,
         "version": version,
         "targets": [target.__dict__ for target in targets],
         "selectedTarget": target.__dict__ if target else None,
@@ -1038,6 +1048,12 @@ def write_summary(path: Path, report: dict[str, Any]) -> None:
     ]
     if report.get("workflowPath"):
         lines.append(f"- Workflow: {report['workflowPath']}")
+    if report.get("knowledgePreflight"):
+        preflight = report["knowledgePreflight"]
+        lines.append(f"- Knowledge preflight: {preflight.get('status', 'recorded')}")
+    if report.get("knowledgeWriteback"):
+        writeback = report["knowledgeWriteback"]
+        lines.append(f"- Knowledge writeback: {writeback.get('status', 'recorded')}")
     target = report.get("selectedTarget")
     if target:
         lines.extend([f"- Target title: {target.get('title')}", f"- Target URL: {target.get('url')}"])
@@ -1069,6 +1085,20 @@ def workflow_source(value: Any, default_type: str) -> dict[str, Any]:
             source["path"] = str(value["path"])
         return source
     return {"type": default_type}
+
+
+def normalize_optional_object(value: Any, label: str) -> dict[str, Any] | None:
+    if value in (None, False):
+        return None
+    if not isinstance(value, dict):
+        raise VerifyError(f"{label} must be an object")
+    return value
+
+
+def optional_text(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    return str(value).strip() or None
 
 
 def action_workflow_document(step: dict[str, Any]) -> dict[str, Any]:
@@ -1309,6 +1339,11 @@ class VerifierController:
         workflow: dict[str, Any],
         workflow_source_data: dict[str, Any],
         learn: dict[str, Any] | None = None,
+        app_id: str | None = None,
+        goal: str | None = None,
+        knowledge_preflight: dict[str, Any] | None = None,
+        knowledge_usage: dict[str, Any] | None = None,
+        knowledge_writeback: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with session.lock:
             out_dir = self.report_dir(session, prefix)
@@ -1326,6 +1361,11 @@ class VerifierController:
             ctx = RunContext(cdp=session.cdp, out_dir=out_dir)
             ctx.workflow_path = str(workflow_path)
             ctx.workflow_source = workflow_source_data
+            ctx.app_id = app_id
+            ctx.goal = goal
+            ctx.knowledge_preflight = knowledge_preflight
+            ctx.knowledge_usage = knowledge_usage
+            ctx.knowledge_writeback = knowledge_writeback
             ctx.backend_attempts.append({"backend": "raw-cdp", "status": "selected"})
             version = get_version(session.cdp)
             targets = get_targets(session.cdp)
@@ -1344,7 +1384,7 @@ class VerifierController:
             session.latest_report = str(out_dir / "report.json")
             if learn:
                 try:
-                    report["knowledge"] = persist_report_knowledge(
+                    report["knowledgeWriteback"] = persist_report_knowledge(
                         self.config,
                         Path(session.latest_report),
                         app_id=learn.get("appId"),
@@ -1352,7 +1392,8 @@ class VerifierController:
                         include_assets=bool(learn.get("includeAssets")),
                     )
                 except (EVError, VerifyError, OSError, ValueError) as exc:
-                    report["knowledge"] = {"status": "failed", "error": str(exc)}
+                    report["knowledgeWriteback"] = {"status": "failed", "error": str(exc)}
+                report["knowledge"] = report["knowledgeWriteback"]
                 persist_report(ctx, report)
             session.last_used_at = iso_now()
             self.persist_sessions()
@@ -1369,14 +1410,57 @@ class VerifierController:
         step = payload.get("step") or payload.get("action")
         if not isinstance(step, dict):
             raise VerifyError("action step must be an object")
+        app_id = optional_text(payload.get("appId"))
+        goal = optional_text(payload.get("goal"))
+        knowledge_preflight = normalize_optional_object(payload.get("knowledgePreflight"), "knowledgePreflight")
+        knowledge_usage = normalize_optional_object(payload.get("knowledgeUsage"), "knowledgeUsage")
+        knowledge_writeback = normalize_optional_object(payload.get("knowledgeWriteback"), "knowledgeWriteback")
         learn = normalize_learn_options(payload.get("learn"))
         workflow = action_workflow_document(step)
+        if app_id:
+            workflow["appId"] = app_id
+        if goal:
+            workflow["goal"] = goal
+        if knowledge_preflight:
+            workflow["knowledgePreflight"] = knowledge_preflight
+        if knowledge_usage:
+            workflow["knowledgeUsage"] = knowledge_usage
+        if knowledge_writeback:
+            workflow["knowledgeWriteback"] = knowledge_writeback
         source = workflow_source(payload.get("actionSource"), "action")
-        return self.run_steps(session, [step], "action", workflow, source, learn=learn)
+        learn = complete_learn_options(learn, app_id, goal)
+        return self.run_steps(
+            session,
+            [step],
+            "action",
+            workflow,
+            source,
+            learn=learn,
+            app_id=app_id,
+            goal=goal,
+            knowledge_preflight=knowledge_preflight,
+            knowledge_usage=knowledge_usage,
+            knowledge_writeback=knowledge_writeback,
+        )
 
     def run_workflow(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
         workflow = ensure_workflow(payload.get("workflow"))
+        app_id = optional_text(payload.get("appId") or workflow.get("appId"))
+        goal = optional_text(payload.get("goal") or workflow.get("goal"))
+        knowledge_preflight = normalize_optional_object(payload.get("knowledgePreflight") or workflow.get("knowledgePreflight"), "knowledgePreflight")
+        knowledge_usage = normalize_optional_object(payload.get("knowledgeUsage") or workflow.get("knowledgeUsage"), "knowledgeUsage")
+        knowledge_writeback = normalize_optional_object(payload.get("knowledgeWriteback") or workflow.get("knowledgeWriteback"), "knowledgeWriteback")
+        if app_id:
+            workflow["appId"] = app_id
+        if goal:
+            workflow["goal"] = goal
+        if knowledge_preflight:
+            workflow["knowledgePreflight"] = knowledge_preflight
+        if knowledge_usage:
+            workflow["knowledgeUsage"] = knowledge_usage
+        if knowledge_writeback:
+            workflow["knowledgeWriteback"] = knowledge_writeback
         steps_payload: list[dict[str, Any]] = []
         for index, item in enumerate(workflow.get("readiness", []), start=1):
             if not isinstance(item, dict):
@@ -1390,8 +1474,21 @@ class VerifierController:
                 raise VerifyError(f"workflow step must be an object: {index}")
             steps_payload.append(item)
         learn = normalize_learn_options(payload.get("learn") or workflow.get("learn"))
+        learn = complete_learn_options(learn, app_id, goal)
         source = workflow_source(payload.get("workflowSource"), "workflow")
-        return self.run_steps(session, steps_payload, "workflow", workflow, source, learn=learn)
+        return self.run_steps(
+            session,
+            steps_payload,
+            "workflow",
+            workflow,
+            source,
+            learn=learn,
+            app_id=app_id,
+            goal=goal,
+            knowledge_preflight=knowledge_preflight,
+            knowledge_usage=knowledge_usage,
+            knowledge_writeback=knowledge_writeback,
+        )
 
     def latest_report(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
@@ -1445,6 +1542,17 @@ def normalize_learn_options(value: Any) -> dict[str, Any] | None:
         "notes": str(notes).strip() if notes not in (None, "") else "learned by verifier server",
         "includeAssets": bool(value.get("includeAssets") or value.get("learnAssets")),
     }
+
+
+def complete_learn_options(learn: dict[str, Any] | None, app_id: str | None, goal: str | None) -> dict[str, Any] | None:
+    if learn is None:
+        return None
+    normalized = dict(learn)
+    if not normalized.get("appId") and app_id:
+        normalized["appId"] = app_id
+    if normalized.get("notes") == "learned by verifier server" and goal:
+        normalized["notes"] = goal
+    return normalized
 
 
 class VerifierHTTPServer(http.server.ThreadingHTTPServer):

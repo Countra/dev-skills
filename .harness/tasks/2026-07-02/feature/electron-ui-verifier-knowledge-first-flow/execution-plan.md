@@ -558,6 +558,10 @@ process-manager skill 是否存在（process-manager skill available）:
 | Planning | 文件读取、rg、git status | passed | 现有流程缺口和计划落盘 | 未实现 | 本计划文件 | 等待批准 |
 | Stage 1 | `rg "Knowledge-First|知识库预检|回写知识库|knowledgePreflight" skills/electron-ui-verifier` | passed | 强制流程关键词覆盖核心文档 | 未覆盖脚本行为 | shell output | 继续 Stage 2 |
 | Stage 1 | `python C:\Users\admin\.codex\skills\.system\skill-creator\scripts\quick_validate.py skills\electron-ui-verifier` | passed | skill frontmatter 和基础结构 | 不检查业务逻辑 | `Skill is valid!` | 继续 Stage 2 |
+| Stage 2 | `python -m py_compile skills\electron-ui-verifier\scripts\ev_action.py skills\electron-ui-verifier\scripts\ev_workflow.py skills\electron-ui-verifier\scripts\ev_server.py skills\electron-ui-verifier\scripts\ev_suggest.py` | passed | Python 语法 | 未覆盖真实 server HTTP | shell output | 继续 |
+| Stage 2 | `ev_action.py --help` / `ev_workflow.py --help` | passed | 新 CLI 参数暴露 | 未执行真实 UI | shell output | 继续 |
+| Stage 2 | `ev_suggest.py --workspace ... --app-id videoForensic --goal "打开案件并统计数据"` | passed | 输出 `knowledgePreflight` 摘要 | 当前查询未命中历史候选 | shell output | 继续 |
+| Stage 2 | 内联 Python 构造 `RunContext` 调用 `build_report/write_summary` | passed | report 和 summary 写入知识库审计字段 | 未启动 verifier server | `stage2-report-summary-smoke.md` | 继续 Stage 3 |
 
 可选验证（Optional）:
 
@@ -723,22 +727,22 @@ patch 失败处理（Patch failure handling）:
 
 当前阶段（Current stage）:
 
-- Stage 1: 规则和流程契约
+- Stage 3: 知识库回写和资产策略
 
 已完成阶段（Completed stages）:
 
 - Planning
+- Stage 1: 规则和流程契约
+- Stage 2: CLI 和 report 审计字段
 
 剩余阶段（Remaining stages）:
 
-- Stage 1: 规则和流程契约
-- Stage 2: CLI 和 report 审计字段
 - Stage 3: 知识库回写和资产策略
 - Stage 4: 端到端验证和最终收口
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 1
+- continue Stage 3
 
 当前停止条件（Current stop condition）:
 
@@ -757,9 +761,9 @@ patch 失败处理（Patch failure handling）:
 | 阶段（Stage） | 状态（Status） | 摘要（Summary） | 验证（Validation） | 证据（Evidence） | 下一步（Next action） |
 | --- | --- | --- | --- | --- | --- |
 | Planning | completed | 已完成方案制定、自查和 readiness | 文件读取、计划自查 | `execution-plan.md` | 等待用户批准 |
-| Stage 1 | completed | 已将 Knowledge-First Gate 写入核心规则和 reference | `rg` 检索通过；quick validate 通过 | `skills/electron-ui-verifier/SKILL.md`、`references/workflow.md`、`references/knowledge.md`、`references/actions.md` | 提交后继续 Stage 2 |
-| Stage 2 | pending | CLI/report 字段 | pending | pending | Stage 1 后执行 |
-| Stage 3 | pending | 回写和资产策略 | pending | pending | Stage 2 后执行 |
+| Stage 1 | completed | 已将 Knowledge-First Gate 写入核心规则和 reference | `rg` 检索通过；quick validate 通过 | commit `008ff1e` | 继续 Stage 2 |
+| Stage 2 | completed | 已新增 appId/goal、knowledge preflight/usage/writeback 审计参数和 report 字段 | py_compile、help、suggest、report smoke 通过 | `ev_action.py`、`ev_workflow.py`、`ev_suggest.py`、`ev_server.py` | 继续 Stage 3 |
+| Stage 3 | in_progress | 回写和资产策略 | pending | pending | 检查知识提取和资产策略 |
 | Stage 4 | pending | 验证和收口 | pending | pending | Stage 3 后执行 |
 
 ## 代码审查（Code Review）
@@ -768,17 +772,18 @@ patch 失败处理（Patch failure handling）:
 | --- | --- | --- | --- |
 | Planning | 未修改源码 | follow-up | 实施阶段执行 |
 | Stage 1 | 文档规则覆盖了预检、现场验证、回写和最终回复要求；未发现冲突 | follow-up | 已通过 `rg` 和完整文件复读确认 |
+| Stage 2 | CLI 新增参数保持向后兼容，旧调用不传 appId/goal 时仍可执行；新推荐路径会默认基础回写 | follow-up | 已通过 py_compile、help 和 report smoke |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 强化 `electron-ui-verifier` 为“先查知识库，再现场验证，再回写知识库”的强制闭环。
 - 执行模式（Execution mode）: run-to-completion。
 - 整体任务状态（Overall status）: in_progress。
-- 已完成阶段（Completed stages）: Planning。
-- 当前阶段（Current stage）: Stage 1: 规则和流程契约。
-- 剩余阶段（Remaining stages）: Stage 1-4。
-- 最新 commit（Latest commit）: none。
-- 下一步自动动作（Next automatic action）: continue Stage 1。
+- 已完成阶段（Completed stages）: Planning；Stage 1；Stage 2。
+- 当前阶段（Current stage）: Stage 3: 知识库回写和资产策略。
+- 剩余阶段（Remaining stages）: Stage 3-4。
+- 最新 commit（Latest commit）: `008ff1e`。
+- 下一步自动动作（Next automatic action）: continue Stage 3。
 - 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: verifier server 如需启动必须使用 process-manager；Electron GUI 本体不要使用 process-manager。
@@ -797,3 +802,4 @@ patch 失败处理（Patch failure handling）:
 | 阶段（Stage） | 仓库（Repository） | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | not committed | 规划阶段不提交 | not applicable |
+| Stage 1 | dev-skills | `008ff1e` | feat(electron-ui-verifier): 固化知识库优先验证规则 | not applicable |

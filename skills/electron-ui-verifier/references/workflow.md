@@ -148,6 +148,8 @@ python skills/electron-ui-verifier/scripts/ev_suggest.py --workspace E:/work/hl/
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session app --workflow E:/work/task/workflow.json --learn --learn-app-id videoForensic --learn-notes "案件统计流程"
 ```
 
+推荐在执行时同时传入 `--app-id`、`--goal` 和 `--knowledge-preflight`，这样本轮 report 会包含 `knowledgePreflight`、`knowledgeUsage` 和 `knowledgeWriteback` 审计字段。只要传入 `--app-id` 或 `--goal`，脚本会默认启用基础回写；明确跳过时必须传 `--no-learn` 并记录原因。
+
 如果本次流程要沉淀为可检索、可导出、可分享的 action/workflow 资产，必须再加 `--learn-assets`。不要默认资产化一次性探索。
 
 ```powershell

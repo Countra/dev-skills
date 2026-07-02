@@ -112,6 +112,28 @@ def compose_candidate(actions: list[dict[str, Any]], limit: int) -> dict[str, An
     }
 
 
+def preflight_summary(result: dict[str, Any]) -> dict[str, Any]:
+    workflows = result.get("workflows") or []
+    actions = result.get("actions") or []
+    elements = result.get("elements") or []
+    screens = result.get("screens") or []
+    has_hits = bool(workflows or actions or elements or screens)
+    return {
+        "status": "hit" if has_hits else "empty",
+        "goal": result.get("goal"),
+        "appId": result.get("appId"),
+        "workflowHits": len(workflows),
+        "actionHits": len(actions),
+        "elementHits": len(elements),
+        "screenHits": len(screens),
+        "rawHitCount": len(result.get("rawHits") or []),
+        "topWorkflowIds": [item.get("workflowId") for item in workflows[:3] if item.get("workflowId")],
+        "topActionIds": [item.get("actionId") for item in actions[:5] if item.get("actionId")],
+        "recommendedNextAction": "复用或改写命中候选后执行现场 workflow" if has_hits else "未命中可复用候选，先现场探索并在完成后回写知识库",
+        "mustVerify": True,
+    }
+
+
 def supplemental_actions(store: Any, app_id: str | None, limit: int, known_ids: set[str]) -> list[dict[str, Any]]:
     if not app_id:
         return []
@@ -144,7 +166,7 @@ def suggest(goal: str, app_id: str | None, limit: int, store: Any, report: str |
     actions.sort(key=lambda item: item["score"], reverse=True)
     elements.sort(key=lambda item: item["score"], reverse=True)
     composed = compose_candidate(actions, limit)
-    return {
+    result = {
         "goal": goal,
         "appId": app_id,
         "advice": [
@@ -159,6 +181,8 @@ def suggest(goal: str, app_id: str | None, limit: int, store: Any, report: str |
         "rawHits": raw_hits[:limit],
         "currentReportContext": current_report_context(report, app_id),
     }
+    result["knowledgePreflight"] = preflight_summary(result)
+    return result
 
 
 def main(argv: list[str] | None = None) -> int:
