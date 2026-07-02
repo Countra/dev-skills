@@ -566,6 +566,11 @@ process-manager skill 是否存在（process-manager skill available）:
 | Stage 3 | `ev_knowledge_smoke.py --workspace ... --temp` | passed | 知识库存储、去重、旧 schema guard | 未覆盖真实 UI | temp knowledge DB | 继续 |
 | Stage 3 | `ev_asset_extract.py --report ...20260702-062402-workflow\report.json --include-assets 等价 dry run` | passed | evidence 包含 workflowPath，资产包含 sourceWorkflow 和风险标记 | 使用既有 report | shell output | 继续 |
 | Stage 3 | `ev_learn.py --include-assets` + `ev_assets.py list-workflows` | passed | 实际写入知识库并查询 summary | 写入 ignored runtime knowledge | `.harness/electron-ui-verifier/knowledge/` | 继续 Stage 4 |
+| Stage 4 | 全量 `python -m py_compile` | passed | 修改过的 Python 脚本语法 | 未覆盖真实 server HTTP | shell output | 通过 |
+| Stage 4 | `quick_validate.py skills\electron-ui-verifier` | passed | skill 结构和 frontmatter | 不检查业务逻辑 | `Skill is valid!` | 通过 |
+| Stage 4 | `ev_knowledge_smoke.py --workspace ... --temp` | passed | 知识库存储和旧 schema guard | 未覆盖真实 UI | temp knowledge DB | 通过 |
+| Stage 4 | `rg Knowledge-First/knowledgePreflight/... skills\electron-ui-verifier` | passed | 规则、CLI、report、资产字段可检索 | 不执行 UI | shell output | 通过 |
+| Stage 4 | `ev_asset_extract.py` + `ev_learn.py --include-assets` sourceWorkflowId 复测 | passed | `sourceWorkflowId` 可提取并持久化为 `source_workflow_id` | 使用既有 report | shell output | 通过 |
 
 可选验证（Optional）:
 
@@ -727,11 +732,11 @@ patch 失败处理（Patch failure handling）:
 
 整体任务状态（Overall status）:
 
-- in_progress
+- completed
 
 当前阶段（Current stage）:
 
-- Stage 4: 端到端验证和最终收口
+- Finalized
 
 已完成阶段（Completed stages）:
 
@@ -739,14 +744,15 @@ patch 失败处理（Patch failure handling）:
 - Stage 1: 规则和流程契约
 - Stage 2: CLI 和 report 审计字段
 - Stage 3: 知识库回写和资产策略
+- Stage 4: 端到端验证和最终收口
 
 剩余阶段（Remaining stages）:
 
-- Stage 4: 端到端验证和最终收口
+- none
 
 下一步自动动作（Next automatic action）:
 
-- continue Stage 4
+- none
 
 当前停止条件（Current stop condition）:
 
@@ -768,7 +774,7 @@ patch 失败处理（Patch failure handling）:
 | Stage 1 | completed | 已将 Knowledge-First Gate 写入核心规则和 reference | `rg` 检索通过；quick validate 通过 | commit `008ff1e` | 继续 Stage 2 |
 | Stage 2 | completed | 已新增 appId/goal、knowledge preflight/usage/writeback 审计参数和 report 字段 | py_compile、help、suggest、report smoke 通过 | `ev_action.py`、`ev_workflow.py`、`ev_suggest.py`、`ev_server.py` | 继续 Stage 3 |
 | Stage 3 | completed | 已增强 evidence、sourceWorkflow、资产风险标记和 assets 查询摘要 | py_compile、knowledge smoke、asset extract、learn/assets 查询通过 | `ev_knowledge_extract.py`、`ev_asset_extract.py`、`ev_assets.py` | 提交后继续 Stage 4 |
-| Stage 4 | in_progress | 验证和收口 | pending | pending | 运行最终验证和完整复查 |
+| Stage 4 | completed | 已完成最终验证、修复 sourceWorkflowId 持久化并复查规则覆盖 | py_compile、quick validate、knowledge smoke、rg、asset/learn 复测通过 | shell output；`stage2-report-summary-smoke.md` | final delivery |
 
 ## 代码审查（Code Review）
 
@@ -778,17 +784,18 @@ patch 失败处理（Patch failure handling）:
 | Stage 1 | 文档规则覆盖了预检、现场验证、回写和最终回复要求；未发现冲突 | follow-up | 已通过 `rg` 和完整文件复读确认 |
 | Stage 2 | CLI 新增参数保持向后兼容，旧调用不传 appId/goal 时仍可执行；新推荐路径会默认基础回写 | follow-up | 已通过 py_compile、help 和 report smoke |
 | Stage 3 | 基础 evidence 已包含 workflowPath 和知识库摘要；资产候选保留 candidate 状态并带风险标记 | follow-up | 已通过 dry-run extract、learn 和 assets 查询确认 |
+| Stage 4 | 发现 `sourceWorkflow` 可读字段未持久化到 store 的 `source_workflow_id`，已补充 `sourceWorkflowId` 并复测 | minor | 已修复并验证 |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 强化 `electron-ui-verifier` 为“先查知识库，再现场验证，再回写知识库”的强制闭环。
 - 执行模式（Execution mode）: run-to-completion。
-- 整体任务状态（Overall status）: in_progress。
-- 已完成阶段（Completed stages）: Planning；Stage 1；Stage 2；Stage 3。
-- 当前阶段（Current stage）: Stage 4: 端到端验证和最终收口。
-- 剩余阶段（Remaining stages）: Stage 4。
+- 整体任务状态（Overall status）: completed。
+- 已完成阶段（Completed stages）: Planning；Stage 1；Stage 2；Stage 3；Stage 4。
+- 当前阶段（Current stage）: Finalized。
+- 剩余阶段（Remaining stages）: none。
 - 最新 commit（Latest commit）: `008ff1e`。
-- 下一步自动动作（Next automatic action）: continue Stage 4。
+- 下一步自动动作（Next automatic action）: none。
 - 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: verifier server 如需启动必须使用 process-manager；Electron GUI 本体不要使用 process-manager。
@@ -808,3 +815,6 @@ patch 失败处理（Patch failure handling）:
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | not committed | 规划阶段不提交 | not applicable |
 | Stage 1 | dev-skills | `008ff1e` | feat(electron-ui-verifier): 固化知识库优先验证规则 | not applicable |
+| Stage 2 | dev-skills | `01bdb89` | feat(electron-ui-verifier): 增加知识库审计字段 | not applicable |
+| Stage 3 | dev-skills | `975bd40` | feat(electron-ui-verifier): 完善知识回写资产策略 | not applicable |
+| Stage 4 | dev-skills | `1b103e9` | feat(electron-ui-verifier): 完成知识闭环最终验证 | not applicable |

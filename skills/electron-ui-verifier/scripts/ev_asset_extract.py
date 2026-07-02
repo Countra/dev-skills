@@ -233,6 +233,11 @@ def source_workflow_path(report: dict[str, Any]) -> str | None:
     return None
 
 
+def source_workflow_id(report: dict[str, Any]) -> str | None:
+    workflow_path = source_workflow_path(report)
+    return stable_id("source-workflow", workflow_path) if workflow_path else None
+
+
 def knowledge_risks(report: dict[str, Any]) -> list[str]:
     risks: list[str] = []
     preflight = report.get("knowledgePreflight")
@@ -266,6 +271,7 @@ def build_action_asset(app_id: str, screen_id: str, report_path: Path, report: d
         "riskFlags": unique(risks + knowledge_risks(report)),
         "sourceReport": str(report_path),
         "sourceWorkflow": source_workflow_path(report),
+        "sourceWorkflowId": source_workflow_id(report),
         "sourceStepIds": [step_id(step, index)],
         "artifactRefs": source_artifacts(report, step),
         "status": "candidate",
@@ -312,6 +318,7 @@ def build_workflow_asset(app_id: str, report_path: Path, report: dict[str, Any],
         "riskFlags": unique(risk_flags + knowledge_risks(report)),
         "sourceReport": str(report_path),
         "sourceWorkflow": source_workflow_path(report),
+        "sourceWorkflowId": source_workflow_id(report),
         "sourceStepIds": unique(source_step_ids),
         "artifactRefs": unique(artifact_refs),
         "status": "candidate",
