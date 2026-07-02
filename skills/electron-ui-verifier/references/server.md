@@ -67,6 +67,7 @@ token
 server.json
 sessions.json
 reports/
+workflows/
 artifacts/
 logs/
 tmp/
@@ -121,6 +122,14 @@ python skills/electron-ui-verifier/scripts/ev_snapshot.py --workspace E:/work/hl
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json
 python skills/electron-ui-verifier/scripts/ev_report.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --latest
 ```
+
+每次 `ev_workflow.py` 或 `ev_action.py` 执行后，返回值都会包含 `workflow` 字段，指向本轮固化后的 workflow JSON：
+
+```text
+.harness/electron-ui-verifier/workflows/<session>/<timestamp>-<type>.workflow.json
+```
+
+最终回复必须引用这个路径，而不是只引用原始输入 workflow 或知识库资产。
 
 如果要把本次 report 沉淀到知识库，显式使用：
 

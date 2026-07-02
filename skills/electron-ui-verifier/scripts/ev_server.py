@@ -131,6 +131,8 @@ class RunContext:
     cdp: str
     out_dir: Path
     backend: str = "raw-cdp"
+    workflow_path: str | None = None
+    workflow_source: dict[str, Any] | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
     artifacts: list[str] = field(default_factory=list)
     not_covered: list[str] = field(default_factory=list)
@@ -1010,6 +1012,8 @@ def build_report(
         "generatedAt": iso_now(),
         "backend": ctx.backend,
         "cdp": ctx.cdp,
+        "workflow": {"path": ctx.workflow_path, "source": ctx.workflow_source} if ctx.workflow_path else None,
+        "workflowPath": ctx.workflow_path,
         "version": version,
         "targets": [target.__dict__ for target in targets],
         "selectedTarget": target.__dict__ if target else None,
@@ -1032,6 +1036,8 @@ def write_summary(path: Path, report: dict[str, Any]) -> None:
         f"- Backend: {report['backend']}",
         f"- CDP: {report['cdp']}",
     ]
+    if report.get("workflowPath"):
+        lines.append(f"- Workflow: {report['workflowPath']}")
     target = report.get("selectedTarget")
     if target:
         lines.extend([f"- Target title: {target.get('title')}", f"- Target URL: {target.get('url')}"])
@@ -1053,6 +1059,26 @@ def persist_report(ctx: RunContext, report: dict[str, Any]) -> None:
     with events_path.open("w", encoding="utf-8") as handle:
         for event in ctx.events:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
+def workflow_source(value: Any, default_type: str) -> dict[str, Any]:
+    if isinstance(value, dict):
+        source_type = str(value.get("type") or default_type)
+        source: dict[str, Any] = {"type": source_type}
+        if value.get("path"):
+            source["path"] = str(value["path"])
+        return source
+    return {"type": default_type}
+
+
+def action_workflow_document(step: dict[str, Any]) -> dict[str, Any]:
+    step_id = str(step.get("id") or "action")
+    return {
+        "schemaVersion": 1,
+        "name": f"single-action-{step_id}",
+        "description": "由 ev_action.py 单步验证自动生成的可复用 workflow。",
+        "steps": [step],
+    }
 
 
 def persist_report_knowledge(config: EVConfig, report_path: Path, app_id: str | None, notes: str | None, include_assets: bool = False) -> dict[str, Any]:
@@ -1133,7 +1159,7 @@ class VerifierController:
         self.token = read_token(config)
         self.sessions: dict[str, VerifierSession] = {}
         self.lock = threading.RLock()
-        for folder in (config.state_root, config.reports_dir, config.artifacts_dir, config.logs_dir, config.tmp_dir):
+        for folder in (config.state_root, config.reports_dir, config.workflows_dir, config.artifacts_dir, config.logs_dir, config.tmp_dir):
             folder.mkdir(parents=True, exist_ok=True)
         self.persist_sessions()
 
@@ -1270,14 +1296,24 @@ class VerifierController:
         ensure_dir(path)
         return path
 
+    def workflow_file(self, session: VerifierSession, out_dir: Path) -> Path:
+        path = self.config.workflows_dir / session.name / f"{out_dir.name}.workflow.json"
+        ensure_dir(path.parent)
+        return path
+
     def run_steps(
         self,
         session: VerifierSession,
         steps_payload: list[dict[str, Any]],
         prefix: str,
+        workflow: dict[str, Any],
+        workflow_source_data: dict[str, Any],
         learn: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         with session.lock:
+            out_dir = self.report_dir(session, prefix)
+            workflow_path = self.workflow_file(session, out_dir)
+            write_json(workflow_path, workflow)
             actions = set()
             for step in steps_payload:
                 for action in SUPPORTED_ACTIONS:
@@ -1287,8 +1323,9 @@ class VerifierController:
             if "collectNetwork" in actions:
                 required.add("Network")
             self.ensure_domains(session, required)
-            out_dir = self.report_dir(session, prefix)
             ctx = RunContext(cdp=session.cdp, out_dir=out_dir)
+            ctx.workflow_path = str(workflow_path)
+            ctx.workflow_source = workflow_source_data
             ctx.backend_attempts.append({"backend": "raw-cdp", "status": "selected"})
             version = get_version(session.cdp)
             targets = get_targets(session.cdp)
@@ -1319,7 +1356,13 @@ class VerifierController:
                 persist_report(ctx, report)
             session.last_used_at = iso_now()
             self.persist_sessions()
-            return {"ok": report["status"] == "passed", "report": session.latest_report, "summary": str(out_dir / "summary.md"), "result": report}
+            return {
+                "ok": report["status"] == "passed",
+                "report": session.latest_report,
+                "summary": str(out_dir / "summary.md"),
+                "workflow": str(workflow_path),
+                "result": report,
+            }
 
     def run_action(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
@@ -1327,7 +1370,9 @@ class VerifierController:
         if not isinstance(step, dict):
             raise VerifyError("action step must be an object")
         learn = normalize_learn_options(payload.get("learn"))
-        return self.run_steps(session, [step], "action", learn=learn)
+        workflow = action_workflow_document(step)
+        source = workflow_source(payload.get("actionSource"), "action")
+        return self.run_steps(session, [step], "action", workflow, source, learn=learn)
 
     def run_workflow(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)
@@ -1345,7 +1390,8 @@ class VerifierController:
                 raise VerifyError(f"workflow step must be an object: {index}")
             steps_payload.append(item)
         learn = normalize_learn_options(payload.get("learn") or workflow.get("learn"))
-        return self.run_steps(session, steps_payload, "workflow", learn=learn)
+        source = workflow_source(payload.get("workflowSource"), "workflow")
+        return self.run_steps(session, steps_payload, "workflow", workflow, source, learn=learn)
 
     def latest_report(self, payload: dict[str, Any]) -> dict[str, Any]:
         session = self.get_session(payload)

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from ev_common import (
     EVError,
@@ -38,6 +39,11 @@ def main(argv: list[str] | None = None) -> int:
             raise EVError("--workflow must resolve to a JSON object")
         config = load_config(resolve_config_path(args))
         payload: dict[str, object] = {"session": args.session, "workflow": workflow}
+        workflow_arg = Path(args.workflow)
+        if workflow_arg.is_absolute() and workflow_arg.exists():
+            payload["workflowSource"] = {"type": "file", "path": str(workflow_arg.resolve())}
+        else:
+            payload["workflowSource"] = {"type": "inline"}
         if args.learn or args.learn_assets:
             payload["learn"] = {"appId": args.learn_app_id, "notes": args.learn_notes, "includeAssets": bool(args.learn_assets)}
         result = request_json(config, "POST", "/workflows/run", payload, timeout=600.0)

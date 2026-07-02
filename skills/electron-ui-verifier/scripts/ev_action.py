@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from ev_common import (
     EVError,
@@ -38,6 +39,11 @@ def main(argv: list[str] | None = None) -> int:
             raise EVError("--action must resolve to a JSON object")
         config = load_config(resolve_config_path(args))
         payload: dict[str, object] = {"session": args.session, "action": step}
+        action_arg = Path(args.action)
+        if action_arg.is_absolute() and action_arg.exists():
+            payload["actionSource"] = {"type": "file", "path": str(action_arg.resolve())}
+        else:
+            payload["actionSource"] = {"type": "inline"}
         if args.learn or args.learn_assets:
             payload["learn"] = {"appId": args.learn_app_id, "notes": args.learn_notes, "includeAssets": bool(args.learn_assets)}
         result = request_json(config, "POST", "/actions/run", payload, timeout=120.0)

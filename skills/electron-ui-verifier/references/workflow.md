@@ -9,7 +9,7 @@
 1. 读取当前 harness 任务计划和环境规则。
 2. 确认应用是否已经运行。
 3. 确认 CDP endpoint，通常是 `http://127.0.0.1:<port>`。
-4. 确认证据产物保存位置。内部 report、artifact、log、tmp 和 knowledge 必须位于 `.harness/electron-ui-verifier/` 下。
+4. 确认证据产物保存位置。内部 report、workflow、artifact、log、tmp 和 knowledge 必须位于 `.harness/electron-ui-verifier/` 下。
 5. 确认 Electron GUI 应用由 agent 启动，还是由用户手动启动。
 6. 如果任务可能复用历史经验，先查询 `references/knowledge.md` 中的知识库入口；查询结果只作为候选操作路径。
 
@@ -77,6 +77,7 @@ python skills/electron-ui-verifier/scripts/ev_probe.py --workspace E:/work/hl/vi
 
 每次真实 UI 验证都应产出：
 
+- 本轮实际执行的 `workflow.json`
 - `report.json`
 - `summary.md`
 - 至少一张截图，或明确说明截图不可用的原因。
@@ -84,6 +85,14 @@ python skills/electron-ui-verifier/scripts/ev_probe.py --workspace E:/work/hl/vi
 - 如任务涉及错误分析，补充 console、exception、network、DOMSnapshot 或 accessibility artifact。
 
 `report.json` 必须包含 `schemaVersion: 1`、session、backend 信息、target metadata、step-level statuses、artifacts 和 errors。
+
+`ev_action.py` 和 `ev_workflow.py` 每轮都会把实际执行的 workflow 固化到：
+
+```text
+.harness/electron-ui-verifier/workflows/<session>/<timestamp>-<type>.workflow.json
+```
+
+该路径会写入脚本返回值的 `workflow` 字段、`report.json` 的 `workflowPath` 字段，以及 `summary.md`。最终回复必须列出该 workflow JSON 绝对路径。
 
 诊断类 action 的完整数据默认写入 artifact，报告中只保留摘要。`collectNetwork` 会在 workflow 开始前预扫描并提前启用 CDP `Network` domain，避免点击后才采集导致漏请求。默认不采集请求头、请求体、响应体、cookie、token 或 localStorage。
 
