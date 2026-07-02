@@ -216,8 +216,34 @@ def unique(values: list[str]) -> list[str]:
 
 def source_artifacts(report: dict[str, Any], step: dict[str, Any]) -> list[str]:
     refs = [str(item) for item in report.get("artifacts") or [] if isinstance(item, str)]
+    workflow_path = source_workflow_path(report)
+    if workflow_path:
+        refs.append(workflow_path)
     refs.extend(step_artifacts(step))
     return unique(refs)
+
+
+def source_workflow_path(report: dict[str, Any]) -> str | None:
+    workflow_path = report.get("workflowPath")
+    if isinstance(workflow_path, str) and workflow_path:
+        return workflow_path
+    workflow = report.get("workflow")
+    if isinstance(workflow, dict) and isinstance(workflow.get("path"), str):
+        return str(workflow["path"])
+    return None
+
+
+def knowledge_risks(report: dict[str, Any]) -> list[str]:
+    risks: list[str] = []
+    preflight = report.get("knowledgePreflight")
+    if not isinstance(preflight, dict):
+        risks.append("missingKnowledgePreflight")
+    elif preflight.get("status") == "empty":
+        risks.append("knowledgePreflightEmpty")
+    usage = report.get("knowledgeUsage")
+    if isinstance(usage, dict) and usage.get("status") in {"skipped", "not-used"}:
+        risks.append("knowledgeCandidateNotUsed")
+    return risks
 
 
 def build_action_asset(app_id: str, screen_id: str, report_path: Path, report: dict[str, Any], step: dict[str, Any], index: int) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
@@ -237,8 +263,9 @@ def build_action_asset(app_id: str, screen_id: str, report_path: Path, report: d
         "stepJson": workflow_step,
         "selectorCandidates": selector_candidates(action, workflow_step.get(action, {}) if isinstance(workflow_step.get(action), dict) else {"text": workflow_step.get(action)}),
         "params": params,
-        "riskFlags": unique(risks),
+        "riskFlags": unique(risks + knowledge_risks(report)),
         "sourceReport": str(report_path),
+        "sourceWorkflow": source_workflow_path(report),
         "sourceStepIds": [step_id(step, index)],
         "artifactRefs": source_artifacts(report, step),
         "status": "candidate",
@@ -282,8 +309,9 @@ def build_workflow_asset(app_id: str, report_path: Path, report: dict[str, Any],
         "assertions": [{"status": report.get("status")}],
         "actionRefs": unique(action_refs),
         "params": params,
-        "riskFlags": unique(risk_flags),
+        "riskFlags": unique(risk_flags + knowledge_risks(report)),
         "sourceReport": str(report_path),
+        "sourceWorkflow": source_workflow_path(report),
         "sourceStepIds": unique(source_step_ids),
         "artifactRefs": unique(artifact_refs),
         "status": "candidate",

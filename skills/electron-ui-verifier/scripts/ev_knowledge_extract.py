@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -130,6 +131,58 @@ def collect_artifact_dicts(report: dict[str, Any], report_path: Path) -> list[di
                 if loaded is not None:
                     artifacts.append(loaded)
     return artifacts
+
+
+def evidence_artifact_refs(report: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    workflow_path = report.get("workflowPath")
+    if isinstance(workflow_path, str) and workflow_path:
+        refs.append(workflow_path)
+    workflow = report.get("workflow")
+    if isinstance(workflow, dict):
+        path = workflow.get("path")
+        if isinstance(path, str) and path:
+            refs.append(path)
+    refs.extend(str(path) for path in report.get("artifacts") or [] if isinstance(path, str))
+    for step in report.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        refs.extend(str(path) for path in step.get("artifacts") or [] if isinstance(path, str))
+    return list(dict.fromkeys(refs))
+
+
+def compact_knowledge_field(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return value
+    allowed = {
+        "status",
+        "goal",
+        "appId",
+        "workflowHits",
+        "actionHits",
+        "elementHits",
+        "screenHits",
+        "rawHitCount",
+        "topWorkflowIds",
+        "topActionIds",
+        "usedCandidateIds",
+        "reason",
+        "error",
+    }
+    return {key: value.get(key) for key in allowed if key in value}
+
+
+def evidence_notes(report: dict[str, Any], notes: str | None) -> str:
+    payload = {
+        "notes": notes or "learned from verifier report",
+        "goal": report.get("goal"),
+        "appId": report.get("appId"),
+        "workflowPath": report.get("workflowPath"),
+        "knowledgePreflight": compact_knowledge_field(report.get("knowledgePreflight")),
+        "knowledgeUsage": compact_knowledge_field(report.get("knowledgeUsage")),
+        "knowledgeWriteback": compact_knowledge_field(report.get("knowledgeWriteback")),
+    }
+    return json.dumps({key: value for key, value in payload.items() if value not in (None, "", {})}, ensure_ascii=False)
 
 
 def text_from_report(report: dict[str, Any], artifacts: list[dict[str, Any]]) -> str:
@@ -271,8 +324,8 @@ def extract_knowledge(report_path: Path, app_id_override: str | None = None, not
     }
     evidence = {
         "sourceReport": str(report_path),
-        "artifactRefs": [str(path) for path in report.get("artifacts") or [] if isinstance(path, str)],
-        "notes": notes or "learned from verifier report",
+        "artifactRefs": evidence_artifact_refs(report),
+        "notes": evidence_notes(report, notes),
     }
     return {
         "app": app,

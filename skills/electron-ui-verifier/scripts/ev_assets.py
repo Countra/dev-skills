@@ -29,6 +29,22 @@ def filter_items(items: list[dict[str, object]], args: argparse.Namespace) -> li
     return [item for item in items if matches_filters(item, args)]
 
 
+def result_summary(items: list[dict[str, object]]) -> dict[str, object]:
+    statuses: dict[str, int] = {}
+    kinds: dict[str, int] = {}
+    for item in items:
+        status = str(item.get("status") or "unknown")
+        kind = str(item.get("kind") or item.get("goal") or "workflow")
+        statuses[status] = statuses.get(status, 0) + 1
+        kinds[kind] = kinds.get(kind, 0) + 1
+    return {
+        "count": len(items),
+        "statuses": statuses,
+        "kinds": kinds,
+        "recommendedNextAction": "将命中的 action/workflow 作为候选，执行新的现场验证后再采信",
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="查询和维护 Electron verifier action/workflow 资产。")
     add_common_args(parser)
@@ -81,14 +97,16 @@ def main(argv: list[str] | None = None) -> int:
         with open_store_from_paths(knowledge_paths_from_config(config), reset=reset) as store:
             if args.command in {"list-actions", "list-workflows", "list-exports"}:
                 items = store.list_items(args.kind, app_id=getattr(args, "app_id", None), limit=max(args.limit * 4, args.limit))
-                result = {"items": filter_items(items, args)[: args.limit]}
+                filtered = filter_items(items, args)[: args.limit]
+                result = {"items": filtered, "summary": result_summary(filtered)}
             elif args.command == "get-action":
                 result = {"item": store.get_action_asset(args.id)}
             elif args.command == "get-workflow":
                 result = {"item": store.get_workflow_asset(args.id)}
             elif args.command == "search":
                 hits = [item for item in store.search(args.query, app_id=args.app_id, limit=max(args.limit * 4, args.limit)) if item.get("kind") in {"action", "workflow"}]
-                result = {"items": filter_items(hits, args)[: args.limit]}
+                filtered = filter_items(hits, args)[: args.limit]
+                result = {"items": filtered, "summary": result_summary(filtered)}
             elif args.command == "cleanup":
                 result = store.cleanup(keep_inactive=args.keep_inactive, dry_run=args.dry_run, include_assets=True)
             elif args.command == "reset":
