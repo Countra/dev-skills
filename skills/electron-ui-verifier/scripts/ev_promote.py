@@ -15,7 +15,7 @@ PROMOTE_REQUIRES_EVIDENCE = {"verified", "stable"}
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="提升或调整本地知识库中的知识状态。")
     add_common_args(parser)
-    parser.add_argument("--kind", required=True, choices=("app", "screen", "element", "workflow"))
+    parser.add_argument("--kind", required=True, choices=("app", "screen", "element", "action", "workflow"))
     parser.add_argument("--id", required=True, help="知识项 ID")
     parser.add_argument("--status", required=True, choices=sorted(VALID_STATUSES))
     parser.add_argument("--evidence", help="用于支撑提升的 report、artifact、commit 或人工记录")

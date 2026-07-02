@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-02
+
+### Stage 1: electron-ui-verifier action/workflow 资产 schema
+
+- 将知识库升级为新 schema，新增 `action_assets`、`workflow_assets`、`asset_evidences` 和 `workflow_exports`。
+- 明确旧 knowledge DB 不自动迁移，新增显式 reset/rebuild 路径并验证旧 schema 默认拒绝。
+- 新增 `ev_assets.py` 资产 CLI，补充资产去重、cleanup dry-run/apply 和存储层 smoke 覆盖。
+- Commit: pending
+- Commit message: pending
+
 ## 2026-07-01
 
 ### Stage 5: electron-ui-verifier 知识库文档和最终验证

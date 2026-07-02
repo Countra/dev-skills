@@ -9,7 +9,7 @@ from ev_common import EVError, add_common_args, fail, load_config, print_json, r
 from ev_knowledge_store import knowledge_paths_from_config, open_store_from_paths
 
 
-LIST_KINDS = ("apps", "screens", "elements", "workflows", "evidences")
+LIST_KINDS = ("apps", "screens", "elements", "evidences")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,7 +28,6 @@ def build_parser() -> argparse.ArgumentParser:
         ("list-apps", "apps"),
         ("screens", "screens"),
         ("elements", "elements"),
-        ("workflows", "workflows"),
         ("evidences", "evidences"),
     ):
         alias_parser = subparsers.add_parser(command, help=f"列出 {kind}")
@@ -37,7 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
         alias_parser.add_argument("--limit", type=int, default=50)
 
     get_parser = subparsers.add_parser("get", help="读取单个知识项")
-    get_parser.add_argument("--kind", required=True, choices=("app", "screen", "element", "workflow", "evidence"))
+    get_parser.add_argument("--kind", required=True, choices=("app", "screen", "element", "evidence"))
     get_parser.add_argument("--id", required=True, help="知识项 ID")
 
     search_parser = subparsers.add_parser("search", help="全文搜索知识库")
@@ -45,8 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     search_parser.add_argument("--app-id", help="按 appId 过滤")
     search_parser.add_argument("--limit", type=int, default=20)
 
-    cleanup_parser = subparsers.add_parser("cleanup", help="清理过期或废弃知识")
+    cleanup_parser = subparsers.add_parser("cleanup", help="清理过期或废弃基础知识；资产清理使用 ev_assets.py cleanup")
     cleanup_parser.add_argument("--keep-inactive", type=int, default=200)
+    cleanup_parser.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "search":
                 result = {"items": store.search(args.query, app_id=args.app_id, limit=args.limit)}
             elif args.command == "cleanup":
-                result = store.cleanup(keep_inactive=args.keep_inactive)
+                result = store.cleanup(keep_inactive=args.keep_inactive, dry_run=args.dry_run, include_assets=False)
             else:
                 raise EVError(f"unsupported command: {args.command}")
         print_json({"ok": True, "command": args.command, "result": result})

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+import sqlite3
 
 from ev_common import EVError, add_common_args, discover_workspace_root, fail, paths_for_workspace, print_json
 from ev_knowledge_store import KnowledgePaths, knowledge_paths_from_ev_paths, open_store_from_paths
@@ -47,29 +48,87 @@ def run_smoke_with_paths(knowledge_paths: KnowledgePaths, workspace_root: Path) 
                 "confidence": 0.8,
             }
         )
-        workflow = store.upsert_workflow(
+        action = store.upsert_action_asset(
+            {
+                "appId": app["app_id"],
+                "screenId": screen["screen_id"],
+                "kind": "clickText",
+                "label": "点击查看",
+                "stepJson": {"clickText": {"text": "查看", "index": 0}},
+                "selectorCandidates": [{"type": "text", "value": "查看"}],
+                "confidence": 0.8,
+                "status": "candidate",
+                "sourceStepIds": ["step-1"],
+            }
+        )
+        action_again = store.upsert_action_asset(
+            {
+                "appId": app["app_id"],
+                "screenId": screen["screen_id"],
+                "kind": "clickText",
+                "label": "点击查看",
+                "stepJson": {"clickText": {"text": "查看", "index": 0}},
+                "selectorCandidates": [{"type": "text", "value": "查看"}],
+                "confidence": 0.8,
+                "status": "candidate",
+                "sourceStepIds": ["step-1"],
+            }
+        )
+        workflow = store.upsert_workflow_asset(
             {
                 "appId": app["app_id"],
                 "goal": "打开案件详情",
-                "steps": [{"clickText": "查看"}],
+                "readiness": [{"waitText": "案件"}],
+                "steps": [{"clickText": {"text": "查看", "index": 0}}],
                 "assertions": [{"waitText": "结果"}],
+                "actionRefs": [action["action_asset_id"]],
                 "confidence": 0.7,
             }
         )
         evidence = store.add_evidence({"sourceReport": str(workspace_root / "report.json"), "artifactRefs": ["snapshot.json"], "notes": "smoke"})
         hits = store.search("案件 工具栏", app_id=app["app_id"])
+        cleanup_dry = store.cleanup(keep_inactive=20, dry_run=True)
         cleanup = store.cleanup(keep_inactive=20)
+        if action["action_asset_id"] != action_again["action_asset_id"] or int(action_again.get("seen_count", 0)) < 2:
+            raise EVError("action asset dedupe failed")
         return {
             "ok": bool(hits),
             "meta": store.meta(),
             "app": app["app_id"],
             "screen": screen["screen_id"],
             "element": element["element_id"],
-            "workflow": workflow["workflow_id"],
+            "actionAsset": action["action_asset_id"],
+            "workflowAsset": workflow["workflow_asset_id"],
             "evidence": evidence["evidence_id"],
             "hits": hits,
+            "cleanupDryRun": cleanup_dry["removed"],
             "cleanup": cleanup["removed"],
         }
+
+
+def run_old_schema_guard(knowledge_paths: KnowledgePaths) -> dict[str, object]:
+    knowledge_paths.root.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(knowledge_paths.db_file))
+    try:
+        conn.executescript(
+            """
+            CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+            INSERT INTO meta(key, value) VALUES('schemaVersion', '1');
+            CREATE TABLE workflows(workflow_id TEXT PRIMARY KEY);
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    try:
+        open_store_from_paths(knowledge_paths).close()
+    except EVError as exc:
+        rejected = "not migrated automatically" in str(exc)
+    else:
+        raise EVError("old schema should be rejected without explicit reset")
+    with open_store_from_paths(knowledge_paths, reset=True) as store:
+        meta = store.meta()
+    return {"rejected": rejected, "resetSchemaVersion": meta["schemaVersion"]}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -85,6 +144,12 @@ def main(argv: list[str] | None = None) -> int:
                 manifest_file=temp_root / "knowledge" / "manifest.json",
             )
             result = run_smoke_with_paths(knowledge_paths, temp_root)
+            old_schema_paths = KnowledgePaths(
+                root=temp_root / "old-schema-knowledge",
+                db_file=temp_root / "old-schema-knowledge" / "knowledge.sqlite",
+                manifest_file=temp_root / "old-schema-knowledge" / "manifest.json",
+            )
+            result["oldSchemaGuard"] = run_old_schema_guard(old_schema_paths)
         else:
             result = run_smoke(discover_workspace_root(args.workspace))
         print_json(result)

@@ -14,7 +14,7 @@ from typing import Any, Iterable
 from ev_common import EVConfig, EVError, EVPaths, write_json
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 VALID_STATUSES = {"observed", "candidate", "verified", "stable", "stale", "deprecated"}
 DEFAULT_STATUS = "observed"
 TEXT_LIMIT = 2000
@@ -25,12 +25,22 @@ KIND_TABLES = {
     "screens": ("screens", "screen_id"),
     "element": ("elements", "element_id"),
     "elements": ("elements", "element_id"),
-    "workflow": ("workflows", "workflow_id"),
-    "workflows": ("workflows", "workflow_id"),
+    "action": ("action_assets", "action_asset_id"),
+    "actions": ("action_assets", "action_asset_id"),
+    "action_asset": ("action_assets", "action_asset_id"),
+    "action_assets": ("action_assets", "action_asset_id"),
+    "workflow": ("workflow_assets", "workflow_asset_id"),
+    "workflows": ("workflow_assets", "workflow_asset_id"),
+    "workflow_asset": ("workflow_assets", "workflow_asset_id"),
+    "workflow_assets": ("workflow_assets", "workflow_asset_id"),
+    "export": ("workflow_exports", "export_id"),
+    "exports": ("workflow_exports", "export_id"),
+    "workflow_export": ("workflow_exports", "export_id"),
+    "workflow_exports": ("workflow_exports", "export_id"),
     "evidence": ("evidences", "evidence_id"),
     "evidences": ("evidences", "evidence_id"),
 }
-STATUS_TABLES = {"apps", "screens", "elements", "workflows"}
+STATUS_TABLES = {"apps", "screens", "elements", "action_assets", "workflow_assets"}
 
 
 @dataclass(frozen=True)
@@ -122,13 +132,28 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "key_texts_json",
         "selectors_json",
         "anchors_json",
-        "preconditions_json",
+        "step_json",
+        "readiness_json",
         "steps_json",
         "assertions_json",
         "artifact_refs_json",
+        "step_ids_json",
+        "selector_candidates_json",
+        "params_json",
+        "risk_flags_json",
+        "action_refs_json",
+        "source_step_ids_json",
+        "evidence_refs_json",
+        "metadata_json",
     ):
         if key in data:
             data[key[:-5]] = json_load(data.pop(key), [] if key.endswith("s_json") else {})
+    if "workflow_asset_id" in data and "workflow_id" not in data:
+        data["workflow_id"] = data["workflow_asset_id"]
+    if "action_asset_id" in data and "action_id" not in data:
+        data["action_id"] = data["action_asset_id"]
+    if "readiness" in data and "preconditions" not in data:
+        data["preconditions"] = data["readiness"]
     return data
 
 
@@ -136,15 +161,44 @@ def joined_text(parts: Iterable[Any]) -> str:
     return " ".join(clip_text(part, 500) for part in parts if part not in (None, ""))
 
 
+def canonical_json(value: Any) -> str:
+    return json.dumps(value if value is not None else {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def hash_key(*parts: Any) -> str:
+    raw = "\n".join(canonical_json(part) if isinstance(part, (dict, list)) else str(part or "") for part in parts)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def action_kind(step: dict[str, Any]) -> str:
+    for key in sorted(step):
+        if key not in {"id", "continueOnFailure", "notes"}:
+            return key
+    return "unknown"
+
+
+def normalize_confidence(value: Any, default: float = 0.3) -> float:
+    return max(0.0, min(1.0, float(value if value not in (None, "") else default)))
+
+
+def normalize_refs(value: Any, label: str) -> list[str]:
+    return [clip_text(item, 2000) for item in ensure_list(value, label) if item not in (None, "")]
+
+
 class KnowledgeStore:
     """管理本地 SQLite 知识库和热启动 manifest。"""
 
-    def __init__(self, paths: KnowledgePaths) -> None:
+    def __init__(self, paths: KnowledgePaths, reset: bool = False) -> None:
         self.paths = paths
         self.paths.root.mkdir(parents=True, exist_ok=True)
+        if reset:
+            for path in (self.paths.db_file, self.paths.db_file.with_suffix(self.paths.db_file.suffix + "-wal"), self.paths.db_file.with_suffix(self.paths.db_file.suffix + "-shm")):
+                if path.exists():
+                    path.unlink()
         self.conn = sqlite3.connect(str(self.paths.db_file))
         self.conn.row_factory = sqlite3.Row
         self.fts_available = self._detect_fts5()
+        self._guard_schema()
         self._init_schema()
         self.write_manifest()
 
@@ -166,6 +220,24 @@ class KnowledgeStore:
         except sqlite3.DatabaseError:
             self.conn.rollback()
             return False
+
+    def _table_names(self) -> set[str]:
+        rows = self.conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')").fetchall()
+        return {str(row["name"]) for row in rows}
+
+    def _guard_schema(self) -> None:
+        tables = self._table_names()
+        if not tables:
+            return
+        row = self.conn.execute("SELECT value FROM meta WHERE key = 'schemaVersion'").fetchone() if "meta" in tables else None
+        if row and str(row["value"]) == str(SCHEMA_VERSION):
+            return
+        if "action_assets" in tables and "workflow_assets" in tables:
+            return
+        raise EVError(
+            "knowledge DB schema is not compatible with the redesigned schema; "
+            "old data is not migrated automatically. Re-run with an explicit reset/rebuild option or use a new workspace."
+        )
 
     def _init_schema(self) -> None:
         self.conn.executescript(
@@ -213,17 +285,48 @@ class KnowledgeStore:
               last_seen_at TEXT NOT NULL,
               FOREIGN KEY(screen_id) REFERENCES screens(screen_id)
             );
-            CREATE TABLE IF NOT EXISTS workflows (
-              workflow_id TEXT PRIMARY KEY,
+            CREATE TABLE IF NOT EXISTS action_assets (
+              action_asset_id TEXT PRIMARY KEY,
               app_id TEXT NOT NULL,
-              goal TEXT NOT NULL,
-              preconditions_json TEXT NOT NULL,
-              steps_json TEXT NOT NULL,
-              assertions_json TEXT NOT NULL,
+              screen_id TEXT,
+              kind TEXT NOT NULL,
+              label TEXT NOT NULL,
+              step_json TEXT NOT NULL,
+              selector_candidates_json TEXT NOT NULL,
+              params_json TEXT NOT NULL,
+              risk_flags_json TEXT NOT NULL,
+              dedupe_key TEXT NOT NULL UNIQUE,
               confidence REAL NOT NULL,
               status TEXT NOT NULL,
+              source_report TEXT,
+              source_step_ids_json TEXT NOT NULL,
+              evidence_refs_json TEXT NOT NULL,
               first_seen_at TEXT NOT NULL,
               last_seen_at TEXT NOT NULL,
+              seen_count INTEGER NOT NULL,
+              FOREIGN KEY(app_id) REFERENCES apps(app_id),
+              FOREIGN KEY(screen_id) REFERENCES screens(screen_id)
+            );
+            CREATE TABLE IF NOT EXISTS workflow_assets (
+              workflow_asset_id TEXT PRIMARY KEY,
+              app_id TEXT NOT NULL,
+              goal TEXT NOT NULL,
+              readiness_json TEXT NOT NULL,
+              steps_json TEXT NOT NULL,
+              assertions_json TEXT NOT NULL,
+              action_refs_json TEXT NOT NULL,
+              params_json TEXT NOT NULL,
+              risk_flags_json TEXT NOT NULL,
+              source_workflow_id TEXT,
+              dedupe_key TEXT NOT NULL UNIQUE,
+              confidence REAL NOT NULL,
+              status TEXT NOT NULL,
+              source_report TEXT,
+              source_step_ids_json TEXT NOT NULL,
+              evidence_refs_json TEXT NOT NULL,
+              first_seen_at TEXT NOT NULL,
+              last_seen_at TEXT NOT NULL,
+              seen_count INTEGER NOT NULL,
               FOREIGN KEY(app_id) REFERENCES apps(app_id)
             );
             CREATE TABLE IF NOT EXISTS evidences (
@@ -233,6 +336,26 @@ class KnowledgeStore:
               notes TEXT,
               created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS asset_evidences (
+              asset_kind TEXT NOT NULL,
+              asset_id TEXT NOT NULL,
+              evidence_id TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              PRIMARY KEY(asset_kind, asset_id, evidence_id),
+              FOREIGN KEY(evidence_id) REFERENCES evidences(evidence_id)
+            );
+            CREATE TABLE IF NOT EXISTS workflow_exports (
+              export_id TEXT PRIMARY KEY,
+              workflow_asset_id TEXT,
+              output_path_hash TEXT NOT NULL,
+              format_version TEXT NOT NULL,
+              metadata_json TEXT NOT NULL,
+              created_at TEXT NOT NULL,
+              FOREIGN KEY(workflow_asset_id) REFERENCES workflow_assets(workflow_asset_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_action_assets_app ON action_assets(app_id, status, last_seen_at);
+            CREATE INDEX IF NOT EXISTS idx_action_assets_screen ON action_assets(screen_id, kind);
+            CREATE INDEX IF NOT EXISTS idx_workflow_assets_app ON workflow_assets(app_id, status, last_seen_at);
             """
         )
         self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('schemaVersion', ?)", (str(SCHEMA_VERSION),))
@@ -255,15 +378,17 @@ class KnowledgeStore:
                 "apps": self.count("apps"),
                 "screens": self.count("screens"),
                 "elements": self.count("elements"),
-                "workflows": self.count("workflows"),
+                "actionAssets": self.count("action_assets"),
+                "workflowAssets": self.count("workflow_assets"),
                 "evidences": self.count("evidences"),
+                "workflowExports": self.count("workflow_exports"),
             },
         }
         write_json(self.paths.manifest_file, manifest)
         return manifest
 
     def count(self, table: str) -> int:
-        if table not in {"apps", "screens", "elements", "workflows", "evidences"}:
+        if table not in {"apps", "screens", "elements", "action_assets", "workflow_assets", "evidences", "workflow_exports"}:
             raise EVError(f"unsupported knowledge table: {table}")
         row = self.conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()
         return int(row["count"])
@@ -280,8 +405,10 @@ class KnowledgeStore:
                 "apps": self.count("apps"),
                 "screens": self.count("screens"),
                 "elements": self.count("elements"),
-                "workflows": self.count("workflows"),
+                "actionAssets": self.count("action_assets"),
+                "workflowAssets": self.count("workflow_assets"),
                 "evidences": self.count("evidences"),
+                "workflowExports": self.count("workflow_exports"),
             },
         }
 
@@ -407,44 +534,143 @@ class KnowledgeStore:
         self.write_manifest()
         return self.get_element(element_id)
 
+    def link_evidence(self, asset_kind: str, asset_id: str, evidence_id: str) -> None:
+        self.conn.execute(
+            """
+            INSERT OR IGNORE INTO asset_evidences(asset_kind, asset_id, evidence_id, created_at)
+            VALUES(?, ?, ?, ?)
+            """,
+            (asset_kind, asset_id, evidence_id, utc_now()),
+        )
+
+    def upsert_action_asset(self, item: dict[str, Any]) -> dict[str, Any]:
+        app_id = str(item.get("appId") or "").strip()
+        if not app_id:
+            raise EVError("actionAsset.appId is required")
+        step = ensure_object(item.get("stepJson") or item.get("step"), "actionAsset.stepJson")
+        kind = clip_text(item.get("kind") or action_kind(step), 120)
+        screen_id = str(item.get("screenId") or "").strip() or None
+        selectors = ensure_list(item.get("selectorCandidates"), "actionAsset.selectorCandidates")
+        params = ensure_object(item.get("params"), "actionAsset.params")
+        risk_flags = normalize_refs(item.get("riskFlags"), "actionAsset.riskFlags")
+        label = clip_text(item.get("label") or kind, 300)
+        dedupe_key = str(item.get("dedupeKey") or hash_key(app_id, screen_id, kind, step, selectors)).strip()
+        action_asset_id = str(item.get("actionAssetId") or item.get("actionId") or "").strip() or stable_id("action", dedupe_key)
+        now = utc_now()
+        status = normalize_status(item.get("status", "candidate"))
+        confidence = normalize_confidence(item.get("confidence"), 0.4)
+        source_step_ids = normalize_refs(item.get("sourceStepIds"), "actionAsset.sourceStepIds")
+        evidence_refs = normalize_refs(item.get("evidenceRefs"), "actionAsset.evidenceRefs")
+        existing = self.conn.execute("SELECT action_asset_id, first_seen_at, seen_count FROM action_assets WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
+        if existing:
+            action_asset_id = existing["action_asset_id"]
+            first_seen = existing["first_seen_at"]
+            seen_count = int(existing["seen_count"]) + 1
+        else:
+            first_seen = now
+            seen_count = 1
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO action_assets(
+              action_asset_id, app_id, screen_id, kind, label, step_json, selector_candidates_json,
+              params_json, risk_flags_json, dedupe_key, confidence, status, source_report,
+              source_step_ids_json, evidence_refs_json, first_seen_at, last_seen_at, seen_count
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                action_asset_id,
+                app_id,
+                screen_id,
+                kind,
+                label,
+                json_dump(step),
+                json_dump(selectors),
+                json_dump(params),
+                json_dump(risk_flags),
+                dedupe_key,
+                confidence,
+                status,
+                clip_text(item.get("sourceReport"), 2000),
+                json_dump(source_step_ids),
+                json_dump(evidence_refs),
+                first_seen,
+                now,
+                seen_count,
+            ),
+        )
+        self._replace_fts("action", action_asset_id, app_id, label, joined_text([kind, label, step, selectors, params, risk_flags]))
+        for evidence_id in evidence_refs:
+            self.link_evidence("action", action_asset_id, evidence_id)
+        self.conn.commit()
+        self.write_manifest()
+        return self.get_action_asset(action_asset_id)
+
     def upsert_workflow(self, item: dict[str, Any]) -> dict[str, Any]:
+        return self.upsert_workflow_asset(item)
+
+    def upsert_workflow_asset(self, item: dict[str, Any]) -> dict[str, Any]:
         app_id = str(item.get("appId") or "").strip()
         goal = clip_text(item.get("goal"), 1000)
         if not app_id or not goal:
-            raise EVError("workflow.appId and workflow.goal are required")
-        workflow_id = str(item.get("workflowId") or "").strip() or stable_id("workflow", app_id, goal, item.get("steps"))
-        preconditions = ensure_list(item.get("preconditions"), "workflow.preconditions")
-        steps = ensure_list(item.get("steps"), "workflow.steps")
-        assertions = ensure_list(item.get("assertions"), "workflow.assertions")
-        confidence = max(0.0, min(1.0, float(item.get("confidence", 0.3))))
+            raise EVError("workflowAsset.appId and workflowAsset.goal are required")
+        readiness = ensure_list(item.get("readiness", item.get("preconditions")), "workflowAsset.readiness")
+        steps = ensure_list(item.get("steps"), "workflowAsset.steps")
+        assertions = ensure_list(item.get("assertions"), "workflowAsset.assertions")
+        action_refs = normalize_refs(item.get("actionRefs"), "workflowAsset.actionRefs")
+        params = ensure_object(item.get("params"), "workflowAsset.params")
+        risk_flags = normalize_refs(item.get("riskFlags"), "workflowAsset.riskFlags")
+        dedupe_key = str(item.get("dedupeKey") or hash_key(app_id, goal, action_refs, steps, assertions)).strip()
+        workflow_asset_id = str(item.get("workflowAssetId") or item.get("workflowId") or "").strip() or stable_id("workflow", dedupe_key)
+        confidence = normalize_confidence(item.get("confidence"), 0.3)
         now = utc_now()
         status = normalize_status(item.get("status", "candidate"))
-        existing = self.conn.execute("SELECT first_seen_at FROM workflows WHERE workflow_id = ?", (workflow_id,)).fetchone()
-        first_seen = existing["first_seen_at"] if existing else now
+        source_step_ids = normalize_refs(item.get("sourceStepIds"), "workflowAsset.sourceStepIds")
+        evidence_refs = normalize_refs(item.get("evidenceRefs"), "workflowAsset.evidenceRefs")
+        existing = self.conn.execute("SELECT workflow_asset_id, first_seen_at, seen_count FROM workflow_assets WHERE dedupe_key = ?", (dedupe_key,)).fetchone()
+        if existing:
+            workflow_asset_id = existing["workflow_asset_id"]
+            first_seen = existing["first_seen_at"]
+            seen_count = int(existing["seen_count"]) + 1
+        else:
+            first_seen = now
+            seen_count = 1
         self.conn.execute(
             """
-            INSERT OR REPLACE INTO workflows(
-              workflow_id, app_id, goal, preconditions_json, steps_json, assertions_json,
-              confidence, status, first_seen_at, last_seen_at
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO workflow_assets(
+              workflow_asset_id, app_id, goal, readiness_json, steps_json, assertions_json,
+              action_refs_json, params_json, risk_flags_json, source_workflow_id, dedupe_key,
+              confidence, status, source_report, source_step_ids_json, evidence_refs_json,
+              first_seen_at, last_seen_at, seen_count
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                workflow_id,
+                workflow_asset_id,
                 app_id,
                 goal,
-                json_dump(preconditions),
+                json_dump(readiness),
                 json_dump(steps),
                 json_dump(assertions),
+                json_dump(action_refs),
+                json_dump(params),
+                json_dump(risk_flags),
+                clip_text(item.get("sourceWorkflowId"), 300),
+                dedupe_key,
                 confidence,
                 status,
+                clip_text(item.get("sourceReport"), 2000),
+                json_dump(source_step_ids),
+                json_dump(evidence_refs),
                 first_seen,
                 now,
+                seen_count,
             ),
         )
-        self._replace_fts("workflow", workflow_id, app_id, goal, joined_text([goal, preconditions, steps, assertions]))
+        self._replace_fts("workflow", workflow_asset_id, app_id, goal, joined_text([goal, readiness, steps, assertions, params, risk_flags]))
+        for evidence_id in evidence_refs:
+            self.link_evidence("workflow", workflow_asset_id, evidence_id)
         self.conn.commit()
         self.write_manifest()
-        return self.get_workflow(workflow_id)
+        return self.get_workflow_asset(workflow_asset_id)
 
     def add_evidence(self, item: dict[str, Any]) -> dict[str, Any]:
         evidence_id = str(item.get("evidenceId") or "").strip() or stable_id("evidence", item.get("sourceReport"), item.get("artifactRefs"), utc_now())
@@ -467,6 +693,31 @@ class KnowledgeStore:
         self.write_manifest()
         return self.get_evidence(evidence_id)
 
+    def add_workflow_export(self, item: dict[str, Any]) -> dict[str, Any]:
+        output_path_hash = str(item.get("outputPathHash") or "").strip()
+        if not output_path_hash:
+            raise EVError("workflowExport.outputPathHash is required")
+        export_id = str(item.get("exportId") or "").strip() or stable_id("export", item.get("workflowAssetId"), output_path_hash, utc_now())
+        created_at = str(item.get("createdAt") or utc_now())
+        self.conn.execute(
+            """
+            INSERT OR REPLACE INTO workflow_exports(
+              export_id, workflow_asset_id, output_path_hash, format_version, metadata_json, created_at
+            ) VALUES(?, ?, ?, ?, ?, ?)
+            """,
+            (
+                export_id,
+                clip_text(item.get("workflowAssetId"), 300),
+                clip_text(output_path_hash, 300),
+                clip_text(item.get("formatVersion") or "1", 50),
+                json_dump(ensure_object(item.get("metadata"), "workflowExport.metadata")),
+                created_at,
+            ),
+        )
+        self.conn.commit()
+        self.write_manifest()
+        return self.get_workflow_export(export_id)
+
     def get_app(self, app_id: str) -> dict[str, Any]:
         return self._get_one("apps", "app_id", app_id)
 
@@ -477,7 +728,16 @@ class KnowledgeStore:
         return self._get_one("elements", "element_id", element_id)
 
     def get_workflow(self, workflow_id: str) -> dict[str, Any]:
-        return self._get_one("workflows", "workflow_id", workflow_id)
+        return self.get_workflow_asset(workflow_id)
+
+    def get_action_asset(self, action_asset_id: str) -> dict[str, Any]:
+        return self._get_one("action_assets", "action_asset_id", action_asset_id)
+
+    def get_workflow_asset(self, workflow_asset_id: str) -> dict[str, Any]:
+        return self._get_one("workflow_assets", "workflow_asset_id", workflow_asset_id)
+
+    def get_workflow_export(self, export_id: str) -> dict[str, Any]:
+        return self._get_one("workflow_exports", "export_id", export_id)
 
     def get_evidence(self, evidence_id: str) -> dict[str, Any]:
         return self._get_one("evidences", "evidence_id", evidence_id)
@@ -495,8 +755,10 @@ class KnowledgeStore:
     def list_items(self, kind: str, app_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         table, _key = kind_table(kind)
         limit = max(1, min(200, int(limit)))
-        if app_id and table in {"screens", "elements", "workflows"}:
+        if app_id and table in {"screens", "elements", "action_assets", "workflow_assets"}:
             rows = self.conn.execute(f"SELECT * FROM {table} WHERE app_id = ? ORDER BY last_seen_at DESC LIMIT ?", (app_id, limit)).fetchall()
+        elif table == "workflow_exports":
+            rows = self.conn.execute(f"SELECT * FROM {table} ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         else:
             rows = self.conn.execute(f"SELECT * FROM {table} ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
         return [row_to_dict(row) for row in rows]
@@ -557,7 +819,8 @@ class KnowledgeStore:
             ("app", "apps", "app_id", "app_id", "display_name", "display_name || ' ' || product_name || ' ' || version"),
             ("screen", "screens", "screen_id", "app_id", "title", "title || ' ' || route || ' ' || summary || ' ' || key_texts_json"),
             ("element", "elements", "element_id", "app_id", "name", "name || ' ' || role || ' ' || text || ' ' || selectors_json || ' ' || anchors_json"),
-            ("workflow", "workflows", "workflow_id", "app_id", "goal", "goal || ' ' || preconditions_json || ' ' || steps_json || ' ' || assertions_json"),
+            ("action", "action_assets", "action_asset_id", "app_id", "label", "label || ' ' || kind || ' ' || step_json || ' ' || selector_candidates_json || ' ' || params_json || ' ' || risk_flags_json"),
+            ("workflow", "workflow_assets", "workflow_asset_id", "app_id", "goal", "goal || ' ' || readiness_json || ' ' || steps_json || ' ' || assertions_json || ' ' || params_json || ' ' || risk_flags_json"),
         ]
         for kind, table, id_col, app_col, title_col, body_expr in specs:
             if len(results) >= limit:
@@ -574,14 +837,26 @@ class KnowledgeStore:
                 results.append(item)
         return results
 
-    def cleanup(self, keep_inactive: int = 200) -> dict[str, Any]:
+    def cleanup(self, keep_inactive: int = 200, dry_run: bool = False, include_assets: bool = True) -> dict[str, Any]:
         keep_inactive = max(0, int(keep_inactive))
         removed: dict[str, int] = {}
-        for table, id_col in (("screens", "screen_id"), ("elements", "element_id"), ("workflows", "workflow_id")):
+        candidates: dict[str, list[str]] = {}
+        cleanup_targets = [
+            ("screens", "screen_id"),
+            ("elements", "element_id"),
+        ]
+        if include_assets:
+            cleanup_targets.extend(
+                [
+                    ("action_assets", "action_asset_id"),
+                    ("workflow_assets", "workflow_asset_id"),
+                ]
+            )
+        for table, id_col in cleanup_targets:
             rows = self.conn.execute(
                 f"""
                 SELECT {id_col} AS id FROM {table}
-                WHERE status IN ('stale', 'deprecated')
+                WHERE status IN ('observed', 'stale', 'deprecated')
                 ORDER BY last_seen_at DESC
                 LIMIT -1 OFFSET ?
                 """,
@@ -589,14 +864,20 @@ class KnowledgeStore:
             ).fetchall()
             ids = [row["id"] for row in rows]
             removed[table] = len(ids)
+            candidates[table] = ids
+            if dry_run:
+                continue
             for entity_id in ids:
                 self.conn.execute(f"DELETE FROM {table} WHERE {id_col} = ?", (entity_id,))
                 if self.fts_available:
                     self.conn.execute("DELETE FROM knowledge_fts WHERE entity_id = ?", (entity_id,))
+                if table in {"action_assets", "workflow_assets"}:
+                    asset_kind = "action" if table == "action_assets" else "workflow"
+                    self.conn.execute("DELETE FROM asset_evidences WHERE asset_kind = ? AND asset_id = ?", (asset_kind, entity_id))
         self.conn.commit()
         manifest = self.write_manifest()
-        return {"removed": removed, "manifest": manifest}
+        return {"dryRun": bool(dry_run), "removed": removed, "candidates": candidates, "manifest": manifest}
 
 
-def open_store_from_paths(paths: KnowledgePaths) -> KnowledgeStore:
-    return KnowledgeStore(paths)
+def open_store_from_paths(paths: KnowledgePaths, reset: bool = False) -> KnowledgeStore:
+    return KnowledgeStore(paths, reset=reset)
