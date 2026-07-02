@@ -2,13 +2,21 @@
 
 ## 2026-07-02
 
+### Stage 3: electron-ui-verifier 资产检索和建议
+
+- `ev_assets.py` 支持按 app、screen、kind、status 和 goal 过滤 action/workflow 资产。
+- `ev_suggest.py` 输出 workflow、action 和组合候选，并明确候选必须复验。
+- 补充 cleanup dry-run/apply smoke，确认不会删除 candidate/verified/stable 资产。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 2: electron-ui-verifier report 资产整理
 
 - 新增 `ev_asset_extract.py`，从 verifier report 保守生成 action/workflow 资产候选。
 - `ev_learn.py` 增加显式 `--include-assets`，默认 learn 不再隐式写入 workflow 资产。
 - 新增 `ev_asset_extract_smoke.py`，覆盖失败步骤过滤、evaluate 不反推、坐标风险、路径参数化和真实写入。
-- Commit: pending
-- Commit message: pending
+- Commit: `424e78c`
+- Commit message: `feat(electron-ui-verifier): 增加 report 资产抽取`
 
 ### Stage 1: electron-ui-verifier action/workflow 资产 schema
 

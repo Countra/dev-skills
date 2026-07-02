@@ -9,6 +9,26 @@ from ev_common import EVError, add_common_args, fail, load_config, print_json, r
 from ev_knowledge_store import knowledge_paths_from_config, open_store_from_paths
 
 
+def matches_filters(item: dict[str, object], args: argparse.Namespace) -> bool:
+    screen_id = getattr(args, "screen_id", None)
+    kind = getattr(args, "kind_filter", None)
+    status = getattr(args, "status", None)
+    goal = getattr(args, "goal", None)
+    if screen_id and item.get("screen_id") != screen_id:
+        return False
+    if kind and item.get("kind") != kind:
+        return False
+    if status and item.get("status") != status:
+        return False
+    if goal and goal not in str(item.get("goal") or ""):
+        return False
+    return True
+
+
+def filter_items(items: list[dict[str, object]], args: argparse.Namespace) -> list[dict[str, object]]:
+    return [item for item in items if matches_filters(item, args)]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="查询和维护 Electron verifier action/workflow 资产。")
     add_common_args(parser)
@@ -22,7 +42,13 @@ def build_parser() -> argparse.ArgumentParser:
         list_parser = subparsers.add_parser(command, help=f"列出 {kind}")
         list_parser.set_defaults(kind=kind)
         list_parser.add_argument("--app-id", help="按 appId 过滤")
+        list_parser.add_argument("--status", help="按状态过滤")
         list_parser.add_argument("--limit", type=int, default=50)
+        if command == "list-actions":
+            list_parser.add_argument("--screen-id", help="按 screenId 过滤")
+            list_parser.add_argument("--kind", dest="kind_filter", help="按 action kind 过滤")
+        if command == "list-workflows":
+            list_parser.add_argument("--goal", help="按 goal 子串过滤")
 
     get_action = subparsers.add_parser("get-action", help="读取单个 action asset")
     get_action.add_argument("--id", required=True)
@@ -33,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search", help="全文搜索 action/workflow 资产")
     search.add_argument("--query", required=True)
     search.add_argument("--app-id", help="按 appId 过滤")
+    search.add_argument("--status", help="按状态过滤")
+    search.add_argument("--screen-id", help="按 screenId 过滤 action")
+    search.add_argument("--kind", dest="kind_filter", help="按 action kind 过滤")
+    search.add_argument("--goal", help="按 workflow goal 子串过滤")
     search.add_argument("--limit", type=int, default=20)
 
     cleanup = subparsers.add_parser("cleanup", help="清理非稳定资产")
@@ -50,14 +80,15 @@ def main(argv: list[str] | None = None) -> int:
         reset = args.command == "reset"
         with open_store_from_paths(knowledge_paths_from_config(config), reset=reset) as store:
             if args.command in {"list-actions", "list-workflows", "list-exports"}:
-                result = {"items": store.list_items(args.kind, app_id=getattr(args, "app_id", None), limit=args.limit)}
+                items = store.list_items(args.kind, app_id=getattr(args, "app_id", None), limit=max(args.limit * 4, args.limit))
+                result = {"items": filter_items(items, args)[: args.limit]}
             elif args.command == "get-action":
                 result = {"item": store.get_action_asset(args.id)}
             elif args.command == "get-workflow":
                 result = {"item": store.get_workflow_asset(args.id)}
             elif args.command == "search":
-                items = [item for item in store.search(args.query, app_id=args.app_id, limit=args.limit) if item.get("kind") in {"action", "workflow"}]
-                result = {"items": items}
+                hits = [item for item in store.search(args.query, app_id=args.app_id, limit=max(args.limit * 4, args.limit)) if item.get("kind") in {"action", "workflow"}]
+                result = {"items": filter_items(hits, args)[: args.limit]}
             elif args.command == "cleanup":
                 result = store.cleanup(keep_inactive=args.keep_inactive, dry_run=args.dry_run, include_assets=True)
             elif args.command == "reset":
