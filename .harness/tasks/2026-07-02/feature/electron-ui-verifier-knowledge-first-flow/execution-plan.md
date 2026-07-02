@@ -794,12 +794,12 @@ patch 失败处理（Patch failure handling）:
 - 已完成阶段（Completed stages）: Planning；Stage 1；Stage 2；Stage 3；Stage 4。
 - 当前阶段（Current stage）: Finalized。
 - 剩余阶段（Remaining stages）: none。
-- 最新 commit（Latest commit）: `008ff1e`。
+- 最新 commit（Latest commit）: `5e4d869`。
 - 下一步自动动作（Next automatic action）: none。
 - 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
 - 长期进程规则（Process manager rule）: verifier server 如需启动必须使用 process-manager；Electron GUI 本体不要使用 process-manager。
-- 未覆盖/风险（Not covered/risks）: 未实现源码，未运行测试；默认学习策略需实现阶段谨慎验证。
+- 未覆盖/风险（Not covered/risks）: 未启动真实 verifier server 做 live UI 端到端；已用既有 VideoForensic report 完成离线 learn/assets 验证。
 - 不得停止说明（Do not stop note）:
   - 用户批准实施后，按 run-to-completion 连续完成 Stage 1-4，除非命中停止条件。
 
