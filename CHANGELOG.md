@@ -2,13 +2,21 @@
 
 ## 2026-07-02
 
+### Stage 5: electron-ui-verifier 资产学习文档收口
+
+- `ev_action.py`、`ev_workflow.py` 和 server learn hook 增加显式 `--learn-assets` / `includeAssets` 资产学习入口。
+- 更新 `SKILL.md`、server、workflow、actions 和 knowledge 文档，明确默认学习与资产学习边界。
+- 完成 full py_compile、示例 JSON 解析、离线 includeAssets 写入和 process-manager server health smoke。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 4: electron-ui-verifier workflow 导出
 
 - 新增 `ev_export_workflow.py`，支持从 workflow asset 或 report 导出标准 workflow JSON。
 - 导出默认拒绝覆盖、默认不写本机 evidence 路径，并记录 workflow export 元数据。
 - 新增 `exported-asset.workflow.example.json`，展示可分享 workflow metadata 和参数占位。
-- Commit: pending
-- Commit message: pending
+- Commit: `2917010`
+- Commit message: `feat(electron-ui-verifier): 增加 workflow 导出`
 
 ### Stage 3: electron-ui-verifier 资产检索和建议
 

@@ -84,7 +84,7 @@ python skills/electron-ui-verifier/scripts/ev_report.py --workspace E:/work/hl/v
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-app-id videoForensic --learn-notes "打开案件流程复验"
 ```
 
-server 会先生成正常 report，再把知识学习摘要写入 `report.json` 的 `knowledge` 字段。学习失败不会把 UI 验证结果改成失败，但必须在最终说明里记录。
+server 会先生成正常 report，再把知识学习摘要写入 `report.json` 的 `knowledge` 字段。`--learn` 只写基础候选知识；如需 action/workflow 资产，显式加 `--learn-assets`。学习失败不会把 UI 验证结果改成失败，但必须在最终说明里记录。
 
 ## 重要边界
 
@@ -92,4 +92,4 @@ server 会先生成正常 report，再把知识学习摘要写入 `report.json` 
 - 同名 session 默认复用；需要强制重新 attach 时用 `ev_attach.py --no-reuse`。
 - 远程 CDP 必须显式批准并传 `--allow-remote-cdp`。
 - `ev_report.py` 和 `ev_artifact.py` 只能读取 `.harness/electron-ui-verifier/` 下的运行产物。
-- 知识库默认不自动写入；只有 `ev_learn.py`、`ev_action.py --learn` 或 `ev_workflow.py --learn` 会写入。
+- 知识库默认不自动写入；只有 `ev_learn.py`、`ev_action.py --learn` 或 `ev_workflow.py --learn` 会写入基础知识；只有 `--include-assets` 或 `--learn-assets` 会写 action/workflow 资产。

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from ev_common import EVConfig, EVError, config_from_data, iso_now as common_iso_now, load_config, read_token, write_json as write_runtime_json
+from ev_asset_extract import extract_assets
 from ev_knowledge_extract import extract_knowledge
 from ev_knowledge_store import knowledge_paths_from_config, open_store_from_paths
 
@@ -1054,23 +1055,39 @@ def persist_report(ctx: RunContext, report: dict[str, Any]) -> None:
             handle.write(json.dumps(event, ensure_ascii=False) + "\n")
 
 
-def persist_report_knowledge(config: EVConfig, report_path: Path, app_id: str | None, notes: str | None) -> dict[str, Any]:
+def persist_report_knowledge(config: EVConfig, report_path: Path, app_id: str | None, notes: str | None, include_assets: bool = False) -> dict[str, Any]:
     payload = extract_knowledge(report_path, app_id_override=app_id, notes=notes)
+    payload["workflows"] = []
+    assets = extract_assets(report_path, app_id_override=app_id, notes=notes) if include_assets else None
     with open_store_from_paths(knowledge_paths_from_config(config)) as store:
         app = store.upsert_app(payload["app"])
         screens = [store.upsert_screen(item) for item in payload.get("screens", [])]
         elements = [store.upsert_element(item) for item in payload.get("elements", [])]
-        workflows = [store.upsert_workflow(item) for item in payload.get("workflows", [])]
         evidence = store.add_evidence(payload["evidence"])
+        evidence_id = str(evidence.get("evidence_id") or "")
+        action_assets = []
+        workflow_assets = []
+        if assets:
+            for item in assets.get("actionAssets", []):
+                item = dict(item)
+                item["evidenceRefs"] = [evidence_id]
+                action_assets.append(store.upsert_action_asset(item))
+            for item in assets.get("workflowAssets", []):
+                item = dict(item)
+                item["evidenceRefs"] = [evidence_id]
+                workflow_assets.append(store.upsert_workflow_asset(item))
         meta = store.meta()
     return {
         "status": "learned",
         "appId": app.get("app_id"),
         "screenCount": len(screens),
         "elementCount": len(elements),
-        "workflowCount": len(workflows),
+        "workflowCount": 0,
+        "actionAssetCount": len(action_assets),
+        "workflowAssetCount": len(workflow_assets),
         "evidenceId": evidence.get("evidence_id"),
         "stats": payload.get("stats"),
+        "assets": assets.get("stats") if assets else None,
         "meta": meta,
     }
 
@@ -1295,6 +1312,7 @@ class VerifierController:
                         Path(session.latest_report),
                         app_id=learn.get("appId"),
                         notes=learn.get("notes"),
+                        include_assets=bool(learn.get("includeAssets")),
                     )
                 except (EVError, VerifyError, OSError, ValueError) as exc:
                     report["knowledge"] = {"status": "failed", "error": str(exc)}
@@ -1379,6 +1397,7 @@ def normalize_learn_options(value: Any) -> dict[str, Any] | None:
     return {
         "appId": str(app_id).strip() if app_id not in (None, "") else None,
         "notes": str(notes).strip() if notes not in (None, "") else "learned by verifier server",
+        "includeAssets": bool(value.get("includeAssets") or value.get("learnAssets")),
     }
 
 

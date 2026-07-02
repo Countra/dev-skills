@@ -5,13 +5,12 @@
   "status": "in_progress",
   "execution_mode": "run-to-completion",
   "overall_status": "in_progress",
-  "current_stage": "Stage 4 commit",
+  "current_stage": "Stage 5 commit",
   "remaining_stages": [
-    "Stage 4",
-    "Stage 5"
+    "Stage 5 commit"
   ],
-  "next_action": "commit Stage 4 and continue Stage 5",
-  "next_automatic_action": "commit Stage 4 and continue Stage 5",
+  "next_action": "commit Stage 5 and finalize task",
+  "next_automatic_action": "commit Stage 5 and finalize task",
   "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-02"

@@ -643,7 +643,7 @@ process-manager skill 是否存在（process-manager skill available）:
 | Stage 2 | report asset extraction smoke + learn CLI write smoke | pass | raw trace 清洗、失败/evaluate 过滤、riskFlags、参数化、候选资产和显式 `--include-assets` 写入 | 真实 GUI 复跑 | `ev_asset_extract_smoke.py`; `ev_asset_extract.py --report ...`; `ev_learn.py --include-assets`; `ev_assets.py list-actions/list-workflows`; full `ev_*.py` py_compile | pass |
 | Stage 3 | query/suggest/cleanup smoke | pass | `ev_assets.py` 过滤检索、`ev_suggest.py` action/workflow/组合建议和 cleanup dry-run/apply | 真实点击 | `ev_assets.py list-actions/list-workflows/search/cleanup`; `ev_suggest.py --goal ...`; full `ev_*.py` py_compile | pass |
 | Stage 4 | export JSON parse + dry-run + overwrite guard | pass | workflow asset/report 导出、参数占位、默认无本机路径、导出记录和分享格式 | 跨环境执行 | `ev_export_workflow.py --dry-run`; asset export; report dry-run; overwrite guard; JSON parse; local path scan | pass |
-| Stage 5 | py_compile + docs + conditional server health | pending | `--learn-assets` 集成和文档收口 | 跨应用泛化 | pending | pending |
+| Stage 5 | py_compile + docs + process-manager server health | pass | `--learn-assets` 集成、server health、离线 includeAssets 写入和文档收口 | 跨应用泛化 | full `ev_*.py` py_compile; assets JSON parse; `persist_report_knowledge(... include_assets=True)`; process-manager start/ready/health/stop; rule rg; diff check | pass |
 
 可选验证（Optional）:
 
@@ -823,7 +823,7 @@ patch 失败处理（Patch failure handling）:
 
 当前阶段（Current stage）:
 
-- Stage 4
+- Stage 5 commit
 
 已完成阶段（Completed stages）:
 
@@ -835,12 +835,11 @@ patch 失败处理（Patch failure handling）:
 
 剩余阶段（Remaining stages）:
 
-- Stage 4：workflow 导出和分享
-- Stage 5：server 显式学习和文档收口
+- Stage 5 commit
 
 下一步自动动作（Next automatic action）:
 
-- implement Stage 4 workflow export
+- commit Stage 5 and finalize task
 
 当前停止条件（Current stop condition）:
 
@@ -860,12 +859,11 @@ active-task 同步字段（active-task sync fields）:
 {
   "execution_mode": "run-to-completion",
   "overall_status": "in_progress",
-  "current_stage": "Stage 4",
+  "current_stage": "Stage 5 commit",
   "remaining_stages": [
-    "Stage 4",
-    "Stage 5"
+    "Stage 5 commit"
   ],
-  "next_automatic_action": "implement Stage 4 workflow export",
+  "next_automatic_action": "commit Stage 5 and finalize task",
   "stop_condition": "none",
   "state_source": "execution-plan.md"
 }
@@ -879,8 +877,8 @@ active-task 同步字段（active-task sync fields）:
 | Stage 1 | complete | 资产 schema 和存储层 | pass | py_compile、schema/store smoke、CLI smoke | committed `09d5ac2` |
 | Stage 2 | complete | report 资产整理和显式学习写入 | pass | asset extract smoke、learn write smoke、full py_compile | committed `424e78c` |
 | Stage 3 | complete | 查询、建议和组合复用 | pass | filter/list/suggest/cleanup smoke、full py_compile | committed `e2d6ab9` |
-| Stage 4 | complete | workflow 导出和分享示例 | pass | export dry-run/write/overwrite/JSON/local-path checks | commit Stage 4 |
-| Stage 5 | pending | server learn 集成和文档 | pending | pending | wait Stage 4 |
+| Stage 4 | complete | workflow 导出和分享示例 | pass | export dry-run/write/overwrite/JSON/local-path checks | committed `2917010` |
+| Stage 5 | complete | server learn 集成和文档 | pass | py_compile、server learn smoke、process-manager health、docs checks | final commit |
 
 ## 阶段进入门禁（Stage Entry Gate）
 
@@ -890,7 +888,7 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | pass | none | Python/SQLite available | not-applicable | pass | pass |
 | Stage 3 | pass | none | Python/SQLite available | not-applicable | pass | pass |
 | Stage 4 | pass | none | Python/SQLite available | not-applicable | pass | pass |
-| Stage 5 | pending | pending | pending | required if server smoke | pending | pending |
+| Stage 5 | pass | none | Python/SQLite available | required if server smoke | pass | pass |
 
 ## 阶段退出门禁（Stage Exit Gate）
 
@@ -899,8 +897,8 @@ active-task 同步字段（active-task sync fields）:
 | Stage 1 | pass | pass | pass | n/a | n/a | pass | `09d5ac2` | pass |
 | Stage 2 | pass | pass | pass | n/a | n/a | pass | `424e78c` | pass |
 | Stage 3 | pass | pass | pass | n/a | n/a | pass | `e2d6ab9` | pass |
-| Stage 4 | pass | pass | pass | n/a | n/a | pass | pending commit | pass |
-| Stage 5 | pending | pending | pending | pending | pending | pending | pending | pending |
+| Stage 4 | pass | pass | pass | n/a | n/a | pass | `2917010` | pass |
+| Stage 5 | pass | pass | pass | pass | pass | pass | pending commit | pass |
 
 ## 阶段转移门禁（Stage Transition Gate）
 
@@ -910,7 +908,8 @@ active-task 同步字段（active-task sync fields）:
 | Stage 1 | pass | pass | pass | `09d5ac2` | yes | no | no | pass | pass | no | continue Stage 2 |
 | Stage 2 | pass | pass | pass | `424e78c` | yes | no | no | pass | pass | no | continue Stage 3 |
 | Stage 3 | pass | pass | pass | `e2d6ab9` | yes | no | no | pass | pass | no | continue Stage 4 |
-| Stage 4 | pass | pass | pass | pending commit | yes | no | no | pass | pending | no | commit Stage 4 then continue Stage 5 |
+| Stage 4 | pass | pass | pass | `2917010` | yes | no | no | pass | pass | no | continue Stage 5 |
+| Stage 5 | pass | pass | pass | pending commit | no | no | no | pass | pending | no | commit Stage 5 and finish final gate |
 
 ## 代码审查（Code Review）
 
@@ -923,17 +922,18 @@ active-task 同步字段（active-task sync fields）:
 | Stage 2 | 普通 `ev_learn.py --learn` 不应绕过显式资产开关写入 workflow 资产 | none | 默认 learn 只写 app/screen/element/evidence，`--include-assets` 才写 action/workflow 资产 |
 | Stage 3 | 搜索只命中 workflow 时 action 建议可能为空，无法形成组合候选 | none | `ev_suggest.py` 在限定 appId 时补充同 app 高分 action 资产，但仍标明只作候选 |
 | Stage 4 | 默认导出 metadata 可能经参数样例泄漏本机路径 | none | `requiredParams` 只保留 reason/type/required/sampleLength，不保存 sample/value/default |
+| Stage 5 | server health smoke 必须使用 process-manager，不能直接 shell 后台启动 server | none | 使用 `pm_start.py`、`pm_ready.py --service`、`ev_health.py`、`pm_stop.py` 完成并确认停止 |
 
 ## 恢复摘要（Resume Summary）
 
 - 整体目标（Overall goal）: 为 `electron-ui-verifier` 增加 action/workflow 资产化、检索、导出和分享能力。
 - 执行模式（Execution mode）: run-to-completion.
 - 整体任务状态（Overall status）: in_progress.
-- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, approval, Stage 1 implementation/review/validation/commit, Stage 2 implementation/review/validation/commit, Stage 3 implementation/review/validation/commit, Stage 4 implementation/review/validation.
-- 当前阶段（Current stage）: Stage 4 commit.
-- 剩余阶段（Remaining stages）: Stage 4-5.
-- 最新 commit（Latest commit）: `e2d6ab9`.
-- 下一步自动动作（Next automatic action）: commit Stage 4 and continue Stage 5.
+- 已完成阶段（Completed stages）: planning, quality gate, self-review, readiness gate, approval, Stage 1 implementation/review/validation/commit, Stage 2 implementation/review/validation/commit, Stage 3 implementation/review/validation/commit, Stage 4 implementation/review/validation/commit.
+- 当前阶段（Current stage）: Stage 5.
+- 剩余阶段（Remaining stages）: Stage 5.
+- 最新 commit（Latest commit）: `2917010`.
+- 下一步自动动作（Next automatic action）: implement Stage 5 server learn integration and docs.
 - 当前停止条件（Current stop condition）: none.
 - 状态来源（State source of truth）: execution-plan.md.
 - 长期进程规则（Process manager rule）: verifier server 必须用 process-manager；Electron GUI 本体不用 process-manager；finite command 不用。
@@ -961,3 +961,4 @@ active-task 同步字段（active-task sync fields）:
 | Stage 1 | dev-skills | `09d5ac2` | `feat(electron-ui-verifier): 重建知识库资产 schema` | pending changelog hash update |
 | Stage 2 | dev-skills | `424e78c` | `feat(electron-ui-verifier): 增加 report 资产抽取` | pending changelog hash update |
 | Stage 3 | dev-skills | `e2d6ab9` | `feat(electron-ui-verifier): 增强资产建议检索` | pending changelog hash update |
+| Stage 4 | dev-skills | `2917010` | `feat(electron-ui-verifier): 增加 workflow 导出` | pending changelog hash update |

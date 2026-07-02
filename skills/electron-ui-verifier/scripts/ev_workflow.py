@@ -24,6 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--session", required=True, help="session 名称或 sessionId")
     parser.add_argument("--workflow", required=True, help="workflow JSON 文件绝对路径或 JSON 字符串")
     parser.add_argument("--learn", action="store_true", help="执行后从 report 显式学习候选知识")
+    parser.add_argument("--learn-assets", action="store_true", help="配合 --learn 显式写入 action/workflow 资产")
     parser.add_argument("--learn-app-id", help="学习时覆盖 appId")
     parser.add_argument("--learn-notes", help="写入 knowledge evidence 的说明")
     return parser
@@ -37,8 +38,8 @@ def main(argv: list[str] | None = None) -> int:
             raise EVError("--workflow must resolve to a JSON object")
         config = load_config(resolve_config_path(args))
         payload: dict[str, object] = {"session": args.session, "workflow": workflow}
-        if args.learn:
-            payload["learn"] = {"appId": args.learn_app_id, "notes": args.learn_notes}
+        if args.learn or args.learn_assets:
+            payload["learn"] = {"appId": args.learn_app_id, "notes": args.learn_notes, "includeAssets": bool(args.learn_assets)}
         result = request_json(config, "POST", "/workflows/run", payload, timeout=600.0)
         print_json(result)
         return result_exit_code(result)

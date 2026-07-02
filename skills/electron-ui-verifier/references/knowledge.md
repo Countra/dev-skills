@@ -2,7 +2,7 @@
 
 ## 目的
 
-知识库用于沉淀 Electron 应用的页面、入口、元素、workflow 和证据摘要，让后续验证任务可以先查询已有经验，再决定如何操作 UI。
+知识库用于沉淀 Electron 应用的页面、入口、元素、action/workflow 资产和证据摘要，让后续验证任务可以先查询已有经验，再决定如何操作 UI。
 
 知识库只提供候选建议，不替代真实 UI 验证。任何来自 `observed` 或 `candidate` 状态的知识，都必须通过新的 action/workflow 证据复验后，才能提升到 `verified` 或 `stable`。
 
@@ -52,7 +52,17 @@ python skills/electron-ui-verifier/scripts/ev_learn.py --workspace E:/work/hl/vi
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-app-id videoForensic --learn-notes "打开案件流程复验"
 ```
 
-默认不自动学习，避免一次性探索污染长期知识。
+默认不自动学习，避免一次性探索污染长期知识。`--learn` 只写 app/screen/element/evidence 基础候选；如需把本次 report 整理成 action/workflow 资产，必须显式加 `--learn-assets`：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-assets --learn-app-id videoForensic --learn-notes "打开案件流程复验"
+```
+
+离线从 report 写资产使用：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_learn.py --workspace E:/work/hl/videoForensic/AI/dev-skills --report E:/work/hl/videoForensic/AI/dev-skills/.harness/electron-ui-verifier/reports/videoForensic/20260701-090815-action/report.json --include-assets --notes "首页 report 资产化"
+```
 
 ## 查询和建议
 
@@ -76,6 +86,21 @@ python skills/electron-ui-verifier/scripts/ev_suggest.py --workspace E:/work/hl/
 
 建议输出中的 workflow、元素和页面只说明“可以优先尝试什么”，不能直接作为用户问题的最终答案。
 
+查询 action/workflow 资产：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_assets.py --workspace E:/work/hl/videoForensic/AI/dev-skills list-actions --app-id videoForensic --kind clickText
+python skills/electron-ui-verifier/scripts/ev_assets.py --workspace E:/work/hl/videoForensic/AI/dev-skills list-workflows --app-id videoForensic --goal "打开案件"
+```
+
+导出可分享 workflow：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_export_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --workflow-id workflow-example --output E:/work/task/open-case.workflow.json --include-metadata
+```
+
+导出默认拒绝覆盖已有文件，默认不写本机 report/artifact 绝对路径。只有确实需要本机 evidence 路径时，才显式加 `--include-local-evidence-paths`。
+
 ## 提升和清理
 
 提升知识状态：
@@ -91,3 +116,11 @@ python skills/electron-ui-verifier/scripts/ev_knowledge.py --workspace E:/work/h
 ```
 
 清理只删除 `stale` 和 `deprecated` 中超过保留数量的记录。
+
+资产清理使用：
+
+```powershell
+python skills/electron-ui-verifier/scripts/ev_assets.py --workspace E:/work/hl/videoForensic/AI/dev-skills cleanup --keep-inactive 200 --dry-run
+```
+
+资产 cleanup 默认不删除 `candidate`、`verified` 和 `stable`。
