@@ -11,10 +11,22 @@
 3. 确认 CDP endpoint，通常是 `http://127.0.0.1:<port>`。
 4. 确认证据产物保存位置。内部 report、workflow、artifact、log、tmp 和 knowledge 必须位于 `.harness/electron-ui-verifier/` 下。
 5. 确认 Electron GUI 应用由 agent 启动，还是由用户手动启动。
-6. 如果任务可能复用历史经验，先查询 `references/knowledge.md` 中的知识库入口；查询结果只作为候选操作路径。
+6. 每轮 UI 验证都必须执行 Knowledge-First Gate：先查询知识库，再现场验证，再回写知识库。查询结果只作为候选操作路径。
 
 `python -m py_compile`、`--help`、JSON 解析、报告检查等会立即返回的有限命令不使用 `process-manager`。
 verifier server 是长期后台服务，必须用 `process-manager` 管理；Electron GUI 应用本体不要用 `process-manager`。
+
+## Knowledge-First Gate
+
+每轮本地 UI 验证必须按以下顺序执行，不能只做现场探索：
+
+1. **知识库预检**：根据 appId 和用户目标运行 `ev_suggest.py`，必要时补充 `ev_knowledge.py search` 或 `ev_assets.py search/list-workflows/list-actions`。
+2. **命中判断**：记录命中的 workflow、action、元素、页面和状态；`stable`、`verified` 可优先尝试，`candidate`、`observed` 只能作为低置信候选。
+3. **现场验证**：把命中内容转成新的 action/workflow，或在手写 workflow 时引用其思路；必须实际执行本轮 UI 操作并生成 report、workflow、截图或抽取 artifact。
+4. **结果回写**：执行后必须用 `--learn` 或等价 workflow `learn` 配置写入基础候选知识；只有确定可复用时才加 `--learn-assets` 写入 action/workflow 资产。
+5. **最终说明**：最终回复必须写明预检是否命中、使用了哪些候选、哪些候选被跳过、现场证据路径、回写结果和未覆盖范围。
+
+知识库建议不能作为最终业务结论。最终结论必须引用本轮现场 UI 验证产生的 `report.json`、artifact、截图或 workflow。
 
 ## 启动或连接
 
@@ -122,15 +134,15 @@ python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl
 
 workflow JSON 不再负责创建 CDP 连接；它只描述 readiness 和 steps。CDP endpoint 与 target 选择在 `ev_probe.py` 和 `ev_attach.py` 阶段完成。
 
-## 知识库复用
+## 知识库复用和回写
 
-执行前可以先搜索或生成建议：
+执行前必须先搜索或生成建议：
 
 ```powershell
 python skills/electron-ui-verifier/scripts/ev_suggest.py --workspace E:/work/hl/videoForensic/AI/dev-skills --app-id videoForensic --goal "打开第二个案件并统计数据"
 ```
 
-建议命中的 workflow、action 或元素必须通过新的 action/workflow 验证。执行后如果要沉淀本次结果，显式加 `--learn`：
+建议命中的 workflow、action 或元素必须通过新的 action/workflow 验证。执行后必须沉淀本次基础结果，使用 `--learn`、`--learn-app-id` 和能说明目标的 `--learn-notes`：
 
 ```powershell
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session app --workflow E:/work/task/workflow.json --learn --learn-app-id videoForensic --learn-notes "案件统计流程"
@@ -143,3 +155,5 @@ python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl
 ```
 
 不要把知识库建议直接写成最终结论；最终结论必须引用本轮 report、artifact 或截图证据。
+
+如果无法执行知识库预检或回写，必须把失败原因、影响和替代验证写入最终回复。缺少知识库步骤时，不能把流程描述为完整验证闭环。

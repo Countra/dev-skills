@@ -1,14 +1,19 @@
 {
-  "task_id": "2026-07-02-feature-electron-ui-verifier-action-workflow-assets",
-  "task_dir": ".harness/tasks/2026-07-02/feature/electron-ui-verifier-action-workflow-assets",
-  "title": "Electron UI verifier action/workflow 资产化增强",
-  "status": "complete",
+  "task_id": "2026-07-02-feature-electron-ui-verifier-knowledge-first-flow",
+  "task_dir": ".harness/tasks/2026-07-02/feature/electron-ui-verifier-knowledge-first-flow",
+  "title": "Electron UI verifier 知识库优先验证闭环增强",
+  "status": "in_progress",
   "execution_mode": "run-to-completion",
-  "overall_status": "complete",
-  "current_stage": "Finalized",
-  "remaining_stages": [],
-  "next_action": "none",
-  "next_automatic_action": "none",
+  "overall_status": "in_progress",
+  "current_stage": "Stage 1: 规则和流程契约",
+  "remaining_stages": [
+    "Stage 1: 规则和流程契约",
+    "Stage 2: CLI 和 report 审计字段",
+    "Stage 3: 知识库回写和资产策略",
+    "Stage 4: 端到端验证和最终收口"
+  ],
+  "next_action": "continue Stage 1",
+  "next_automatic_action": "continue Stage 1",
   "stop_condition": "none",
   "state_source": "execution-plan.md",
   "updated_at": "2026-07-02"

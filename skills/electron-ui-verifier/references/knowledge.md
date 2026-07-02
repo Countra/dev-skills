@@ -6,6 +6,13 @@
 
 知识库只提供候选建议，不替代真实 UI 验证。任何来自 `observed` 或 `candidate` 状态的知识，都必须通过新的 action/workflow 证据复验后，才能提升到 `verified` 或 `stable`。
 
+每轮 UI 验证都必须使用知识库闭环：
+
+- 执行前查询知识库，优先复用已知入口、页面、元素、action 和 workflow。
+- 执行中只把知识库命中作为候选路径，最终结论仍以本轮 report、artifact 或截图为准。
+- 执行后回写基础候选知识，包括 app、screen、element、report、workflowPath 和 evidence 摘要。
+- action/workflow 资产化必须显式开启，避免把一次性探索写成长期可复用资产。
+
 ## 存储位置
 
 运行时知识保存在 workspace 内：
@@ -46,13 +53,15 @@ python skills/electron-ui-verifier/scripts/ev_learn.py --workspace E:/work/hl/vi
 python skills/electron-ui-verifier/scripts/ev_learn.py --workspace E:/work/hl/videoForensic/AI/dev-skills --report E:/work/hl/videoForensic/AI/dev-skills/.harness/electron-ui-verifier/reports/videoForensic/20260701-090815-action/report.json --dry-run
 ```
 
-执行 action/workflow 时显式学习：
+执行 action/workflow 时必须学习基础候选知识：
 
 ```powershell
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-app-id videoForensic --learn-notes "打开案件流程复验"
 ```
 
-默认不自动学习，避免一次性探索污染长期知识。`--learn` 只写 app/screen/element/evidence 基础候选；如需把本次 report 整理成 action/workflow 资产，必须显式加 `--learn-assets`：
+`--learn` 只写 app/screen/element/evidence 基础候选，属于每轮验证后的标准回写。基础回写失败不会把 UI 验证本身改成失败，但最终回复必须说明失败原因和影响。
+
+如需把本次 report 整理成 action/workflow 资产，必须显式加 `--learn-assets`：
 
 ```powershell
 python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-assets --learn-app-id videoForensic --learn-notes "打开案件流程复验"
