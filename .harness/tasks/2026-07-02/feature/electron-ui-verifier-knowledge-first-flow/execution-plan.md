@@ -794,7 +794,7 @@ patch 失败处理（Patch failure handling）:
 - 已完成阶段（Completed stages）: Planning；Stage 1；Stage 2；Stage 3；Stage 4。
 - 当前阶段（Current stage）: Finalized。
 - 剩余阶段（Remaining stages）: none。
-- 最新 commit（Latest commit）: `5e4d869`。
+- 最新 commit（Latest commit）: 以最终交付时 `git log -1` 为准；避免在同一提交内记录自身 hash 造成递归漂移。
 - 下一步自动动作（Next automatic action）: none。
 - 当前停止条件（Current stop condition）: none。
 - 状态来源（State source of truth）: execution-plan.md。
