@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""从 verifier report 学习应用 UI 知识。"""
+"""从 verifier report 预览应用 UI 知识候选。"""
 
 from __future__ import annotations
 
@@ -21,15 +21,15 @@ def evidence_id(item: dict[str, object]) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="从 Electron verifier report 抽取并写入候选知识。")
+    parser = argparse.ArgumentParser(description="从 Electron verifier report dry-run 预览候选知识。")
     add_common_args(parser)
     parser.add_argument("--report", help="report.json 绝对路径")
     parser.add_argument("--session", help="配合 --latest 读取 session 最新 report")
     parser.add_argument("--latest", action="store_true", help="从 sessions.json 查找指定 session 最新 report")
     parser.add_argument("--app-id", help="覆盖自动识别的 appId")
-    parser.add_argument("--notes", help="写入 evidence 的简短说明")
+    parser.add_argument("--notes", help="候选 evidence 的简短说明")
     parser.add_argument("--dry-run", action="store_true", help="只输出候选知识，不写入知识库")
-    parser.add_argument("--include-assets", action="store_true", help="显式写入 action/workflow 资产候选")
+    parser.add_argument("--include-assets", action="store_true", help="仅用于 dry-run 预览 action/workflow 资产候选")
     return parser
 
 
@@ -95,14 +95,9 @@ def main(argv: list[str] | None = None) -> int:
         payload = extract_knowledge(report_path, app_id_override=args.app_id, notes=args.notes)
         payload["workflows"] = []
         assets = extract_assets(report_path, app_id_override=args.app_id, notes=args.notes) if args.include_assets else None
-        if args.dry_run:
-            print_json({"ok": True, "dryRun": True, "knowledge": payload, "assets": assets})
-            return 0
-        result = persist(payload, args, assets=assets)
-        stats = dict(payload.get("stats") or {})
-        if assets:
-            stats["assets"] = assets.get("stats")
-        print_json({"ok": True, "dryRun": False, "result": result, "stats": stats})
+        if not args.dry_run:
+            raise EVError("ev_learn.py 仅允许 dry-run 预览。写入知识库必须先获得用户确认，再使用 ev_persist.py approve。")
+        print_json({"ok": True, "dryRun": True, "knowledge": payload, "assets": assets})
         return 0
     except EVError as exc:
         return fail(str(exc), "learn_failed")

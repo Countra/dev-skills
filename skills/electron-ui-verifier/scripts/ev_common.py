@@ -36,6 +36,7 @@ class EVPaths:
     server_file: Path
     sessions_file: Path
     reports_dir: Path
+    pending_dir: Path
     workflows_dir: Path
     artifacts_dir: Path
     logs_dir: Path
@@ -55,6 +56,7 @@ class EVConfig:
     server_file: Path
     sessions_file: Path
     reports_dir: Path
+    pending_dir: Path
     workflows_dir: Path
     artifacts_dir: Path
     logs_dir: Path
@@ -136,6 +138,7 @@ def paths_for_workspace(workspace_root: Path) -> EVPaths:
         server_file=state_root / "server.json",
         sessions_file=state_root / "sessions.json",
         reports_dir=state_root / "reports",
+        pending_dir=state_root / "pending",
         workflows_dir=state_root / "workflows",
         artifacts_dir=state_root / "artifacts",
         logs_dir=state_root / "logs",
@@ -192,7 +195,7 @@ def write_environment(paths: EVPaths, python_path: Path | None = None, port: int
 
 
 def ensure_runtime_dirs(paths: EVPaths) -> None:
-    for folder in (paths.state_root, paths.reports_dir, paths.workflows_dir, paths.artifacts_dir, paths.logs_dir, paths.tmp_dir, paths.service_file.parent):
+    for folder in (paths.state_root, paths.reports_dir, paths.pending_dir, paths.workflows_dir, paths.artifacts_dir, paths.logs_dir, paths.tmp_dir, paths.service_file.parent):
         folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -212,6 +215,7 @@ def config_from_data(data: dict[str, Any]) -> EVConfig:
     state_root = require_absolute_path(data.get("stateRoot"), "config.stateRoot")
     port_retry = ensure_object(data.get("portRetry") or {}, "config.portRetry")
     workflows_dir = data.get("workflowsDir") or str(state_root / "workflows")
+    pending_dir = data.get("pendingDir") or str(state_root / "pending")
     return EVConfig(
         host=normalize_host(data.get("host")),
         port=normalize_port(data.get("port"), "config.port"),
@@ -223,6 +227,7 @@ def config_from_data(data: dict[str, Any]) -> EVConfig:
         server_file=require_absolute_path(data.get("serverFile"), "config.serverFile"),
         sessions_file=require_absolute_path(data.get("sessionsFile"), "config.sessionsFile"),
         reports_dir=require_absolute_path(data.get("reportsDir"), "config.reportsDir"),
+        pending_dir=require_absolute_path(pending_dir, "config.pendingDir"),
         workflows_dir=require_absolute_path(workflows_dir, "config.workflowsDir"),
         artifacts_dir=require_absolute_path(data.get("artifactsDir"), "config.artifactsDir"),
         logs_dir=require_absolute_path(data.get("logsDir"), "config.logsDir"),
@@ -248,6 +253,7 @@ def config_to_data(paths: EVPaths, environment: dict[str, Any]) -> dict[str, Any
         "serverFile": str(paths.server_file),
         "sessionsFile": str(paths.sessions_file),
         "reportsDir": str(paths.reports_dir),
+        "pendingDir": str(paths.pending_dir),
         "workflowsDir": str(paths.workflows_dir),
         "artifactsDir": str(paths.artifacts_dir),
         "logsDir": str(paths.logs_dir),

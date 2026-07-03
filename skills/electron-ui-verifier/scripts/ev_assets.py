@@ -32,16 +32,21 @@ def filter_items(items: list[dict[str, object]], args: argparse.Namespace) -> li
 def result_summary(items: list[dict[str, object]]) -> dict[str, object]:
     statuses: dict[str, int] = {}
     kinds: dict[str, int] = {}
+    reusable_count = 0
     for item in items:
         status = str(item.get("status") or "unknown")
         kind = str(item.get("kind") or item.get("goal") or "workflow")
         statuses[status] = statuses.get(status, 0) + 1
         kinds[kind] = kinds.get(kind, 0) + 1
+        if item.get("workflow_id") or item.get("action_id"):
+            reusable_count += 1
     return {
         "count": len(items),
+        "reusableCount": reusable_count,
         "statuses": statuses,
         "kinds": kinds,
-        "recommendedNextAction": "将命中的 action/workflow 作为候选，执行新的现场验证后再采信",
+        "recommendedNextAction": "命中可执行 workflow/action asset 时优先通过 --workflow-id 或 --action-id 现场复验；不可复用时再探索",
+        "directRunHint": "workflow asset 用 ev_workflow.py --workflow-id <id>，action asset 用 ev_action.py --action-id <id>；低置信或坐标兜底资产需要谨慎复验。",
     }
 
 

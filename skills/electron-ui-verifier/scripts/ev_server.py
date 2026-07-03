@@ -25,6 +25,7 @@ from ev_common import EVConfig, EVError, config_from_data, iso_now as common_iso
 from ev_asset_extract import extract_assets
 from ev_knowledge_extract import extract_knowledge
 from ev_knowledge_store import knowledge_paths_from_config, open_store_from_paths
+from ev_pending import write_pending_package
 
 
 SCHEMA_VERSION = 1
@@ -132,6 +133,7 @@ class RunContext:
     out_dir: Path
     backend: str = "raw-cdp"
     workflow_path: str | None = None
+    pending_package: dict[str, Any] | None = None
     workflow_source: dict[str, Any] | None = None
     app_id: str | None = None
     goal: str | None = None
@@ -1021,6 +1023,8 @@ def build_report(
         "goal": ctx.goal,
         "workflow": {"path": ctx.workflow_path, "source": ctx.workflow_source} if ctx.workflow_path else None,
         "workflowPath": ctx.workflow_path,
+        "pendingPackage": ctx.pending_package,
+        "pendingPackagePath": ctx.pending_package.get("path") if isinstance(ctx.pending_package, dict) else None,
         "knowledgePreflight": ctx.knowledge_preflight,
         "knowledgeUsage": ctx.knowledge_usage,
         "knowledgeWriteback": ctx.knowledge_writeback,
@@ -1046,6 +1050,8 @@ def write_summary(path: Path, report: dict[str, Any]) -> None:
         f"- Backend: {report['backend']}",
         f"- CDP: {report['cdp']}",
     ]
+    if report.get("pendingPackagePath"):
+        lines.append(f"- Pending package: {report['pendingPackagePath']}")
     if report.get("workflowPath"):
         lines.append(f"- Workflow: {report['workflowPath']}")
     if report.get("knowledgePreflight"):
@@ -1081,8 +1087,9 @@ def workflow_source(value: Any, default_type: str) -> dict[str, Any]:
     if isinstance(value, dict):
         source_type = str(value.get("type") or default_type)
         source: dict[str, Any] = {"type": source_type}
-        if value.get("path"):
-            source["path"] = str(value["path"])
+        for key in ("path", "assetId", "workflowId", "actionId", "status", "confidence", "riskFlags", "sourceReport"):
+            if value.get(key) not in (None, ""):
+                source[key] = value[key]
         return source
     return {"type": default_type}
 
@@ -1189,7 +1196,7 @@ class VerifierController:
         self.token = read_token(config)
         self.sessions: dict[str, VerifierSession] = {}
         self.lock = threading.RLock()
-        for folder in (config.state_root, config.reports_dir, config.workflows_dir, config.artifacts_dir, config.logs_dir, config.tmp_dir):
+        for folder in (config.state_root, config.reports_dir, config.pending_dir, config.workflows_dir, config.artifacts_dir, config.logs_dir, config.tmp_dir):
             folder.mkdir(parents=True, exist_ok=True)
         self.persist_sessions()
 
@@ -1347,8 +1354,6 @@ class VerifierController:
     ) -> dict[str, Any]:
         with session.lock:
             out_dir = self.report_dir(session, prefix)
-            workflow_path = self.workflow_file(session, out_dir)
-            write_json(workflow_path, workflow)
             actions = set()
             for step in steps_payload:
                 for action in SUPPORTED_ACTIONS:
@@ -1359,13 +1364,12 @@ class VerifierController:
                 required.add("Network")
             self.ensure_domains(session, required)
             ctx = RunContext(cdp=session.cdp, out_dir=out_dir)
-            ctx.workflow_path = str(workflow_path)
             ctx.workflow_source = workflow_source_data
             ctx.app_id = app_id
             ctx.goal = goal
             ctx.knowledge_preflight = knowledge_preflight
             ctx.knowledge_usage = knowledge_usage
-            ctx.knowledge_writeback = knowledge_writeback
+            ctx.knowledge_writeback = knowledge_writeback or {"status": "pending_user_confirmation", "reason": "approval_required_before_knowledge_writeback"}
             ctx.backend_attempts.append({"backend": "raw-cdp", "status": "selected"})
             version = get_version(session.cdp)
             targets = get_targets(session.cdp)
@@ -1382,26 +1386,23 @@ class VerifierController:
             report["session"] = session.record()
             persist_report(ctx, report)
             session.latest_report = str(out_dir / "report.json")
-            if learn:
-                try:
-                    report["knowledgeWriteback"] = persist_report_knowledge(
-                        self.config,
-                        Path(session.latest_report),
-                        app_id=learn.get("appId"),
-                        notes=learn.get("notes"),
-                        include_assets=bool(learn.get("includeAssets")),
-                    )
-                except (EVError, VerifyError, OSError, ValueError) as exc:
-                    report["knowledgeWriteback"] = {"status": "failed", "error": str(exc)}
-                report["knowledge"] = report["knowledgeWriteback"]
-                persist_report(ctx, report)
+            pending = write_pending_package(self.config, session.name, out_dir.name, workflow, report, Path(session.latest_report), out_dir / "summary.md")
+            ctx.workflow_path = pending["workflow"]
+            ctx.pending_package = pending
+            report = build_report(ctx, version, targets, session.target, steps)
+            report["session"] = session.record()
+            report["knowledgeWriteback"] = ctx.knowledge_writeback
+            report["knowledge"] = ctx.knowledge_writeback
+            persist_report(ctx, report)
             session.last_used_at = iso_now()
             self.persist_sessions()
             return {
                 "ok": report["status"] == "passed",
                 "report": session.latest_report,
                 "summary": str(out_dir / "summary.md"),
-                "workflow": str(workflow_path),
+                "workflow": pending["workflow"],
+                "pendingPackage": pending["path"],
+                "pending": pending,
                 "result": report,
             }
 
@@ -1415,7 +1416,8 @@ class VerifierController:
         knowledge_preflight = normalize_optional_object(payload.get("knowledgePreflight"), "knowledgePreflight")
         knowledge_usage = normalize_optional_object(payload.get("knowledgeUsage"), "knowledgeUsage")
         knowledge_writeback = normalize_optional_object(payload.get("knowledgeWriteback"), "knowledgeWriteback")
-        learn = normalize_learn_options(payload.get("learn"))
+        reject_inline_learn(payload.get("learn"))
+        learn = None
         workflow = action_workflow_document(step)
         if app_id:
             workflow["appId"] = app_id
@@ -1473,7 +1475,8 @@ class VerifierController:
             if not isinstance(item, dict):
                 raise VerifyError(f"workflow step must be an object: {index}")
             steps_payload.append(item)
-        learn = normalize_learn_options(payload.get("learn") or workflow.get("learn"))
+        reject_inline_learn(payload.get("learn") or workflow.get("learn"))
+        learn = None
         learn = complete_learn_options(learn, app_id, goal)
         source = workflow_source(payload.get("workflowSource"), "workflow")
         return self.run_steps(
@@ -1553,6 +1556,11 @@ def complete_learn_options(learn: dict[str, Any] | None, app_id: str | None, goa
     if normalized.get("notes") == "learned by verifier server" and goal:
         normalized["notes"] = goal
     return normalized
+
+
+def reject_inline_learn(value: Any) -> None:
+    if value not in (None, False):
+        raise VerifyError("learn is disabled during action/workflow execution; approve a pending package with ev_persist.py instead")
 
 
 class VerifierHTTPServer(http.server.ThreadingHTTPServer):

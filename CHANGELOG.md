@@ -1,6 +1,24 @@
 # Changelog
 
+## 2026-07-03
+
+### Stage 6: electron-ui-verifier 资产复用优先门禁
+
+- 新增 `Reuse Gate` 规则，命中可执行 workflow/action asset 或已批准 workflow 时优先原地复用。
+- `ev_action.py` 和 `ev_workflow.py` 支持 `--action-id` / `--workflow-id`，自动记录资产来源和 `knowledgeUsage`。
+- 增强 `ev_assets.py`、`ev_suggest.py` 的直接复用提示，并新增 asset reuse smoke 覆盖复用链路。
+- Commit: pending
+- Commit message: `feat(electron-ui-verifier): 完善确认持久化和资产复用流程`
+
 ## 2026-07-02
+
+### Stage 5: electron-ui-verifier 持久化确认门禁
+
+- 默认验证结果改为生成 pending 审核包，用户确认前不写正式 workflow、不写知识库。
+- 新增 detour 清洗和 approve guard，确保错误页面、无关点击和恢复步骤不会进入可持久化 workflow。
+- 新增 `ev_persist.py` 和 pending smoke，覆盖用户确认后 workflow 晋级、知识库写入、资产写入和 detour 拒绝入库。
+- Commit: pending
+- Commit message: pending
 
 ### Stage 5: electron-ui-verifier 资产学习文档收口
 

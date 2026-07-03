@@ -67,6 +67,7 @@ token
 server.json
 sessions.json
 reports/
+pending/
 workflows/
 artifacts/
 logs/
@@ -123,21 +124,21 @@ python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl
 python skills/electron-ui-verifier/scripts/ev_report.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --latest
 ```
 
-每次 `ev_workflow.py` 或 `ev_action.py` 执行后，返回值都会包含 `workflow` 字段，指向本轮固化后的 workflow JSON：
+每次 `ev_workflow.py` 或 `ev_action.py` 执行后，返回值都会包含 `pendingPackage` 字段，指向本轮待确认审核包：
 
 ```text
-.harness/electron-ui-verifier/workflows/<session>/<timestamp>-<type>.workflow.json
+.harness/electron-ui-verifier/pending/<session>/<timestamp>-<type>/
 ```
 
-最终回复必须引用这个路径，而不是只引用原始输入 workflow 或知识库资产。
+审核包内的 `workflow.proposed.json` 是清洗后的正确路径，`workflow-review.md` 是给用户确认的中文步骤，`detours.json` 只记录被排除的错误路径。最终回复必须引用 pending 包路径；用户确认后才引用正式 workflow 路径。
 
-如果要把本次 report 沉淀到知识库，显式使用：
+如果要把本次 report 沉淀到知识库，必须先获得用户确认，再显式使用：
 
 ```powershell
-python skills/electron-ui-verifier/scripts/ev_workflow.py --workspace E:/work/hl/videoForensic/AI/dev-skills --session videoForensic --workflow E:/work/task/open-case.workflow.json --learn --learn-app-id videoForensic --learn-notes "打开案件流程复验"
+python skills/electron-ui-verifier/scripts/ev_persist.py --workspace E:/work/hl/videoForensic/AI/dev-skills approve --pending E:/work/hl/videoForensic/AI/dev-skills/.harness/electron-ui-verifier/pending/videoForensic/20260702-120000-workflow --decision "用户确认打开案件流程正确"
 ```
 
-server 会先生成正常 report，再把知识学习摘要写入 `report.json` 的 `knowledge` 字段。`--learn` 只写基础候选知识；如需 action/workflow 资产，显式加 `--learn-assets`。学习失败不会把 UI 验证结果改成失败，但必须在最终说明里记录。
+server 会先生成正常 report 和 pending 审核包。`approve` 会把清洗后的 workflow 晋级为正式 workflow，再写知识库；如需 action/workflow 资产，显式加 `--include-assets`。学习失败不会把 UI 验证结果改成失败，但必须在最终说明里记录。
 
 ## 重要边界
 
@@ -145,4 +146,4 @@ server 会先生成正常 report，再把知识学习摘要写入 `report.json` 
 - 同名 session 默认复用；需要强制重新 attach 时用 `ev_attach.py --no-reuse`。
 - 远程 CDP 必须显式批准并传 `--allow-remote-cdp`。
 - `ev_report.py` 和 `ev_artifact.py` 只能读取 `.harness/electron-ui-verifier/` 下的运行产物。
-- 知识库默认不自动写入；只有 `ev_learn.py`、`ev_action.py --learn` 或 `ev_workflow.py --learn` 会写入基础知识；只有 `--include-assets` 或 `--learn-assets` 会写 action/workflow 资产。
+- 知识库默认不自动写入；普通 `ev_action.py` 和 `ev_workflow.py` 只生成 pending 审核包。只有用户确认后的 `ev_persist.py approve` 才写入基础知识；只有 `--include-assets` 会写 action/workflow 资产。

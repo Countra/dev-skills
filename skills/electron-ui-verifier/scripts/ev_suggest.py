@@ -38,8 +38,9 @@ def score_item(item: dict[str, Any]) -> float:
 
 
 def compact_workflow(item: dict[str, Any]) -> dict[str, Any]:
+    workflow_id = item.get("workflow_id")
     return {
-        "workflowId": item.get("workflow_id"),
+        "workflowId": workflow_id,
         "goal": item.get("goal"),
         "status": item.get("status"),
         "confidence": item.get("confidence"),
@@ -49,12 +50,14 @@ def compact_workflow(item: dict[str, Any]) -> dict[str, Any]:
         "assertions": item.get("assertions", []),
         "riskFlags": item.get("risk_flags", []),
         "params": item.get("params", {}),
+        "directRun": {"command": "ev_workflow.py", "argument": "--workflow-id", "id": workflow_id} if workflow_id else None,
     }
 
 
 def compact_action(item: dict[str, Any]) -> dict[str, Any]:
+    action_id = item.get("action_id")
     return {
-        "actionId": item.get("action_id"),
+        "actionId": action_id,
         "screenId": item.get("screen_id"),
         "kind": item.get("kind"),
         "label": item.get("label"),
@@ -65,6 +68,7 @@ def compact_action(item: dict[str, Any]) -> dict[str, Any]:
         "selectorCandidates": item.get("selector_candidates", []),
         "riskFlags": item.get("risk_flags", []),
         "params": item.get("params", {}),
+        "directRun": {"command": "ev_action.py", "argument": "--action-id", "id": action_id} if action_id else None,
     }
 
 
@@ -104,7 +108,7 @@ def compose_candidate(actions: list[dict[str, Any]], limit: int) -> dict[str, An
     return {
         "goal": "由高分 action 资产组合的候选 workflow",
         "status": "candidate",
-        "warning": "组合建议只供规划参考，必须导出或手写 workflow 后真实复验。",
+        "warning": "组合建议只供规划参考；单个命中资产应优先用 --action-id 复验，确需组合时再创建最小 workflow 并真实复验。",
         "steps": [item["step"] for item in reusable],
         "actionIds": [item["actionId"] for item in reusable],
         "riskFlags": sorted({flag for item in reusable for flag in item.get("riskFlags", [])}),
@@ -129,7 +133,7 @@ def preflight_summary(result: dict[str, Any]) -> dict[str, Any]:
         "rawHitCount": len(result.get("rawHits") or []),
         "topWorkflowIds": [item.get("workflowId") for item in workflows[:3] if item.get("workflowId")],
         "topActionIds": [item.get("actionId") for item in actions[:5] if item.get("actionId")],
-        "recommendedNextAction": "复用或改写命中候选后执行现场 workflow" if has_hits else "未命中可复用候选，先现场探索并在完成后回写知识库",
+        "recommendedNextAction": "优先直接复用命中的 workflow/action asset 执行现场验证；不可复用时再探索" if has_hits else "未命中可复用候选，先现场探索，任务结束后等待用户确认是否持久化",
         "mustVerify": True,
     }
 
@@ -171,6 +175,7 @@ def suggest(goal: str, app_id: str | None, limit: int, store: Any, report: str |
         "appId": app_id,
         "advice": [
             "建议仅作为候选入口使用，不能替代真实 UI 验证。",
+            "命中 workflow/action asset 时优先用 --workflow-id 或 --action-id 现场复验，不要重复生成等价文件。",
             "candidate/observed 知识需要通过 action 或 workflow 复验后再提升状态。",
         ],
         "workflows": workflows[:limit],
