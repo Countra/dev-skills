@@ -570,12 +570,12 @@ Changelog 计划:
 ## 恢复摘要
 
 - 整体目标: 让 `electron-ui-verifier` 优先复用已有知识库、action asset、workflow asset 和已批准 workflow，减少重复生成临时 action/workflow。
-- 执行模式: planning-only until approval。
+- 执行模式: run-to-completion。
 - 整体任务状态: complete。
 - 已完成阶段: Planning、Stage 1、Stage 2、Stage 3、Stage 4。
 - 当前阶段: Final delivery。
 - 剩余阶段: none。
-- 最新 commit: none。
+- 最新 commit: `17d46fa`。
 - 下一步自动动作: final delivery。
 - 当前停止条件: all approved stages completed。
 - 状态来源: execution-plan.md。
@@ -592,3 +592,4 @@ Changelog 计划:
 | 阶段 | 仓库 | Commit | Message | Changelog |
 | --- | --- | --- | --- | --- |
 | Planning | dev-skills | not committed | planning only | not changed |
+| Stage 1-4 | dev-skills | `17d46fa` | `feat(electron-ui-verifier): 完善确认持久化和资产复用流程` | `CHANGELOG.md` 2026-07-03 |

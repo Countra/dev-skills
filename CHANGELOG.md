@@ -7,7 +7,7 @@
 - 新增 `Reuse Gate` 规则，命中可执行 workflow/action asset 或已批准 workflow 时优先原地复用。
 - `ev_action.py` 和 `ev_workflow.py` 支持 `--action-id` / `--workflow-id`，自动记录资产来源和 `knowledgeUsage`。
 - 增强 `ev_assets.py`、`ev_suggest.py` 的直接复用提示，并新增 asset reuse smoke 覆盖复用链路。
-- Commit: pending
+- Commit: `17d46fa`
 - Commit message: `feat(electron-ui-verifier): 完善确认持久化和资产复用流程`
 
 ## 2026-07-02
