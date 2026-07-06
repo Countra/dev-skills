@@ -1,7 +1,7 @@
 {
-  "task_id": "2026-07-03-feature-electron-ui-verifier-asset-reuse-flow",
-  "task_dir": ".harness/tasks/2026-07-03/feature/electron-ui-verifier-asset-reuse-flow",
-  "title": "Electron UI verifier 优先复用现有 action/workflow 资产",
+  "task_id": "2026-07-03-feature-electron-ui-verifier-progressive-reuse-confirmation-flow",
+  "task_dir": ".harness/tasks/2026-07-03/feature/electron-ui-verifier-progressive-reuse-confirmation-flow",
+  "title": "Electron UI verifier 渐进式复用和确认持久化流程",
   "status": "complete",
   "execution_mode": "run-to-completion",
   "overall_status": "complete",

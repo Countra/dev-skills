@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from typing import Any
 
 from ev_common import EVError, add_common_args, fail, load_config, print_json, resolve_config_path
@@ -20,6 +21,21 @@ STATUS_WEIGHT = {
     "deprecated": 0.0,
 }
 
+SUBGOAL_KEYWORDS = [
+    "设置",
+    "AI设置",
+    "工具箱",
+    "历史记录",
+    "案件",
+    "详情",
+    "任务列表",
+    "苍穹AI本地版",
+    "苍穹AI网络版",
+    "苍穹AI局域网",
+    "连接状态",
+    "配置",
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="从知识库生成 Electron UI 验证建议。")
@@ -35,6 +51,39 @@ def score_item(item: dict[str, Any]) -> float:
     base = STATUS_WEIGHT.get(str(item.get("status") or "observed"), 0.2)
     confidence = float(item.get("confidence", 0.4) or 0.4)
     return round(max(0.0, min(1.0, (base * 0.7) + (confidence * 0.3))), 3)
+
+
+def derived_queries(goal: str, limit: int = 8) -> list[dict[str, str]]:
+    text = str(goal or "").strip()
+    if not text:
+        return []
+    queries: list[dict[str, str]] = []
+
+    def add(query: str, reason: str) -> None:
+        query = re.sub(r"\s+", " ", query).strip(" ，,。.;；:：")
+        if not query or query == text:
+            return
+        if any(item["query"] == query for item in queries):
+            return
+        queries.append({"query": query, "reason": reason})
+
+    for keyword in SUBGOAL_KEYWORDS:
+        if keyword in text:
+            add(keyword, "keyword")
+    if "AI" in text and "设置" in text:
+        add("AI设置", "compound")
+        add("打开设置", "entry")
+    if "AI" in text and any(keyword in text for keyword in ("状态", "配置", "供应商", "引擎", "局域网", "网络版", "本地版")):
+        add("设置", "inferred-entry")
+        add("AI设置", "inferred-page")
+    if "状态" in text:
+        add("连接状态", "assertion")
+    if "配置" in text:
+        add("配置", "target-object")
+    parts = [part for part in re.split(r"[\s，,。.;；:：、]+", text) if len(part) >= 2]
+    for part in parts:
+        add(part, "token")
+    return queries[: max(0, limit)]
 
 
 def compact_workflow(item: dict[str, Any]) -> dict[str, Any]:
@@ -116,12 +165,78 @@ def compose_candidate(actions: list[dict[str, Any]], limit: int) -> dict[str, An
     }
 
 
+def compact_progressive_hits(store: Any, query: str, app_id: str | None, limit: int) -> dict[str, Any]:
+    raw_hits = store.search(query, app_id=app_id, limit=max(limit * 3, 10))
+    workflow_ids = [hit["entity_id"] for hit in raw_hits if hit.get("kind") == "workflow"][:limit]
+    action_ids = [hit["entity_id"] for hit in raw_hits if hit.get("kind") == "action"][:limit]
+    element_hits = [hit for hit in raw_hits if hit.get("kind") == "element"][:limit]
+    screen_hits = [hit for hit in raw_hits if hit.get("kind") == "screen"][:limit]
+    workflows = [compact_workflow(store.get_workflow(entity_id)) for entity_id in workflow_ids]
+    actions = [compact_action(store.get_action_asset(entity_id)) for entity_id in action_ids]
+    workflows.sort(key=lambda item: item["score"], reverse=True)
+    actions.sort(key=lambda item: item["score"], reverse=True)
+    direct = []
+    for item in workflows:
+        if item.get("directRun"):
+            direct.append({"kind": "workflow", "id": item["workflowId"], "score": item["score"], "status": item.get("status")})
+    for item in actions:
+        if item.get("directRun"):
+            direct.append({"kind": "action", "id": item["actionId"], "score": item["score"], "status": item.get("status")})
+    return {
+        "query": query,
+        "status": "hit" if raw_hits else "empty",
+        "workflowHits": len(workflows),
+        "actionHits": len(actions),
+        "elementHits": len(element_hits),
+        "screenHits": len(screen_hits),
+        "directRunCandidates": direct,
+        "topWorkflows": workflows[: min(3, limit)],
+        "topActions": actions[: min(3, limit)],
+        "topElements": element_hits[: min(3, limit)],
+        "topScreens": screen_hits[: min(3, limit)],
+    }
+
+
+def progressive_plan(goal: str, app_id: str | None, limit: int, store: Any, root_result: dict[str, Any]) -> dict[str, Any]:
+    queries = derived_queries(goal, limit=limit)
+    subgoals = []
+    for item in queries:
+        hits = compact_progressive_hits(store, item["query"], app_id, max(1, min(5, limit)))
+        hits["reason"] = item["reason"]
+        subgoals.append(hits)
+    has_direct_root = any(hit.get("kind") in {"workflow", "action"} for hit in root_result.get("rawHits") or [])
+    has_subgoal_direct = any(item.get("directRunCandidates") for item in subgoals)
+    fallback_reason = None
+    if has_direct_root:
+        fallback_reason = "full_goal_has_direct_candidates"
+    elif has_subgoal_direct:
+        fallback_reason = "full_goal_empty_but_subgoal_has_candidates"
+    else:
+        fallback_reason = "no_direct_or_subgoal_candidates"
+    return {
+        "status": "hit" if has_direct_root or has_subgoal_direct else "empty",
+        "goal": goal,
+        "appId": app_id,
+        "derivedQueries": queries,
+        "subgoals": subgoals,
+        "reuseStrategy": [
+            "先复用完整目标命中的 workflow/action asset。",
+            "完整目标无直达命中时，按子目标复用入口、页面或前置步骤资产。",
+            "子目标也不可复用时，才创建新的最小 action/workflow 并现场验证。",
+        ],
+        "fallbackReason": fallback_reason,
+        "mustVerify": True,
+    }
+
+
 def preflight_summary(result: dict[str, Any]) -> dict[str, Any]:
     workflows = result.get("workflows") or []
     actions = result.get("actions") or []
     elements = result.get("elements") or []
     screens = result.get("screens") or []
-    has_hits = bool(workflows or actions or elements or screens)
+    progressive = result.get("progressivePlan") if isinstance(result.get("progressivePlan"), dict) else {}
+    progressive_hit = progressive.get("status") == "hit"
+    has_hits = bool(workflows or actions or elements or screens or progressive_hit)
     return {
         "status": "hit" if has_hits else "empty",
         "goal": result.get("goal"),
@@ -130,10 +245,12 @@ def preflight_summary(result: dict[str, Any]) -> dict[str, Any]:
         "actionHits": len(actions),
         "elementHits": len(elements),
         "screenHits": len(screens),
+        "progressiveStatus": progressive.get("status"),
+        "progressiveFallbackReason": progressive.get("fallbackReason"),
         "rawHitCount": len(result.get("rawHits") or []),
         "topWorkflowIds": [item.get("workflowId") for item in workflows[:3] if item.get("workflowId")],
         "topActionIds": [item.get("actionId") for item in actions[:5] if item.get("actionId")],
-        "recommendedNextAction": "优先直接复用命中的 workflow/action asset 执行现场验证；不可复用时再探索" if has_hits else "未命中可复用候选，先现场探索，任务结束后等待用户确认是否持久化",
+        "recommendedNextAction": "优先直接复用命中的 workflow/action asset；完整目标无直达命中时先复用 progressivePlan 中的子目标资产" if has_hits else "未命中可复用候选，先现场探索，任务结束后等待用户确认是否持久化",
         "mustVerify": True,
     }
 
@@ -176,6 +293,7 @@ def suggest(goal: str, app_id: str | None, limit: int, store: Any, report: str |
         "advice": [
             "建议仅作为候选入口使用，不能替代真实 UI 验证。",
             "命中 workflow/action asset 时优先用 --workflow-id 或 --action-id 现场复验，不要重复生成等价文件。",
+            "完整目标无直达命中时，继续查看 progressivePlan 的子目标命中，优先复用入口、页面或前置步骤。",
             "candidate/observed 知识需要通过 action 或 workflow 复验后再提升状态。",
         ],
         "workflows": workflows[:limit],
@@ -186,6 +304,7 @@ def suggest(goal: str, app_id: str | None, limit: int, store: Any, report: str |
         "rawHits": raw_hits[:limit],
         "currentReportContext": current_report_context(report, app_id),
     }
+    result["progressivePlan"] = progressive_plan(goal, app_id, limit, store, result)
     result["knowledgePreflight"] = preflight_summary(result)
     return result
 

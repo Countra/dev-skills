@@ -9,6 +9,7 @@
 每轮 UI 验证都必须使用知识库闭环：
 
 - 执行前查询知识库，优先复用已知入口、页面、元素、action 和 workflow。
+- 完整目标没有直达命中时，必须按入口、页面、前置步骤、目标对象和最终断言拆解子目标继续查询；不能只因为完整目标未命中就跳过知识库。
 - 命中可执行 action/workflow asset 时，优先通过 asset ID 直接执行，不导出、不复制、不手写等价 JSON。
 - 执行中只把知识库命中作为候选路径，最终结论仍以本轮 report、artifact 或截图为准。
 - 执行后先生成 pending 审核包，等待用户确认是否持久化。
@@ -97,6 +98,8 @@ python skills/electron-ui-verifier/scripts/ev_suggest.py --workspace E:/work/hl/
 
 建议输出中的 workflow、action、元素和页面只说明“可以优先尝试什么”，不能直接作为用户问题的最终答案。workflow/action asset 可以作为现场验证的执行输入，但最终答案仍必须来自本轮 report、artifact 或截图。
 
+当 `ev_suggest.py` 输出 `progressivePlan` 时，必须先检查完整目标命中，再检查子目标命中。子目标命中可用于复用前置路径，例如先复用“打开设置”或“打开 AI 设置”的 action/workflow，再现场探索后续特定供应商、状态或配置读取。低置信、坐标兜底或页面状态不匹配的候选必须现场复验，不能直接入库或作为最终结论。
+
 查询 action/workflow 资产：
 
 ```powershell
@@ -113,6 +116,8 @@ python skills/electron-ui-verifier/scripts/ev_action.py --workspace E:/work/hl/v
 ```
 
 只有命中为空、资产不可执行、风险过高、目标不匹配或现场复验失败时，才新建 action/workflow。新建原因必须写入最终回复。
+
+最终回复还必须包含本轮正确步骤链路，并明确说明是否等待用户确认持久化。用户确认前，pending workflow 和候选知识都不是长期可复用资产。
 
 导出可分享 workflow：
 

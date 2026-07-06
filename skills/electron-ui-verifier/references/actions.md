@@ -71,6 +71,8 @@ python skills/electron-ui-verifier/scripts/ev_action.py --workspace E:/work/hl/v
 - `workflow.proposed.json` 只保留清洗后的正确路径和必要证据步骤。
 - `detours.json` 可以记录错误路径、恢复动作和排除原因，但不得被写入正式 workflow 或知识库。
 - 无法判断是否正确的 step 必须在 `workflow-review.md` 中标记为需要用户重点确认；确认前不得写入知识库。
+- `workflow-review.md` 和 `evidence-index.json` 必须包含清洗后的步骤链路摘要，例如 `首页 -> 设置 -> AI设置 -> 读取状态`。
+- 最终回复必须复述该步骤链路，并等待用户确认后才允许运行 `ev_persist.py approve`。
 
 ## Target 字段
 

@@ -148,8 +148,13 @@ def describe_action(action: str, value: Any) -> str:
 
 
 def review_lines(report: dict[str, Any], workflow: dict[str, Any], detours: list[dict[str, Any]], pending_dir: Path) -> list[str]:
+    flow = flow_summary(workflow)
     lines = [
         "# UI 验证流程待确认",
+        "",
+        "## 步骤链路",
+        "",
+        f"- {flow['text'] or '未生成步骤链路'}",
         "",
         "## 正确路径",
         "",
@@ -176,6 +181,7 @@ def review_lines(report: dict[str, Any], workflow: dict[str, Any], detours: list
             "",
             "该流程当前只作为本轮验证证据，尚未保存为长期 workflow，也尚未写入知识库。",
             "注意：待保存的 workflow 只包含“正确路径”，不包含“已排除的错误路径”。",
+            "如确认步骤链路正确，可在会话中回复确认，之后才能执行持久化入库。",
             "",
             ">>> USER INPUT: EV-PERSIST-001 >>>",
             "Decision:",
@@ -184,6 +190,15 @@ def review_lines(report: dict[str, Any], workflow: dict[str, Any], detours: list
         ]
     )
     return lines
+
+
+def flow_summary(workflow: dict[str, Any]) -> dict[str, Any]:
+    items = []
+    for index, step in enumerate(workflow_steps(workflow), start=1):
+        payload = step_payload(step)
+        label = describe_action(payload["action"], payload["value"])
+        items.append({"index": index, "id": step.get("id") or f"step-{index}", "action": payload["action"], "description": label})
+    return {"text": " -> ".join(item["description"] for item in items), "steps": items}
 
 
 def write_pending_package(config: EVConfig, session_name: str, run_name: str, workflow: dict[str, Any], report: dict[str, Any], report_path: Path, summary_path: Path) -> dict[str, Any]:
@@ -197,6 +212,7 @@ def write_pending_package(config: EVConfig, session_name: str, run_name: str, wo
         "report": str(report_path),
         "summary": str(summary_path),
         "artifacts": report.get("artifacts") or [],
+        "flowSummary": flow_summary(proposed),
         "knowledgePreflight": report.get("knowledgePreflight"),
         "knowledgeUsage": report.get("knowledgeUsage"),
         "detourCount": len(detours),
@@ -213,6 +229,7 @@ def write_pending_package(config: EVConfig, session_name: str, run_name: str, wo
         "workflow": str(pending_dir / "workflow.proposed.json"),
         "review": str(pending_dir / "workflow-review.md"),
         "evidence": str(pending_dir / "evidence-index.json"),
+        "flowSummary": evidence["flowSummary"],
         "detours": str(pending_dir / "detours.json") if detours else None,
         "detourCount": len(detours),
     }

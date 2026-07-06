@@ -2,6 +2,14 @@
 
 ## 2026-07-03
 
+### Stage 7: electron-ui-verifier 渐进式复用和流程确认
+
+- 新增 `Progressive Reuse Gate`，完整目标没有直达命中时继续拆解入口、页面、前置步骤和目标断言检索知识库。
+- `ev_suggest.py` 输出 `progressivePlan`，展示子目标命中、可复用资产和降级探索原因。
+- pending 审核包增加步骤链路摘要，最终回复可直接复述本次正确路径并等待用户确认后再入库。
+- Commit: current commit
+- Commit message: `feat(electron-ui-verifier): 增强渐进式复用确认流程`
+
 ### Stage 6: electron-ui-verifier 资产复用优先门禁
 
 - 新增 `Reuse Gate` 规则，命中可执行 workflow/action asset 或已批准 workflow 时优先原地复用。

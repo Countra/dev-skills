@@ -133,6 +133,15 @@ def run_smoke(root: Path) -> dict[str, Any]:
     proposed = validate_proposed_workflow(Path(pending["workflow"]))
     if len(proposed.get("steps", [])) != 2:
         raise AssertionError("detour steps were not removed from proposed workflow")
+    flow = pending.get("flowSummary") or {}
+    if "扫描结果" not in str(flow.get("text")) or "设置" in str(flow.get("text")):
+        raise AssertionError("flow summary did not describe only the cleaned correct path")
+    evidence = Path(pending["evidence"]).read_text(encoding="utf-8")
+    if "flowSummary" not in evidence:
+        raise AssertionError("evidence-index.json did not include flow summary")
+    review = Path(pending["review"]).read_text(encoding="utf-8")
+    if "## 步骤链路" not in review:
+        raise AssertionError("workflow-review.md did not include flow summary section")
     bad_pending = Path(pending["path"]) / "bad"
     bad_pending.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(Path(pending["workflow"]), bad_pending / "workflow.proposed.json")

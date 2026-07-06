@@ -1052,6 +1052,11 @@ def write_summary(path: Path, report: dict[str, Any]) -> None:
     ]
     if report.get("pendingPackagePath"):
         lines.append(f"- Pending package: {report['pendingPackagePath']}")
+    pending_package = report.get("pendingPackage")
+    if isinstance(pending_package, dict):
+        flow = pending_package.get("flowSummary")
+        if isinstance(flow, dict) and flow.get("text"):
+            lines.append(f"- Flow: {flow['text']}")
     if report.get("workflowPath"):
         lines.append(f"- Workflow: {report['workflowPath']}")
     if report.get("knowledgePreflight"):
