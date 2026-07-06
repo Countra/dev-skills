@@ -1,5 +1,43 @@
 # 执行计划（Execution Plan）
 
+## 执行控制快照（Execution Control Snapshot）
+
+执行模式（Execution mode）:
+
+- planning-only / run-to-completion / stage-only
+
+整体任务状态（Overall status）:
+
+- awaiting_plan_approval / approved / in_progress / blocked / completed
+
+当前阶段（Current stage）:
+
+-
+
+已完成阶段（Completed stages）:
+
+-
+
+剩余阶段（Remaining stages）:
+
+-
+
+下一步自动动作（Next automatic action）:
+
+-
+
+当前停止条件（Current stop condition）:
+
+- none
+
+状态来源（State source of truth）:
+
+- execution-plan.md
+
+执行方（Executor）:
+
+- 实施阶段使用 `complex-coding-executor`；规划阶段不得直接实现。
+
 ## 问题定义（Problem）
 
 目标（Goal）:

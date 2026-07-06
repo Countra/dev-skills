@@ -1,15 +1,15 @@
 {
-  "task_id": "2026-07-03-feature-electron-ui-verifier-progressive-reuse-confirmation-flow",
-  "task_dir": ".harness/tasks/2026-07-03/feature/electron-ui-verifier-progressive-reuse-confirmation-flow",
-  "title": "Electron UI verifier 渐进式复用和确认持久化流程",
+  "task_id": "2026-07-06-feature-complex-coding-planner-executor-split",
+  "task_dir": ".harness/tasks/2026-07-06/feature/complex-coding-planner-executor-split",
+  "title": "拆分 complex-coding-harness 为 planner 和 executor",
   "status": "complete",
   "execution_mode": "run-to-completion",
-  "overall_status": "complete",
+  "overall_status": "completed",
   "current_stage": "Final delivery",
   "remaining_stages": [],
   "next_action": "final delivery",
-  "next_automatic_action": "none",
+  "next_automatic_action": "final delivery",
   "stop_condition": "all approved stages completed",
   "state_source": "execution-plan.md",
-  "updated_at": "2026-07-03"
+  "updated_at": "2026-07-06"
 }

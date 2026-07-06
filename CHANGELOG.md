@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-06
+
+### Stage 43: complex coding planner/executor 拆分
+
+- 将 `complex-coding-harness` 拆分为规划专用 `complex-coding-planner` 和执行专用 `complex-coding-executor`，让方案制定和实现阶段职责分离。
+- 新增 planner/executor 状态检查脚本，覆盖方案结构、未批准执行、open 决策、阶段转移和最终交付阻断。
+- 拆分 eval fixture，并更新 planner 的执行计划模板，加入靠前的 `Execution Control Snapshot`。
+- Commit: current commit
+- Commit message: `feat(complex-coding): 拆分 planner 和 executor`
+
 ## 2026-07-03
 
 ### Stage 7: electron-ui-verifier 渐进式复用和流程确认

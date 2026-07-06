@@ -1,0 +1,19 @@
+direct-small-fix:
+  classification: direct
+  creates_task_state: false
+managed-plan-approval:
+  classification: managed
+  requires_execution_plan: true
+  waits_for_user_approval: true
+needs-clarification-env:
+  classification: needs-clarification
+  stops_for_user_input: true
+weak-plan-rejected:
+  requires_plan_quality_gate: true
+  does_not_enter_implementation: true
+plan-self-review-detects-missing-environment:
+  requires_plan_self_review: true
+  fixes_missing_environment_before_readiness: true
+approval-does-not-authorize-commit:
+  records_commit_authorization: true
+  implementation_approval_is_not_commit_authorization: true

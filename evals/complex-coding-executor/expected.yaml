@@ -1,0 +1,20 @@
+unapproved-plan-blocked:
+  blocks_execution: true
+  asks_for_planner_approval: true
+open-decision-blocked:
+  blocks_execution: true
+  requires_decision_resolution: true
+stage-boundary-continue:
+  requires_stage_transition_gate: true
+  continues_next_stage: true
+validation-failure-loop:
+  blocks_commit_on_failed_validation: true
+  requires_fix_and_rerun: true
+process-manager-required-dev-server:
+  requires_process_manager: true
+  rejects_shell_background_start: true
+git-commands-serial-same-repo:
+  serializes_git_commands: true
+commit-message-file-required:
+  uses_commit_message_file: true
+  rejects_multiple_m_flags_for_bullets: true
