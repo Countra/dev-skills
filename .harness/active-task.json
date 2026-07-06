@@ -1,24 +1,15 @@
 {
-  "task_id": "2026-06-26-feature-complex-coding-harness-git-serial-index-lock",
-  "task_dir": ".harness/tasks/2026-06-26/feature/complex-coding-harness-git-serial-index-lock",
-  "title": "complex-coding-harness Git 串行和 index.lock 恢复规则",
-  "status": "completed",
+  "task_id": "2026-07-03-feature-electron-ui-verifier-progressive-reuse-confirmation-flow",
+  "task_dir": ".harness/tasks/2026-07-03/feature/electron-ui-verifier-progressive-reuse-confirmation-flow",
+  "title": "Electron UI verifier 渐进式复用和确认持久化流程",
+  "status": "complete",
   "execution_mode": "run-to-completion",
-  "overall_status": "completed",
-  "current_stage": "Final Delivery",
+  "overall_status": "complete",
+  "current_stage": "Final delivery",
   "remaining_stages": [],
-  "next_action": "任务完成；等待用户验收或后续使用反馈",
+  "next_action": "final delivery",
   "next_automatic_action": "none",
-  "stop_condition": "all_approved_stages_completed",
+  "stop_condition": "all approved stages completed",
   "state_source": "execution-plan.md",
-  "planning_review": {
-    "status": "pass",
-    "defects": "fixed",
-    "missing_items": "fixed",
-    "optimizations": "fixed",
-    "consistency": "fixed",
-    "latest_review": "已复查并优化 Git 串行方案，补充旧命令示例同步、最终普通 status 场景、未知 Git 进程禁止删锁等风险处理",
-    "updated_at": "2026-06-26"
-  },
-  "updated_at": "2026-06-26"
+  "updated_at": "2026-07-03"
 }

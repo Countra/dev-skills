@@ -1,0 +1,4 @@
+# electron-ui-verifier verifier server 必需依赖。
+# 用户可使用目标 Python 解释器执行：
+# python -m pip install -r requirements.txt
+playwright>=1.40.0

@@ -1,0 +1,29 @@
+{
+  "learn": {
+    "appId": "videoForensic",
+    "notes": "示例 workflow 执行后沉淀候选知识"
+  },
+  "readiness": [
+    {
+      "waitText": "历史记录",
+      "timeoutMs": 30000
+    }
+  ],
+  "steps": [
+    {
+      "id": "home-snapshot",
+      "snapshot": true
+    },
+    {
+      "id": "open-first-case",
+      "clickText": {
+        "text": "查看",
+        "index": 0
+      }
+    },
+    {
+      "id": "result-snapshot",
+      "snapshot": true
+    }
+  ]
+}

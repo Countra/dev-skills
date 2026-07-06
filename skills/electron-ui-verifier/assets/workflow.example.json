@@ -1,0 +1,24 @@
+{
+  "readiness": [
+    {
+      "waitText": "案件",
+      "timeoutMs": 30000
+    }
+  ],
+  "steps": [
+    {
+      "id": "home-snapshot",
+      "snapshot": true
+    },
+    {
+      "id": "home-screenshot",
+      "screenshot": "home.png"
+    },
+    {
+      "id": "visible-text",
+      "extractText": {
+        "name": "visibleText"
+      }
+    }
+  ]
+}

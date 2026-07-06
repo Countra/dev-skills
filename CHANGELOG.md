@@ -1,5 +1,187 @@
 # Changelog
 
+## 2026-07-03
+
+### Stage 7: electron-ui-verifier 渐进式复用和流程确认
+
+- 新增 `Progressive Reuse Gate`，完整目标没有直达命中时继续拆解入口、页面、前置步骤和目标断言检索知识库。
+- `ev_suggest.py` 输出 `progressivePlan`，展示子目标命中、可复用资产和降级探索原因。
+- pending 审核包增加步骤链路摘要，最终回复可直接复述本次正确路径并等待用户确认后再入库。
+- Commit: current commit
+- Commit message: `feat(electron-ui-verifier): 增强渐进式复用确认流程`
+
+### Stage 6: electron-ui-verifier 资产复用优先门禁
+
+- 新增 `Reuse Gate` 规则，命中可执行 workflow/action asset 或已批准 workflow 时优先原地复用。
+- `ev_action.py` 和 `ev_workflow.py` 支持 `--action-id` / `--workflow-id`，自动记录资产来源和 `knowledgeUsage`。
+- 增强 `ev_assets.py`、`ev_suggest.py` 的直接复用提示，并新增 asset reuse smoke 覆盖复用链路。
+- Commit: `17d46fa`
+- Commit message: `feat(electron-ui-verifier): 完善确认持久化和资产复用流程`
+
+## 2026-07-02
+
+### Stage 5: electron-ui-verifier 持久化确认门禁
+
+- 默认验证结果改为生成 pending 审核包，用户确认前不写正式 workflow、不写知识库。
+- 新增 detour 清洗和 approve guard，确保错误页面、无关点击和恢复步骤不会进入可持久化 workflow。
+- 新增 `ev_persist.py` 和 pending smoke，覆盖用户确认后 workflow 晋级、知识库写入、资产写入和 detour 拒绝入库。
+- Commit: pending
+- Commit message: pending
+
+### Stage 5: electron-ui-verifier 资产学习文档收口
+
+- `ev_action.py`、`ev_workflow.py` 和 server learn hook 增加显式 `--learn-assets` / `includeAssets` 资产学习入口。
+- 更新 `SKILL.md`、server、workflow、actions 和 knowledge 文档，明确默认学习与资产学习边界。
+- 完成 full py_compile、示例 JSON 解析、离线 includeAssets 写入和 process-manager server health smoke。
+- Commit: `8fdd80c`
+- Commit message: `feat(electron-ui-verifier): 接入资产学习入口`
+
+### Stage 4: electron-ui-verifier workflow 导出
+
+- 新增 `ev_export_workflow.py`，支持从 workflow asset 或 report 导出标准 workflow JSON。
+- 导出默认拒绝覆盖、默认不写本机 evidence 路径，并记录 workflow export 元数据。
+- 新增 `exported-asset.workflow.example.json`，展示可分享 workflow metadata 和参数占位。
+- Commit: `2917010`
+- Commit message: `feat(electron-ui-verifier): 增加 workflow 导出`
+
+### Stage 3: electron-ui-verifier 资产检索和建议
+
+- `ev_assets.py` 支持按 app、screen、kind、status 和 goal 过滤 action/workflow 资产。
+- `ev_suggest.py` 输出 workflow、action 和组合候选，并明确候选必须复验。
+- 补充 cleanup dry-run/apply smoke，确认不会删除 candidate/verified/stable 资产。
+- Commit: `e2d6ab9`
+- Commit message: `feat(electron-ui-verifier): 增强资产建议检索`
+
+### Stage 2: electron-ui-verifier report 资产整理
+
+- 新增 `ev_asset_extract.py`，从 verifier report 保守生成 action/workflow 资产候选。
+- `ev_learn.py` 增加显式 `--include-assets`，默认 learn 不再隐式写入 workflow 资产。
+- 新增 `ev_asset_extract_smoke.py`，覆盖失败步骤过滤、evaluate 不反推、坐标风险、路径参数化和真实写入。
+- Commit: `424e78c`
+- Commit message: `feat(electron-ui-verifier): 增加 report 资产抽取`
+
+### Stage 1: electron-ui-verifier action/workflow 资产 schema
+
+- 将知识库升级为新 schema，新增 `action_assets`、`workflow_assets`、`asset_evidences` 和 `workflow_exports`。
+- 明确旧 knowledge DB 不自动迁移，新增显式 reset/rebuild 路径并验证旧 schema 默认拒绝。
+- 新增 `ev_assets.py` 资产 CLI，补充资产去重、cleanup dry-run/apply 和存储层 smoke 覆盖。
+- Commit: `09d5ac2`
+- Commit message: `feat(electron-ui-verifier): 重建知识库资产 schema`
+
+## 2026-07-01
+
+### Stage 5: electron-ui-verifier 知识库文档和最终验证
+
+- 新增 `references/knowledge.md`，说明知识库学习、查询、建议、提升、清理和安全边界。
+- 更新 `SKILL.md`、server、workflow 和 actions 文档，明确默认不自动学习，建议不能替代真实 UI 验证。
+- 新增 `knowledge.workflow.example.json`，并完成全部 `ev_*.py` 编译、示例 JSON 解析和 VideoForensic 知识建议 smoke。
+- Commit: `766df01`
+- Commit message: `docs(electron-ui-verifier): 完成知识库使用文档`
+
+### Stage 4: electron-ui-verifier server/workflow 知识集成
+
+- 为 `ev_action.py` 和 `ev_workflow.py` 增加显式 `--learn` 参数，默认保持旧行为不写知识库。
+- 在 server report 落盘后接入可选学习流程，并把知识摘要写回 report 的 `knowledge` 字段。
+- 使用 process-manager 启动 verifier server 完成 readiness 和 health smoke，验证后已停止服务。
+- Commit: `ff4ded9`
+- Commit message: `feat(electron-ui-verifier): 集成知识学习流程`
+
+### Stage 3: electron-ui-verifier 知识查询和建议入口
+
+- 新增 `ev_knowledge.py`，支持知识库 meta、列表、单项读取、搜索和 cleanup。
+- 新增 `ev_suggest.py`，支持按目标生成候选 workflow、元素和 current report 临时上下文。
+- 新增 `ev_promote.py`，要求 evidence 或用户确认后才允许提升到 verified/stable。
+- Commit: `3df22a0`
+- Commit message: `feat(electron-ui-verifier): 增加知识查询和建议入口`
+
+### Stage 2: electron-ui-verifier report 学习入口
+
+- 新增 report 知识抽取模块，支持从 snapshot/evaluate artifact 生成 app、screen、element、workflow 和 evidence 候选。
+- 新增 `ev_learn.py`，支持 report dry-run、真实写入、session latest report 解析和 appId 覆盖。
+- 使用 VideoForensic 首页和结果页 report 验证离线学习流程，确认可抽取页面、工具入口和打开案件候选 workflow。
+- Commit: `83f4788`
+- Commit message: `feat(electron-ui-verifier): 增加 report 学习入口`
+
+### Stage 1: electron-ui-verifier 知识库存储层
+
+- 新增本地知识库存储模块，支持 SQLite schema、manifest、应用/页面/元素/workflow/evidence 写入和查询。
+- 增加 FTS5 探测和 LIKE 降级，避免本地环境不支持 FTS 或查询语法异常时中断。
+- 新增知识库 smoke 脚本，使用 ignored runtime 目录验证 schema、写入、搜索和清理。
+- Commit: `7ae901e`
+- Commit message: `feat(electron-ui-verifier): 增加知识库存储层`
+
+### Stage 9: electron-ui-verifier 最终审查收口
+
+- 完成最终审查，确认旧 `electron_verify.py` 入口无残留引用，全部 `ev_*.py` 编译通过。
+- 停止验证期间启动的 `electron-ui-verifier` process-manager 服务，避免留下后台进程。
+- 回填 harness 执行计划和 active task 的完成状态。
+- Commit: pending
+- Commit message: `docs(harness): 完成 electron verifier 重构收口`
+
+### Stage 8: electron-ui-verifier 端到端验证
+
+- 使用临时 mock CDP 服务完成 probe、attach、snapshot、workflow、report 和 detach 端到端验证。
+- 完成 verifier server readiness、`ev_doctor.py`、全部 `ev_*.py` 编译、示例 JSON 解析和旧入口引用搜索。
+- 尝试 VideoForensic 真实 smoke 时 `http://127.0.0.1:9223/json/version` 返回 503，真实应用 endpoint 当前不可用。
+- Commit: `fa4606f`
+- Commit message: `test(electron-ui-verifier): 完成 server 验证`
+
+### Stage 7: electron-ui-verifier 文档 server-only 收口
+
+- 重写 `SKILL.md` 为 server-only 必须流程，明确 verifier server 由 process-manager 管理，Electron GUI 本体不托管。
+- 新增 `references/server.md`，并更新 workflow、actions、troubleshooting 和示例 workflow。
+- 删除 `ev_server.py` 中旧 standalone one-shot 逻辑，搜索确认不再引用 `electron_verify.py`。
+- Commit: `948b42a`
+- Commit message: `docs(electron-ui-verifier): 收口 server-only 文档`
+
+### Stage 6: electron-ui-verifier 报告和诊断收口
+
+- 新增 `ev_artifact.py` 和 `ev_doctor.py`，补齐 artifact 元数据查询和本机配置诊断入口。
+- 增强 `ev_report.py`，支持读取最新 session 报告或 stateRoot 下指定报告。
+- server 限制 report/artifact 读取范围必须位于 verifier stateRoot，避免任意文件读取。
+- Commit: `e4961d5`
+- Commit message: `feat(electron-ui-verifier): 补齐报告和诊断入口`
+
+### Stage 5: electron-ui-verifier workflow server 化
+
+- 新增 `ev_workflow.py`，支持在已有 session 内执行 workflow JSON 文件或 JSON 字符串。
+- server `/workflows/run` 统一执行 readiness 和 steps，并补充 workflow 条目类型校验。
+- 验证 workflow 缺失 session 错误路径，确保失败不会被 shell 误判为成功。
+- Commit: `39e0394`
+- Commit message: `feat(electron-ui-verifier): 增加 workflow 客户端入口`
+
+### Stage 4: electron-ui-verifier action server 化
+
+- 新增 `ev_action.py`，支持在已有 session 内执行单个 action JSON 文件或 JSON 字符串。
+- 新增 snapshot、screenshot、console、exceptions、network 和 report 快捷入口，均通过 verifier server API 执行。
+- 修复 Windows UTF-8 BOM JSON 文件读取兼容性，避免 PowerShell 生成的 JSON 文件解析失败。
+- Commit: `9978beb`
+- Commit message: `feat(electron-ui-verifier): 增加 action 客户端入口`
+
+### Stage 3: electron-ui-verifier session 和 target 管理
+
+- 新增 `ev_probe.py`、`ev_attach.py`、`ev_detach.py` 和 `ev_sessions.py`，通过 server API 管理 CDP target 与 session。
+- 补充 `/sessions/status`，支持列出 session、检查连接状态和断开 session。
+- 统一 `ev_*` 客户端退出码，server 返回 `ok: false` 时不再被 shell 误判为成功。
+- Commit: `250c844`
+- Commit message: `feat(electron-ui-verifier): 增加 session 管理脚本`
+
+### Stage 2: electron-ui-verifier server 基础设施
+
+- 新增 verifier server 基础设施，包含本机环境文件、config/token/runtime 生成、server `/health` 和 token 客户端。
+- 将旧 `electron_verify.py` 移动为 `ev_server.py`，删除旧 one-shot 文件入口，后续只通过 server 和 `ev_*` 脚本调用。
+- 生成 process-manager service，并使用 `EV_READY` log readiness 适配端口重试后的真实 health URL。
+- Commit: `4c5a468`
+- Commit message: `feat(electron-ui-verifier): 建立 server 基础设施`
+
+### Stage 7-8: electron-ui-verifier VideoForensic 真实验证
+
+- 使用 `D:\VideoForensic\VideoForensic.exe` 完成 CDP probe、首页快照、首个案件点击和结果页文本/表格抽取验证。
+- 修复 `clickText` 候选排序，优先点击精确文本和更小元素，避免命中包含目标文本的大容器。
+- 修复 `continueOnFailure` 语义，可选截图失败记录为 `skipped/notCovered`，不再误判核心 workflow 失败。
+- Commit: `e6850ab`
+- Commit message: `fix(electron-ui-verifier): 稳定 VideoForensic 验证流程`
+
 ## 2026-06-26
 
 ### Stage 42: complex-coding-harness Git 串行和 index.lock 恢复规则
