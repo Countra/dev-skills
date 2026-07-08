@@ -1,5 +1,93 @@
 # 执行计划（Execution Plan）
 
+## 执行控制快照（Execution Control Snapshot）
+
+执行模式（Execution mode）:
+
+- planning-only / run-to-completion / stage-only
+
+整体任务状态（Overall status）:
+
+- awaiting_plan_approval / approved / in_progress / blocked / completed
+
+当前阶段（Current stage）:
+
+-
+
+已完成阶段（Completed stages）:
+
+-
+
+剩余阶段（Remaining stages）:
+
+-
+
+下一步自动动作（Next automatic action）:
+
+-
+
+当前停止条件（Current stop condition）:
+
+- none
+
+状态来源（State source of truth）:
+
+- execution-plan.md
+
+执行方（Executor）:
+
+- 实施阶段使用 `complex-coding-executor`；规划阶段不得直接实现。
+
+## 执行契约（Execution Contract）
+
+```json
+{
+  "contract_version": 1,
+  "task_id": "",
+  "execution_mode": "planning-only",
+  "overall_status": "awaiting_plan_approval",
+  "approval_status": "not_requested",
+  "approved_contract_hash": "external:attestation.json",
+  "current_stage_id": "Planning",
+  "remaining_stage_ids": [],
+  "stop_condition": "awaiting user plan approval",
+  "commit_authorization": "not_authorized",
+  "ledger_policy": "append-only-after-approval",
+  "single_writer": "current executor session",
+  "reapproval_required": false
+}
+```
+
+契约规则（Contract rules）:
+
+- 本节是 executor 可读的机器字段；`Execution Control Snapshot` 和 `Execution Control` 用于人类恢复和审计。
+- `approved_contract_hash` 默认引用外部 `attestation.json`，避免把完整 plan hash 写入 plan 后造成自指哈希漂移。
+- 修改 approved scope、stage 边界、验证策略、风险等级、工具授权或提交策略时，必须进入 `Plan Amendment Gate`。
+
+## 目标条件（Goal Condition）
+
+- 所有 approved stages 均为 complete。
+- `harness_exec_check.py --mode final` 或等价最终门禁通过。
+- 无 open blocking decision、无未关闭 blocking/major review finding。
+- 必需验证已执行，或无法执行项已记录原因、影响和替代证据。
+- 提交授权状态明确；未授权时不得提交，但必须记录原因。
+
+## 规划循环协议（Planning Loop Protocol）
+
+- managed 计划默认拆为 3-7 个可独立验证阶段；更多阶段必须说明原因。
+- 调研、浏览、搜索或查看多个来源后，关键 findings 必须写入 `Context`、`Reference Learning Matrix` 或 artifacts。
+- 重大决策前重读目标、约束、Options、Decision、影响面和 reapproval triggers。
+- rejected options 必须记录放弃原因，避免上下文压缩后重复走回头路。
+- Readiness 前必须重新运行 `Plan Quality Gate`、`Plan Self-Review` 和 `Readiness Gate`。
+
+## 执行循环协议（Executor Work Loop）
+
+- 每个阶段开始先读取 `Execution Contract`、`Resume Packet`、Stage Contract 和上一阶段 findings。
+- 每次阶段动作后更新 ledger/progress；没有实质进展但需要保持长任务循环时写 heartbeat。
+- 失败动作必须记录 attempt、命令或工具、失败原因、影响和下一策略；不得静默重复同一失败动作。
+- Stage Transition Gate 通过且仍有 pending stage 时，下一动作必须是 `continue Stage N`。
+- 只有满足 `Goal Condition` 后才能进入最终交付。
+
 ## 问题定义（Problem）
 
 目标（Goal）:
@@ -11,6 +99,90 @@
 约束（Constraints）:
 
 待确认项（Open uncertainties）:
+
+## 调研门禁（Research Gate）
+
+研究模式（Research mode）:
+
+- none / local-only / online-required / blocked-by-access
+
+触发原因（Why this mode）:
+
+-
+
+不确定项清单（Uncertainty inventory）:
+
+| ID | 问题（Question） | 类型（Type） | 是否需要在线搜索（Online required） | 处理结果（Resolution） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- |
+|  | local-code / local-doc / external-tool / external-service / high-risk / user-decision | yes/no |  |  |
+
+搜索记录（Search log）:
+
+| 查询/来源（Query/source） | 工具（Tool） | 日期（Date） | 结果（Result） | 后续动作（Next action） |
+| --- | --- | --- | --- | --- |
+|  |  |  |  |  |
+
+来源矩阵（Source matrix）:
+
+| 结论（Claim） | 来源类型（Source type） | URL/路径（URL/path） | 是否官方/一手（Official/primary） | 访问日期（Accessed） | 可信度（Confidence） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- | --- |
+|  | local / official / primary / external / assumption |  | yes/no |  | high/medium/low |  |
+
+调研结论（Research result）:
+
+- `pending`
+
+## 规范发现门禁（Standards Discovery Gate）
+
+发现模式（Discovery mode）:
+
+- none / local-only / online-required / blocked-by-access
+
+技术栈清单（Technology inventory）:
+
+| 类型（Type） | 发现（Finding） | 来源（Source） | 影响（Impact） |
+| --- | --- | --- | --- |
+| 语言（Language） |  |  |  |
+| 框架（Framework） |  |  |  |
+| API/架构类型（API/architecture） |  |  |  |
+| 工具链（Toolchain） |  |  |  |
+
+规范来源矩阵（Standards source matrix）:
+
+| 规范来源（Standard source） | 类型（Type） | 官方/一手（Official/primary） | 适用边界（Applicability） | 访问日期（Accessed） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- |
+|  | project / language / framework / API / architecture / pattern / security / other | yes/no |  |  |  |
+
+standards index:
+
+- 路径或章节（Path/section）:
+- 摘要（Summary）:
+- 未覆盖或 blocked-by-access（Not covered / blocked）:
+
+规范发现结论（Standards result）:
+
+- `pending`
+
+## 开发质量门禁（Development Quality Gate）
+
+质量范围（Quality scope）:
+
+| 维度（Dimension） | 规划结论（Plan） | 阶段映射（Stage mapping） | 验证映射（Validation mapping） |
+| --- | --- | --- | --- |
+| 代码标准（Code standards） |  |  |  |
+| 静态质量（Static quality） |  |  |  |
+| 架构边界（Architecture boundaries） |  |  |  |
+| 设计模式取舍（Design pattern decision） |  |  |  |
+| 低耦合（Low coupling） |  |  |  |
+| 高内聚（High cohesion） |  |  |  |
+
+过度设计防护（Overengineering guard）:
+
+-
+
+开发质量结论（Development quality result）:
+
+- `pending`
 
 ## 上下文（Context）
 
@@ -83,6 +255,8 @@
 | 兼容性（Compatibility） | yes/no |  |  |  |  |
 | 测试（Tests） | yes/no |  |  |  |  |
 | 文档（Documentation） | yes/no |  |  |  |  |
+| 代码标准（Code standards） | yes/no |  |  |  |  |
+| 架构设计（Architecture/design） | yes/no |  |  |  |  |
 
 ## 实施计划（Implementation Plan）
 
@@ -110,6 +284,14 @@
 
 - 
 
+适用规范（Standards applied）:
+
+-
+
+开发质量检查（Development quality checks）:
+
+-
+
 验证（Validation）:
 
 - 
@@ -125,6 +307,8 @@
 - 禁止修改（Forbidden changes）:
 - 进入条件（Entry checks）:
 - 退出条件（Exit checks）:
+- 适用规范（Standards applied）:
+- 开发质量检查（Development quality checks）:
 - 必需验证（Required validation）:
 - 是否预期提交（Commit expected）:
 
@@ -364,6 +548,9 @@ patch 失败处理（Patch failure handling）:
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
 | 关键判断有证据等级（Evidence levels assigned） | pending |  |
+| Research Gate 已完成（Research Gate complete） | pending |  |
+| Standards Discovery Gate 已完成（Standards discovery complete） | pending |  |
+| Development Quality Gate 已完成（Development quality complete） | pending |  |
 | 影响面矩阵完整（Impact matrix complete） | pending |  |
 | 候选方案比较充分（Options compared enough） | pending |  |
 | 每阶段可独立验证（Stages independently verifiable） | pending |  |
@@ -387,6 +574,7 @@ patch 失败处理（Patch failure handling）:
 | 缺失项（Missing items） |  |  | pending |
 | 风险（Risks） |  |  | pending |
 | 一致性（Consistency） |  |  | pending |
+| 开发质量（Development quality） |  |  | pending |
 
 门禁重跑（Gate rerun）:
 
@@ -401,6 +589,9 @@ patch 失败处理（Patch failure handling）:
 | --- | --- | --- |
 | 目标和验收清楚（Goal and acceptance clear） | pending |  |
 | 上下文已收集（Context collected） | pending |  |
+| 调研门禁已通过（Research Gate passed） | pending |  |
+| 规范发现门禁已通过（Standards Discovery Gate passed） | pending |  |
+| 开发质量门禁已通过（Development Quality Gate passed） | pending |  |
 | 候选方案已比较（Options compared） | pending |  |
 | 决策已记录（Decision recorded） | pending |  |
 | 实施阶段已细化（Implementation stages detailed） | pending |  |
@@ -438,6 +629,22 @@ patch 失败处理（Patch failure handling）:
 提交策略（Commit policy）:
 
 - `not_authorized`
+
+## 方案变更门禁（Plan Amendment Gate）
+
+需要重新批准（Requires reapproval）:
+
+- approved scope 改变:
+- 阶段边界、顺序或 Stage Contract 改变:
+- 必需验证、工具授权、长期进程策略或提交策略改变:
+- 风险等级、公共接口、数据结构、权限、依赖或兼容性假设改变:
+- attestation mismatch 且无法证明是预期文档更新:
+
+无需重新批准的记录（No-reapproval records）:
+
+| 时间（Time） | 变更（Change） | 原因（Reason） | 证据（Evidence） |
+| --- | --- | --- | --- |
+|  |  |  |  |
 
 ## 执行控制（Execution Control）
 
@@ -503,6 +710,26 @@ active-task 同步字段（active-task sync fields）:
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
+## Ledger Evidence
+
+Ledger policy:
+
+- append-only-after-approval
+
+Ledger 文件（Ledger file）:
+
+- `.harness/tasks/<date>/<type>/<task-slug>/ledger.jsonl`
+
+Ledger 摘要（Ledger summary）:
+
+| 字段（Field） | 值（Value） |
+| --- | --- |
+| entries |  |
+| stages_completed |  |
+| current_stage |  |
+| last_blocking_reason |  |
+| last_heartbeat |  |
+
 ## 阶段进入门禁（Stage Entry Gate）
 
 | 阶段（Stage） | 当前分支/工作区（Git/worktree） | 上阶段遗留（Previous findings） | 环境和工具（Environment/tooling） | 长期进程门禁（Process manager gate） | 范围匹配（Scope match） | 结论（Result） |
@@ -533,11 +760,28 @@ active-task 同步字段（active-task sync fields）:
 
 ## 代码审查（Code Review）
 
-| 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
-| --- | --- | --- | --- |
-|  |  | blocking / major / minor / follow-up |  |
+| 阶段（Stage） | 质量维度（Quality dimension） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
+| --- | --- | --- | --- | --- |
+|  | standards / static quality / architecture / pattern / coupling / cohesion / validation |  | blocking / major / minor / follow-up |  |
 
 ## 恢复摘要（Resume Summary）
+
+Resume Packet:
+
+```json
+{
+  "task_id": "",
+  "execution_mode": "",
+  "overall_status": "",
+  "current_stage": "",
+  "remaining_stages": [],
+  "next_automatic_action": "",
+  "stop_condition": "",
+  "ledger_entries": 0,
+  "last_blocking_reason": "",
+  "attestation_status": "not_checked"
+}
+```
 
 - 整体目标（Overall goal）:
 - 执行模式（Execution mode）:

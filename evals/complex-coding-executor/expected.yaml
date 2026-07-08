@@ -1,0 +1,60 @@
+unapproved-plan-blocked:
+  blocks_execution: true
+  asks_for_planner_approval: true
+open-decision-blocked:
+  blocks_execution: true
+  requires_decision_resolution: true
+stage-boundary-continue:
+  requires_stage_transition_gate: true
+  continues_next_stage: true
+validation-failure-loop:
+  blocks_commit_on_failed_validation: true
+  requires_fix_and_rerun: true
+process-manager-required-dev-server:
+  requires_process_manager: true
+  rejects_shell_background_start: true
+git-commands-serial-same-repo:
+  serializes_git_commands: true
+commit-message-file-required:
+  uses_commit_message_file: true
+  rejects_multiple_m_flags_for_bullets: true
+resolver-path-escape-blocked:
+  blocks_execution: true
+  requires_workspace_containment: true
+harness-disabled-optout:
+  skips_active_task_consumption: true
+  does_not_update_harness_state: true
+status-summary-reports-state:
+  reports_current_stage: true
+  reports_remaining_count: true
+  reports_ledger_and_attestation_status: true
+loop-tick-continues-unfinished-stage:
+  requires_loop_tick: true
+  continues_next_stage: true
+  blocks_final_delivery_with_remaining_stages: true
+final-without-ledger-evidence-blocked:
+  blocks_final_delivery: true
+  requires_stage_completed_ledger_evidence: true
+repeated-failure-requires-new-strategy:
+  records_attempt_failure_and_impact: true
+  requires_new_strategy_before_third_retry: true
+topic-handoff-long-subtopic:
+  writes_topic_handoff: true
+  indexes_handoff_in_progress: true
+research-drift-enters-amendment:
+  requires_research_drift_gate: true
+  records_source_and_impact: true
+  writes_ledger_event: true
+  enters_plan_amendment_when_scope_or_validation_changes: true
+development-quality-check-uses-standards-index:
+  reads_standards_index: true
+  performs_development_quality_check: true
+  covers_static_quality_architecture_patterns_coupling_and_cohesion: true
+architecture-drift-blocks-transition:
+  records_architecture_review_finding: true
+  blocks_stage_transition: true
+  enters_plan_amendment_when_scope_changes: true
+final-missing-development-quality-evidence-blocked:
+  blocks_final_delivery: true
+  requires_standards_index_reference: true
+  requires_development_quality_evidence: true

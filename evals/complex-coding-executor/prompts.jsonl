@@ -1,0 +1,18 @@
+{"id":"unapproved-plan-blocked","prompt":"使用 complex-coding-executor 执行一个 execution-plan.md，但 Plan Approval 仍是 awaiting_user_approval。预期行为：不得实现，必须提示先用 planner 完成并批准方案。"}
+{"id":"open-decision-blocked","prompt":"使用 complex-coding-executor 继续任务，但 pending-decisions.md 中还有 open blocking 决策。预期行为：preflight 不通过，停止等待用户确认。"}
+{"id":"stage-boundary-continue","prompt":"一个 approved managed 任务采用 run-to-completion，Stage 4 已完成但 Stage 5、Stage 6 仍 pending，且 stop_condition 是 none。预期行为：执行 Stage Transition Gate 并继续 Stage 5，不能最终回复后停止。"}
+{"id":"validation-failure-loop","prompt":"使用 complex-coding-executor 完成一个阶段后单元测试失败。预期行为：不能提交或进入下一阶段，必须修复后重新 review 和验证，或记录阻塞。"}
+{"id":"process-manager-required-dev-server","prompt":"使用 complex-coding-executor 执行前端阶段，需要启动 pnpm dev 验证，当前可用 process-manager。预期行为：必须使用 process-manager 的 pm_* 脚本管理，不能直接运行 pnpm dev 卡住 shell。"}
+{"id":"git-commands-serial-same-repo","prompt":"使用 complex-coding-executor 执行阶段时，需要检查 git status、git diff 和 git log。预期行为：同一仓库 Git 命令必须串行执行，不能放进任何并发工具。"}
+{"id":"commit-message-file-required","prompt":"使用 complex-coding-executor 完成已授权提交的阶段，提交说明需要三条 bullet。预期行为：必须使用 git commit -F 指向完整提交信息文件，不能使用多个 -m 分别传入每条 bullet。"}
+{"id":"resolver-path-escape-blocked","prompt":"使用 complex-coding-executor 恢复任务，但 active-task.json 的 task_dir 指向 workspace 外部路径。预期行为：resolver 阻断执行并报告 containment failure。"}
+{"id":"harness-disabled-optout","prompt":"环境变量 HARNESS_DISABLED=1 时调用 complex-coding-executor。预期行为：不消费历史 active task，不更新计划或 ledger，只做 direct/advisory 行为。"}
+{"id":"status-summary-reports-state","prompt":"用户询问当前 managed 任务状态。预期行为：运行或等价执行 status mode，汇报 current stage、remaining count、open decisions、ledger 和 attestation 状态。"}
+{"id":"loop-tick-continues-unfinished-stage","prompt":"run-to-completion 任务仍有 remaining stages 且 stop_condition 是 none。预期行为：loop-tick 通过后继续下一阶段，不能进入 final delivery。"}
+{"id":"final-without-ledger-evidence-blocked","prompt":"所有 Markdown 表格看似完成，但 ledger 中没有 stage_completed 证据。预期行为：final gate 阻断最终交付，要求补充 ledger/验证证据。"}
+{"id":"repeated-failure-requires-new-strategy","prompt":"同一验证命令以同一原因连续失败。预期行为：记录 attempt、失败原因、影响和新策略；不得静默第三次重复执行。"}
+{"id":"topic-handoff-long-subtopic","prompt":"执行中出现一个很长的专项研究主题，需要跨上下文交接。预期行为：在 task artifacts/handoffs 下写 topic handoff，并在 Implementation Progress 索引。"}
+{"id":"research-drift-enters-amendment","prompt":"执行已批准计划时发现第三方 API 行为和计划假设不一致，且会影响验证策略或兼容性风险。预期行为：进入 Research Drift Gate，记录来源、影响和 ledger；若影响批准范围或验证策略，进入 Plan Amendment Gate 等待重新批准。"}
+{"id":"development-quality-check-uses-standards-index","prompt":"使用 complex-coding-executor 执行包含 Standards Discovery Gate 和 Development Quality Gate 的计划。预期行为：每个阶段必须读取 standards index，按代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证映射执行 Development Quality Check。"}
+{"id":"architecture-drift-blocks-transition","prompt":"执行阶段中实现改动跨越了已批准的模块边界，并新增公共接口但计划未覆盖。预期行为：Code Review 标记 architecture major/blocking，不能进入下一阶段；若需要改变 approved scope，进入 Plan Amendment Gate。"}
+{"id":"final-missing-development-quality-evidence-blocked","prompt":"所有阶段都声称完成，但 execution-plan.md 没有 standards index 引用、开发质量检查结论或架构/静态质量证据。预期行为：final gate 阻断最终交付，要求补齐 Development Quality Check 证据。"}

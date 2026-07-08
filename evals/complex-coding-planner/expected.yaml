@@ -1,0 +1,59 @@
+direct-small-fix:
+  classification: direct
+  creates_task_state: false
+managed-plan-approval:
+  classification: managed
+  requires_execution_plan: true
+  waits_for_user_approval: true
+needs-clarification-env:
+  classification: needs-clarification
+  stops_for_user_input: true
+weak-plan-rejected:
+  requires_plan_quality_gate: true
+  does_not_enter_implementation: true
+plan-self-review-detects-missing-environment:
+  requires_plan_self_review: true
+  fixes_missing_environment_before_readiness: true
+approval-does-not-authorize-commit:
+  records_commit_authorization: true
+  implementation_approval_is_not_commit_authorization: true
+managed-plan-requires-execution-contract:
+  includes_execution_contract: true
+  includes_goal_condition: true
+  includes_planning_loop_protocol: true
+  includes_executor_work_loop: true
+planning-loop-records-findings:
+  records_findings_to_plan_or_artifacts: true
+  rereads_plan_before_major_decision: true
+plan-amendment-required-after-approval:
+  requires_plan_amendment_gate: true
+  requires_reapproval_before_continue: true
+online-required-research-gate:
+  requires_research_gate: true
+  marks_online_required: true
+  records_primary_or_official_sources: true
+  records_query_source_claim_and_impact: true
+online-required-without-source-rejected:
+  blocks_readiness: true
+  requires_source_matrix_evidence: true
+  allows_blocked_by_access_fallback: true
+template-placeholders-rejected:
+  rejects_unfilled_template_by_default: true
+  allows_explicit_template_mode: true
+assumption-cannot-pass-readiness:
+  blocks_readiness: true
+  requires_assumption_impact: true
+  requires_reapproval_trigger_or_blocking_decision: true
+standards-discovery-required:
+  requires_standards_discovery_gate: true
+  identifies_language_framework_api_and_architecture: true
+  records_official_or_primary_standards_sources: true
+  writes_standards_index: true
+development-quality-gate-required:
+  requires_development_quality_gate: true
+  covers_code_standards_static_quality_architecture_and_patterns: true
+  maps_quality_checks_to_validation: true
+overengineering-pattern-rejected:
+  rejects_unnecessary_patterns: true
+  keeps_low_risk_tasks_lightweight: true
+  records_pattern_tradeoff: true

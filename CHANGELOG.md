@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-07-08
+
+### Stage 1-6: complex coding 开发质量门禁
+
+- `complex-coding-planner` 增加 Standards Discovery Gate 和 Development Quality Gate，要求 managed 计划先收集规范来源，再规划代码标准、静态质量、架构边界和模式取舍。
+- `harness_plan_check.py` 增加规范发现和开发质量章节检查，并在模板模式下允许占位、普通计划下拒绝 pending。
+- `complex-coding-executor` 增加 Development Quality Check，执行期引用 standards index 复核质量证据，并让 final gate 覆盖开发质量证据。
+- 补充 planner/executor eval、README 和 `.harness` 计划记录，覆盖缺少规范发现、过度设计、架构漂移和缺少质量证据的场景。
+- Commit: pending
+- Commit message: pending
+
+### Stage 1-6: planner 不确定问题调研门禁
+
+- `complex-coding-planner` 增加 Research Gate 规则和模板字段，区分 `none`、`local-only`、`online-required` 和 `blocked-by-access`。
+- `harness_plan_check.py` 增加严格检查，默认拒绝空模板、pending gate 和缺少来源证据的在线调研计划。
+- `complex-coding-executor` 增加 Research Drift Gate，执行中发现新外部事实时补证据，必要时进入 Plan Amendment Gate。
+- 补充 planner/executor eval 覆盖调研缺口、模板占位、assumption 和执行期 research drift。
+- Commit: pending
+- Commit message: pending
+
+### Stage 1-8: planning-with-files 机制吸收优化
+
+- `complex-coding-planner` 增加 Execution Contract、Goal Condition、Planning Loop Protocol、Executor Work Loop 和 Plan Amendment Gate 规则，强化长任务规划的可恢复性。
+- `complex-coding-executor` 增加 resolver、attestation、append-only ledger、status、loop-tick 和 final gate 证据检查，降低误恢复、误停止和误最终交付风险。
+- 补充错误恢复、Topic Handoff、Troubleshooting、README/environment 校准、运行产物忽略和 planner/executor eval 覆盖。
+- Commit: pending
+- Commit message: pending
+
+## 2026-07-06
+
+### Stage 43: complex coding planner/executor 拆分
+
+- 将 `complex-coding-harness` 拆分为规划专用 `complex-coding-planner` 和执行专用 `complex-coding-executor`，让方案制定和实现阶段职责分离。
+- 新增 planner/executor 状态检查脚本，覆盖方案结构、未批准执行、open 决策、阶段转移和最终交付阻断。
+- 拆分 eval fixture，并更新 planner 的执行计划模板，加入靠前的 `Execution Control Snapshot`。
+- Commit: current commit
+- Commit message: `feat(complex-coding): 拆分 planner 和 executor`
+
 ## 2026-07-03
 
 ### Stage 7: electron-ui-verifier 渐进式复用和流程确认
