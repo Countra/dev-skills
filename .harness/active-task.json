@@ -1,15 +1,26 @@
 {
-  "task_id": "2026-07-06-feature-complex-coding-planner-executor-split",
-  "task_dir": ".harness/tasks/2026-07-06/feature/complex-coding-planner-executor-split",
-  "title": "拆分 complex-coding-harness 为 planner 和 executor",
-  "status": "complete",
+  "task_id": "2026-07-08-feature-planning-with-files-skill-optimization",
+  "task_dir": ".harness/tasks/2026-07-08/feature/planning-with-files-skill-optimization",
+  "title": "吸收 planning-with-files 优秀机制优化 dev-skills",
+  "status": "completed",
   "execution_mode": "run-to-completion",
   "overall_status": "completed",
-  "current_stage": "Final delivery",
+  "current_stage": "Completed",
+  "completed_stages": [
+    "Planning research and plan drafting",
+    "Stage 1",
+    "Stage 2",
+    "Stage 3",
+    "Stage 4",
+    "Stage 5",
+    "Stage 6",
+    "Stage 7 deferred",
+    "Stage 8"
+  ],
   "remaining_stages": [],
-  "next_action": "final delivery",
-  "next_automatic_action": "final delivery",
-  "stop_condition": "all approved stages completed",
+  "next_action": "none",
+  "next_automatic_action": "none",
+  "stop_condition": "completed",
   "state_source": "execution-plan.md",
-  "updated_at": "2026-07-06"
+  "updated_at": "2026-07-08"
 }

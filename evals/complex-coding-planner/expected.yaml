@@ -17,3 +17,14 @@ plan-self-review-detects-missing-environment:
 approval-does-not-authorize-commit:
   records_commit_authorization: true
   implementation_approval_is_not_commit_authorization: true
+managed-plan-requires-execution-contract:
+  includes_execution_contract: true
+  includes_goal_condition: true
+  includes_planning_loop_protocol: true
+  includes_executor_work_loop: true
+planning-loop-records-findings:
+  records_findings_to_plan_or_artifacts: true
+  rereads_plan_before_major_decision: true
+plan-amendment-required-after-approval:
+  requires_plan_amendment_gate: true
+  requires_reapproval_before_continue: true

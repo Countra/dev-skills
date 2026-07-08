@@ -18,3 +18,26 @@ git-commands-serial-same-repo:
 commit-message-file-required:
   uses_commit_message_file: true
   rejects_multiple_m_flags_for_bullets: true
+resolver-path-escape-blocked:
+  blocks_execution: true
+  requires_workspace_containment: true
+harness-disabled-optout:
+  skips_active_task_consumption: true
+  does_not_update_harness_state: true
+status-summary-reports-state:
+  reports_current_stage: true
+  reports_remaining_count: true
+  reports_ledger_and_attestation_status: true
+loop-tick-continues-unfinished-stage:
+  requires_loop_tick: true
+  continues_next_stage: true
+  blocks_final_delivery_with_remaining_stages: true
+final-without-ledger-evidence-blocked:
+  blocks_final_delivery: true
+  requires_stage_completed_ledger_evidence: true
+repeated-failure-requires-new-strategy:
+  records_attempt_failure_and_impact: true
+  requires_new_strategy_before_third_retry: true
+topic-handoff-long-subtopic:
+  writes_topic_handoff: true
+  indexes_handoff_in_progress: true

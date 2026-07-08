@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-08
+
+### Stage 1-8: planning-with-files 机制吸收优化
+
+- `complex-coding-planner` 增加 Execution Contract、Goal Condition、Planning Loop Protocol、Executor Work Loop 和 Plan Amendment Gate 规则，强化长任务规划的可恢复性。
+- `complex-coding-executor` 增加 resolver、attestation、append-only ledger、status、loop-tick 和 final gate 证据检查，降低误恢复、误停止和误最终交付风险。
+- 补充错误恢复、Topic Handoff、Troubleshooting、README/environment 校准、运行产物忽略和 planner/executor eval 覆盖。
+- Commit: pending
+- Commit message: pending
+
 ## 2026-07-06
 
 ### Stage 43: complex coding planner/executor 拆分

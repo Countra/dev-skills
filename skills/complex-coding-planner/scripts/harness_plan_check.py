@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -11,6 +12,10 @@ from pathlib import Path
 
 REQUIRED_SECTIONS = [
     "问题定义",
+    "执行契约",
+    "目标条件",
+    "规划循环协议",
+    "执行循环协议",
     "上下文",
     "候选方案",
     "决策",
@@ -29,6 +34,26 @@ REQUIRED_SECTIONS = [
 ]
 
 STAGE_REQUIRED_TERMS = ["目标", "做法", "原因", "位置", "验证", "风险", "阶段契约"]
+
+CONTRACT_REQUIRED_FIELDS = [
+    "contract_version",
+    "task_id",
+    "execution_mode",
+    "overall_status",
+    "approval_status",
+    "approved_contract_hash",
+    "current_stage_id",
+    "remaining_stage_ids",
+    "stop_condition",
+    "commit_authorization",
+    "ledger_policy",
+    "single_writer",
+    "reapproval_required",
+]
+
+GOAL_REQUIRED_TERMS = ["approved stages", "final", "blocking", "验证", "提交"]
+PLANNING_LOOP_REQUIRED_TERMS = ["findings", "重读", "rejected options", "Readiness"]
+EXECUTOR_LOOP_REQUIRED_TERMS = ["Stage Contract", "ledger", "attempt", "continue Stage", "Goal Condition"]
 
 
 def read_text(path: Path) -> str:
@@ -56,6 +81,21 @@ def section(text: str, name: str) -> str:
 def heading_position(text: str, name: str) -> int:
     match = re.search(rf"^##+\s+.*{re.escape(name)}.*$", text, re.MULTILINE)
     return match.start() if match else -1
+
+
+def extract_first_json_block(text: str) -> dict[str, object] | None:
+    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    if not match:
+        return None
+    try:
+        value = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def check_terms(section_text: str, terms: list[str], label: str) -> list[str]:
+    return [f"{label} missing term: {term}" for term in terms if term not in section_text]
 
 
 def check_plan(text: str) -> list[str]:
@@ -89,6 +129,22 @@ def check_plan(text: str) -> list[str]:
     approval = section(text, "方案批准")
     if "提交" not in approval:
         errors.append("Plan Approval must record commit authorization")
+
+    contract = section(text, "执行契约")
+    contract_json = extract_first_json_block(contract)
+    if contract_json is None:
+        errors.append("Execution Contract must include a valid json block")
+    else:
+        for field in CONTRACT_REQUIRED_FIELDS:
+            if field not in contract_json:
+                errors.append(f"Execution Contract missing field: {field}")
+
+    if "Plan Amendment Gate" not in contract:
+        errors.append("Execution Contract must mention Plan Amendment Gate")
+
+    errors.extend(check_terms(section(text, "目标条件"), GOAL_REQUIRED_TERMS, "Goal Condition"))
+    errors.extend(check_terms(section(text, "规划循环协议"), PLANNING_LOOP_REQUIRED_TERMS, "Planning Loop Protocol"))
+    errors.extend(check_terms(section(text, "执行循环协议"), EXECUTOR_LOOP_REQUIRED_TERMS, "Executor Work Loop"))
 
     return errors
 

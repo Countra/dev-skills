@@ -43,14 +43,28 @@
 5. 在提出方案前收集本地代码、测试、配置、接口和文档上下文。
 6. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
 7. 创建或更新 `execution-plan.md`。
-8. 确认 `Git Context`：主分支、harness 工作分支、同步来源、分支占用和提交策略。
-9. 写清 `Environment`、`Tooling`、`Validation`、`Process Manager Gate` 和文件写入策略。
-10. 细化 `Implementation Plan`，每个阶段必须说明目标、做法、原因、位置、参考、验证、风险、回滚和 Stage Contract。
-11. 完成 `Plan Quality Gate`。
-12. 完成 `Plan Self-Review`，发现问题时先修复计划。
-13. 完成 `Readiness Gate`。
-14. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
-15. 停止工作，等待用户明确批准。不得开始代码实现、验证实现或提交代码。
+8. 在计划靠前位置写入 `Execution Contract`、`Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`。
+9. 确认 `Git Context`：主分支、harness 工作分支、同步来源、分支占用和提交策略。
+10. 写清 `Environment`、`Tooling`、`Validation`、`Process Manager Gate` 和文件写入策略。
+11. 细化 `Implementation Plan`，每个阶段必须说明目标、做法、原因、位置、参考、验证、风险、回滚和 Stage Contract。
+12. 完成 `Plan Quality Gate`。
+13. 完成 `Plan Self-Review`，发现问题时先修复计划。
+14. 完成 `Readiness Gate`。
+15. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
+16. 停止工作，等待用户明确批准。不得开始代码实现、验证实现或提交代码。
+
+## 规划循环
+
+managed 计划必须把思考过程落到文件中，避免上下文压缩后只剩口头状态。
+
+规则：
+
+- 阶段拆分默认 3-7 个可独立验证阶段；超过 7 个阶段必须说明为什么不能合并。
+- 读取多个关键源码、文档、网页、日志或参考项目文件后，必须把关键 findings 写入 `Context`、参考矩阵或 artifacts。
+- 重大决策前必须重读目标、约束、Options、Decision、影响面和 reapproval triggers。
+- 放弃的方案必须写明放弃原因，避免恢复后重复探索。
+- 发现错误假设、失败路径或不可行做法时，不删除痕迹，改写为 findings、risk 或 rejected option。
+- 每次补强计划后，如果影响目标、范围、阶段、验证、风险、工具授权或提交策略，必须重新运行 `Plan Quality Gate`、`Plan Self-Review` 和 `Readiness Gate`。
 
 ## Workspace 环境
 
@@ -104,6 +118,24 @@ planner 只规划 Git 策略，不执行提交。
 - 验证
 - 风险和回滚
 - 阶段契约
+
+`Execution Contract` 必须包含：
+
+- `contract_version`
+- `task_id`
+- `execution_mode`
+- `overall_status`
+- `approval_status`
+- `approved_contract_hash`
+- `current_stage_id`
+- `remaining_stage_ids`
+- `stop_condition`
+- `commit_authorization`
+- `ledger_policy`
+- `single_writer`
+- `reapproval_required`
+
+`Goal Condition` 必须说明所有 approved stages、final gate、open decisions、验证证据和提交授权状态如何共同决定最终完成。
 
 `Context` 必须区分本地代码、本地文档、外部资料和用户约束。不能只写“参考官方文档”，必须写来源和结论。
 
@@ -176,6 +208,18 @@ Readiness 通过后必须：
 
 如果用户改变方案、环境、工具或验证策略，必须更新计划并重新通过 readiness 和批准。
 
+## Plan Amendment Gate
+
+计划获批后，以下变化必须停止实施并重新请求用户批准：
+
+- approved scope 改变。
+- 阶段边界、阶段顺序、阶段数量或 Stage Contract 改变。
+- 必需验证、工具授权、长期进程策略或提交策略改变。
+- 风险等级、公共接口、数据结构、权限、依赖或兼容性假设改变。
+- attestation mismatch 且无法证明是预期文档更新。
+
+不触发重新批准的情况必须记录原因，例如只补充验证证据、更新实施进度、写入 ledger 摘要或修正明显错别字。
+
 ## Blocking 决策
 
 只询问会影响方案、环境、权限、验证、接口、数据、依赖、风险或提交行为的 blocking 问题。
@@ -199,13 +243,15 @@ Custom：...
 planner 生成的 `execution-plan.md` 必须包含 executor 可消费的状态和门禁：
 
 - `Execution Control Snapshot`：放在文档靠前位置，记录 execution mode、overall status、current stage、completed stages、remaining stages、next automatic action、stop condition 和 state source。
+- `Execution Contract`：放在文档靠前位置，记录 executor 可读机器字段。
+- `Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`：说明如何持续推进和如何判断完成。
 - `Implementation Plan`：每个阶段都有 Stage Contract。
 - `Environment`、`Git Context`、`Tooling`、`Process Manager Gate`。
 - `Validation` 和验证证据表。
 - `Documentation`、`File Write Strategy`、`Questions And Overrides`。
 - `Plan Quality Gate`、`Plan Self-Review`、`Readiness Gate`、`Plan Approval`。
 - `Execution Control`、`Implementation Progress`、`Stage Entry Gate`、`Stage Exit Gate`、`Stage Transition Gate`。
-- `Code Review`、`Resume Summary`、`Commit Log`。
+- `Ledger Evidence`、`Code Review`、`Resume Packet`、`Resume Summary`、`Commit Log`。
 
 方案获批后，应由 `complex-coding-executor` 读取该计划并继续。planner 不执行实现阶段。
 

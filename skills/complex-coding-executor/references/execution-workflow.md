@@ -15,7 +15,10 @@
 
 执行前必须确认：
 
+- `HARNESS_DISABLED=1` 未启用；若启用，只做 direct/advisory 行为，不消费历史 active task。
+- `harness_task_resolver.py` 能解析 active task，且 task_dir 和 execution-plan 都位于 workspace 内。
 - `execution-plan.md` 的 `Plan Approval` 已批准实施。
+- `Execution Contract` 存在且与 `.harness/active-task.json` 的 task_id、execution_mode、overall_status、current_stage、remaining_stages 和 stop_condition 一致。
 - 没有 open blocking 决策。
 - `Execution Control.overall_status` 是 `in_progress` 或可从 approved 状态安全切入。
 - 当前阶段存在于已批准的 `Implementation Plan`。
@@ -26,6 +29,12 @@
 
 ```text
 python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode preflight
+```
+
+需要快速汇报或恢复状态时运行：
+
+```text
+python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode status
 ```
 
 ## 执行控制
@@ -45,6 +54,18 @@ python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace 
 - 需要更新任务记录。
 
 上下文压缩或中断恢复后，如果 `execution_mode = run-to-completion`、`remaining_stages` 非空且 `stop_condition = none`，必须继续 `next_automatic_action`。
+
+每轮恢复、阶段开始或阶段转移前应执行 loop tick：
+
+```text
+python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode loop-tick
+```
+
+loop tick 通过后：
+
+- 若仍有 remaining stages，下一动作必须是 `continue Stage N`。
+- 若无 remaining stages，进入最终交付门禁。
+- 若存在 blocking reason、attestation mismatch、open decision 或 plan amendment，停止并记录原因。
 
 ## 停止条件
 
@@ -86,19 +107,21 @@ Stage Entry Gate 通过前不能开始编码。必须检查：
 每个阶段执行步骤：
 
 1. 重读任务状态、环境、执行计划、pending 决策和 changelog。
-2. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
-3. 复查 `Process Manager Gate`。
-4. 检查 `Git Context` 和实际 git 状态。
-5. 阅读本阶段相关代码、测试、配置、API 和文档。
-6. 在批准范围内做最小必要修改。
-7. 修复明显缺陷；小优化只能在不改变方案方向时执行。
-8. 如果范围、风险、接口、验证成本或方案方向变化，停止并重新请求用户批准。
-9. 做 code review。
-10. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
-11. 修复 review 或验证发现的问题，并重复必要 review 和验证。
-12. 更新 changelog 或项目等价变更记录。
-13. 只有提交已授权时，才提交代码；提交 hash 写入 `Commit Log`。
-14. 更新 `Resume Summary`。
+2. 运行或等价执行 status/loop-tick，确认当前阶段、范围和下一步。
+3. 写入 ledger `stage_started` 或 heartbeat。
+4. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
+5. 复查 `Process Manager Gate`。
+6. 检查 `Git Context` 和实际 git 状态。
+7. 阅读本阶段相关代码、测试、配置、API 和文档。
+8. 在批准范围内做最小必要修改。
+9. 修复明显缺陷；小优化只能在不改变方案方向时执行。
+10. 如果范围、风险、接口、验证成本或方案方向变化，停止并进入 `Plan Amendment Gate`。
+11. 做 code review，并将 blocking/major finding 写入计划或 ledger。
+12. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
+13. 修复 review 或验证发现的问题，并重复必要 review 和验证。
+14. 更新 changelog 或项目等价变更记录。
+15. 只有提交已授权时，才提交代码；提交 hash 写入 `Commit Log`。
+16. 更新 `Ledger Evidence`、`Resume Packet` 和 `Resume Summary`。
 
 ## 阶段退出和转移
 
@@ -147,6 +170,43 @@ python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace 
 - `follow-up`：不影响当前验收，但必须记录后续建议。
 
 验证失败时不能提交或进入下一阶段。必须修复并重复必要验证，或记录阻塞并停止。
+
+## 错误恢复协议
+
+失败动作必须记录：
+
+- command/tool
+- attempt number
+- failure reason
+- impact
+- next strategy
+
+同一失败原因不得静默重复第三次。第三次前必须改变策略，例如缩小命令范围、改用 fixture、补读上下文、降级为替代验证或进入 blocking 状态。
+
+记录位置优先级：
+
+1. `execution-plan.md` 的 Validation Evidence、Code Review、Implementation Progress 或 Resume Summary。
+2. ledger 的 `validation_failed`、`review_finding`、`blocked` 或 `note` 事件。
+3. 大段日志放入 task artifacts，并在计划中引用摘要。
+
+## Topic Handoff Protocol
+
+当某个子主题包含较长研究、运行状态、跨阶段风险或需要下一轮快速接手时，写入：
+
+```text
+.harness/tasks/<date>/<type>/<task-slug>/artifacts/handoffs/<topic>.md
+```
+
+handoff 至少包含：
+
+- 当前状态。
+- 如何检查。
+- 已修改内容。
+- 分支、提交或 PR 状态。
+- 剩余风险。
+- 下一步建议。
+
+`Implementation Progress` 必须把 handoff 文件作为索引记录，避免交接信息只留在对话中。
 
 ## 长期进程
 
@@ -258,7 +318,8 @@ managed 任务结束前必须完成最终交付门禁：
 6. 汇总 commit hash、commit message、changelog 记录和关键文件。
 7. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
 8. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
-9. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
+9. 最终结论还必须更新 `Ledger Evidence`、`Resume Packet` 和 `.harness/active-task.json`。
+10. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
 
 建议最终回复前运行：
 
@@ -277,4 +338,10 @@ python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace 
 5. 复查 `Process Manager Gate` 和 `Resume Summary` 的长期进程规则状态。
 6. 检查 `Git Context`、实际文件和 git 状态。
 7. 读取 `Execution Control`、`Stage Transition Gate` 和 `Resume Summary`，确认整体剩余阶段。
-8. 如果 `execution_mode = run-to-completion` 且没有停止条件，继续 `next_automatic_action`，不要重新开任务，也不要只完成局部恢复点后停止。
+8. 读取 `Execution Contract`、`Ledger Evidence` 和 `Resume Packet`。
+9. 运行 status/loop-tick，确认当前阶段、剩余阶段、阻塞原因和下一动作。
+10. 如果 `execution_mode = run-to-completion` 且没有停止条件，继续 `next_automatic_action`，不要重新开任务，也不要只完成局部恢复点后停止。
+
+## 故障排查
+
+详细流程见 `references/troubleshooting.md`。遇到 wrong task dir、stale active-task、missing ledger、attestation mismatch、`HARNESS_DISABLED`、Windows 路径或 hook advisory 行为时，先按该文档定位，再决定是否继续、修正状态或进入 Plan Amendment Gate。
