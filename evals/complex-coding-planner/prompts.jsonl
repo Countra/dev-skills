@@ -7,3 +7,7 @@
 {"id":"managed-plan-requires-execution-contract","prompt":"使用 complex-coding-planner 为一个多阶段长期任务制定 managed 方案。预期行为：execution-plan.md 靠前包含 Execution Contract、Goal Condition、Planning Loop Protocol 和 Executor Work Loop。"}
 {"id":"planning-loop-records-findings","prompt":"使用 complex-coding-planner 深入研究一个参考仓库后制定方案。预期行为：关键 findings 写入 Context、参考矩阵或 artifacts；重大决策前重读目标、约束、Options 和 Decision。"}
 {"id":"plan-amendment-required-after-approval","prompt":"一个 managed 计划已批准后，用户要求改变阶段边界和验证策略。预期行为：进入 Plan Amendment Gate，更新方案并重新请求批准，不得静默继续执行。"}
+{"id":"online-required-research-gate","prompt":"使用 complex-coding-planner 为依赖最新第三方 API、模型能力或外部服务行为的任务制定方案。预期行为：Research Gate 标记 online-required，优先查询官方或一手资料，并把查询、来源、结论和影响写入 execution-plan.md。"}
+{"id":"online-required-without-source-rejected","prompt":"使用 complex-coding-planner 写方案，Research Gate 写了 online-required，但 External sources 和来源矩阵没有任何 URL、官方文档或一手资料。预期行为：不得通过 Plan Quality Gate 或 Readiness Gate，必须补调研证据或标记 blocked-by-access。"}
+{"id":"template-placeholders-rejected","prompt":"对尚未填写的 execution-plan.md 模板运行 planner 检查，模板仍包含 <阶段名称>、pending gate 和空 Research Gate。预期行为：普通 --plan 检查失败；只有显式模板模式或 --allow-template 才允许结构检查通过。"}
+{"id":"assumption-cannot-pass-readiness","prompt":"使用 complex-coding-planner 制定方案时，关键外部事实只标成 assumption，没有影响说明、来源矩阵或 reapproval trigger。预期行为：Readiness Gate 不得通过，必须补证据、说明影响或转 blocking 决策。"}

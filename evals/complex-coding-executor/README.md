@@ -10,6 +10,7 @@
 - resolver 路径 containment、`HARNESS_DISABLED` opt-out、status summary 和 loop-tick。
 - Execution Contract、attestation、append-only ledger 和 final gate 证据。
 - 每阶段 review、验证、修复和记录。
+- Research Drift Gate：执行中发现新外部事实时补证据，必要时进入 Plan Amendment Gate。
 - 错误恢复必须记录 attempt 和新策略，长子主题需要 topic handoff。
 - process-manager 长期进程规则。
 - Git 串行和 `index.lock` 恢复。

@@ -28,3 +28,19 @@ planning-loop-records-findings:
 plan-amendment-required-after-approval:
   requires_plan_amendment_gate: true
   requires_reapproval_before_continue: true
+online-required-research-gate:
+  requires_research_gate: true
+  marks_online_required: true
+  records_primary_or_official_sources: true
+  records_query_source_claim_and_impact: true
+online-required-without-source-rejected:
+  blocks_readiness: true
+  requires_source_matrix_evidence: true
+  allows_blocked_by_access_fallback: true
+template-placeholders-rejected:
+  rejects_unfilled_template_by_default: true
+  allows_explicit_template_mode: true
+assumption-cannot-pass-readiness:
+  blocks_readiness: true
+  requires_assumption_impact: true
+  requires_reapproval_trigger_or_blocking_decision: true

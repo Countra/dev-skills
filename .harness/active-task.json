@@ -1,7 +1,7 @@
 {
-  "task_id": "2026-07-08-feature-planning-with-files-skill-optimization",
-  "task_dir": ".harness/tasks/2026-07-08/feature/planning-with-files-skill-optimization",
-  "title": "吸收 planning-with-files 优秀机制优化 dev-skills",
+  "task_id": "2026-07-08-feature-planner-research-gate-optimization",
+  "task_dir": ".harness/tasks/2026-07-08/feature/planner-research-gate-optimization",
+  "title": "强化 planner 不确定问题调研门禁",
   "status": "completed",
   "execution_mode": "run-to-completion",
   "overall_status": "completed",
@@ -13,9 +13,7 @@
     "Stage 3",
     "Stage 4",
     "Stage 5",
-    "Stage 6",
-    "Stage 7 deferred",
-    "Stage 8"
+    "Stage 6"
   ],
   "remaining_stages": [],
   "next_action": "none",

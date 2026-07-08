@@ -17,6 +17,7 @@ REQUIRED_SECTIONS = [
     "规划循环协议",
     "执行循环协议",
     "上下文",
+    "调研门禁",
     "候选方案",
     "决策",
     "影响面矩阵",
@@ -98,7 +99,55 @@ def check_terms(section_text: str, terms: list[str], label: str) -> list[str]:
     return [f"{label} missing term: {term}" for term in terms if term not in section_text]
 
 
-def check_plan(text: str) -> list[str]:
+def check_gate_status(section_text: str, gate_name: str) -> list[str]:
+    if re.search(r"\|\s*[^|\n]+\|\s*pending\s*\|", section_text, re.IGNORECASE):
+        return [f"{gate_name} contains pending status"]
+    return []
+
+
+def check_template_placeholders(text: str) -> list[str]:
+    errors: list[str] = []
+    first_line = text.splitlines()[0] if text.splitlines() else ""
+    if first_line.strip() == "# 执行计划（Execution Plan）":
+        errors.append("plan still uses the template title")
+    placeholder_patterns = [
+        r"<阶段名称>",
+        r"<decision-title>",
+        r"<这里说明",
+        r"<推荐选项>",
+        r"<备选项>",
+        r"<这里",
+    ]
+    if any(re.search(pattern, text) for pattern in placeholder_patterns):
+        errors.append("plan contains template placeholder markers")
+    if "none / local-only / online-required / blocked-by-access" in section(text, "调研门禁"):
+        errors.append("Research Gate still contains the template research mode placeholder")
+    return errors
+
+
+def check_research_gate(text: str, allow_template: bool) -> list[str]:
+    errors: list[str] = []
+    research = section(text, "调研门禁")
+    if not research.strip():
+        return ["Research Gate section is empty"]
+    required_terms = ["研究模式", "不确定项", "搜索记录", "来源矩阵"]
+    for term in required_terms:
+        if term not in research:
+            errors.append(f"Research Gate missing term: {term}")
+    if "调研结论" not in research and "Research Gate 结论" not in research:
+        errors.append("Research Gate missing term: 调研结论")
+    if allow_template:
+        return errors
+    if "`pending`" in research or re.search(r"调研结论.*pending", research, re.IGNORECASE | re.DOTALL):
+        errors.append("Research Gate result is still pending")
+    if "online-required" in research and "http" not in research:
+        errors.append("online-required Research Gate must include at least one URL/source link")
+    if "blocked-by-access" in research and "影响" not in research:
+        errors.append("blocked-by-access Research Gate must record impact")
+    return errors
+
+
+def check_plan(text: str, allow_template: bool = False) -> list[str]:
     errors: list[str] = []
     for name in REQUIRED_SECTIONS:
         if not has_heading(text, name):
@@ -125,6 +174,8 @@ def check_plan(text: str) -> list[str]:
     readiness = section(text, "就绪门禁")
     if "规划自查" not in readiness:
         errors.append("Readiness Gate must confirm Plan Self-Review")
+    if "Research Gate" not in readiness and "调研门禁" not in readiness:
+        errors.append("Readiness Gate must confirm Research Gate")
 
     approval = section(text, "方案批准")
     if "提交" not in approval:
@@ -142,9 +193,14 @@ def check_plan(text: str) -> list[str]:
     if "Plan Amendment Gate" not in contract:
         errors.append("Execution Contract must mention Plan Amendment Gate")
 
+    errors.extend(check_research_gate(text, allow_template))
     errors.extend(check_terms(section(text, "目标条件"), GOAL_REQUIRED_TERMS, "Goal Condition"))
     errors.extend(check_terms(section(text, "规划循环协议"), PLANNING_LOOP_REQUIRED_TERMS, "Planning Loop Protocol"))
     errors.extend(check_terms(section(text, "执行循环协议"), EXECUTOR_LOOP_REQUIRED_TERMS, "Executor Work Loop"))
+    if not allow_template:
+        errors.extend(check_template_placeholders(text))
+        errors.extend(check_gate_status(section(text, "方案质量门禁"), "Plan Quality Gate"))
+        errors.extend(check_gate_status(readiness, "Readiness Gate"))
 
     return errors
 
@@ -152,6 +208,7 @@ def check_plan(text: str) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="检查 complex-coding-planner 的执行计划结构")
     parser.add_argument("--plan", required=True, help="execution-plan.md 的路径")
+    parser.add_argument("--allow-template", action="store_true", help="允许模板占位内容通过结构检查")
     args = parser.parse_args()
 
     plan_path = Path(args.plan)
@@ -159,7 +216,7 @@ def main() -> int:
         print(f"FAIL: plan not found: {plan_path}", file=sys.stderr)
         return 2
 
-    errors = check_plan(read_text(plan_path))
+    errors = check_plan(read_text(plan_path), allow_template=args.allow_template)
     if errors:
         for error in errors:
             print(f"FAIL: {error}")

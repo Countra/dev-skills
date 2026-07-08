@@ -100,6 +100,38 @@
 
 待确认项（Open uncertainties）:
 
+## 调研门禁（Research Gate）
+
+研究模式（Research mode）:
+
+- none / local-only / online-required / blocked-by-access
+
+触发原因（Why this mode）:
+
+-
+
+不确定项清单（Uncertainty inventory）:
+
+| ID | 问题（Question） | 类型（Type） | 是否需要在线搜索（Online required） | 处理结果（Resolution） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- |
+|  | local-code / local-doc / external-tool / external-service / high-risk / user-decision | yes/no |  |  |
+
+搜索记录（Search log）:
+
+| 查询/来源（Query/source） | 工具（Tool） | 日期（Date） | 结果（Result） | 后续动作（Next action） |
+| --- | --- | --- | --- | --- |
+|  |  |  |  |  |
+
+来源矩阵（Source matrix）:
+
+| 结论（Claim） | 来源类型（Source type） | URL/路径（URL/path） | 是否官方/一手（Official/primary） | 访问日期（Accessed） | 可信度（Confidence） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- | --- |
+|  | local / official / primary / external / assumption |  | yes/no |  | high/medium/low |  |
+
+调研结论（Research result）:
+
+- `pending`
+
 ## 上下文（Context）
 
 本地代码（Local code）:
@@ -452,6 +484,7 @@ patch 失败处理（Patch failure handling）:
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
 | 关键判断有证据等级（Evidence levels assigned） | pending |  |
+| Research Gate 已完成（Research Gate complete） | pending |  |
 | 影响面矩阵完整（Impact matrix complete） | pending |  |
 | 候选方案比较充分（Options compared enough） | pending |  |
 | 每阶段可独立验证（Stages independently verifiable） | pending |  |
@@ -489,6 +522,7 @@ patch 失败处理（Patch failure handling）:
 | --- | --- | --- |
 | 目标和验收清楚（Goal and acceptance clear） | pending |  |
 | 上下文已收集（Context collected） | pending |  |
+| 调研门禁已通过（Research Gate passed） | pending |  |
 | 候选方案已比较（Options compared） | pending |  |
 | 决策已记录（Decision recorded） | pending |  |
 | 实施阶段已细化（Implementation stages detailed） | pending |  |

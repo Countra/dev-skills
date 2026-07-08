@@ -41,3 +41,8 @@ repeated-failure-requires-new-strategy:
 topic-handoff-long-subtopic:
   writes_topic_handoff: true
   indexes_handoff_in_progress: true
+research-drift-enters-amendment:
+  requires_research_drift_gate: true
+  records_source_and_impact: true
+  writes_ledger_event: true
+  enters_plan_amendment_when_scope_or_validation_changes: true

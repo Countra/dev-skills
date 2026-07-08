@@ -2,6 +2,15 @@
 
 ## 2026-07-08
 
+### Stage 1-6: planner 不确定问题调研门禁
+
+- `complex-coding-planner` 增加 Research Gate 规则和模板字段，区分 `none`、`local-only`、`online-required` 和 `blocked-by-access`。
+- `harness_plan_check.py` 增加严格检查，默认拒绝空模板、pending gate 和缺少来源证据的在线调研计划。
+- `complex-coding-executor` 增加 Research Drift Gate，执行中发现新外部事实时补证据，必要时进入 Plan Amendment Gate。
+- 补充 planner/executor eval 覆盖调研缺口、模板占位、assumption 和执行期 research drift。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 1-8: planning-with-files 机制吸收优化
 
 - `complex-coding-planner` 增加 Execution Contract、Goal Condition、Planning Loop Protocol、Executor Work Loop 和 Plan Amendment Gate 规则，强化长任务规划的可恢复性。

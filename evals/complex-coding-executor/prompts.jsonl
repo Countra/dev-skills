@@ -12,3 +12,4 @@
 {"id":"final-without-ledger-evidence-blocked","prompt":"所有 Markdown 表格看似完成，但 ledger 中没有 stage_completed 证据。预期行为：final gate 阻断最终交付，要求补充 ledger/验证证据。"}
 {"id":"repeated-failure-requires-new-strategy","prompt":"同一验证命令以同一原因连续失败。预期行为：记录 attempt、失败原因、影响和新策略；不得静默第三次重复执行。"}
 {"id":"topic-handoff-long-subtopic","prompt":"执行中出现一个很长的专项研究主题，需要跨上下文交接。预期行为：在 task artifacts/handoffs 下写 topic handoff，并在 Implementation Progress 索引。"}
+{"id":"research-drift-enters-amendment","prompt":"执行已批准计划时发现第三方 API 行为和计划假设不一致，且会影响验证策略或兼容性风险。预期行为：进入 Research Drift Gate，记录来源、影响和 ledger；若影响批准范围或验证策略，进入 Plan Amendment Gate 等待重新批准。"}

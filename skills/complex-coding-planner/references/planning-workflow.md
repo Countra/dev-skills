@@ -41,17 +41,18 @@
 3. 读取当前任务的 `execution-plan.md`（如存在）。
 4. 检查项目规则文件，例如 `AGENTS.md`、`CLAUDE.md` 和项目 `docs/development.md`。
 5. 在提出方案前收集本地代码、测试、配置、接口和文档上下文。
-6. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
-7. 创建或更新 `execution-plan.md`。
-8. 在计划靠前位置写入 `Execution Contract`、`Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`。
-9. 确认 `Git Context`：主分支、harness 工作分支、同步来源、分支占用和提交策略。
-10. 写清 `Environment`、`Tooling`、`Validation`、`Process Manager Gate` 和文件写入策略。
-11. 细化 `Implementation Plan`，每个阶段必须说明目标、做法、原因、位置、参考、验证、风险、回滚和 Stage Contract。
-12. 完成 `Plan Quality Gate`。
-13. 完成 `Plan Self-Review`，发现问题时先修复计划。
-14. 完成 `Readiness Gate`。
-15. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
-16. 停止工作，等待用户明确批准。不得开始代码实现、验证实现或提交代码。
+6. 完成 `Research Gate`：识别不确定项，判断是否需要本地调研、在线搜索、用户确认或阻塞。
+7. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
+8. 创建或更新 `execution-plan.md`。
+9. 在计划靠前位置写入 `Execution Contract`、`Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`。
+10. 确认 `Git Context`：主分支、harness 工作分支、同步来源、分支占用和提交策略。
+11. 写清 `Environment`、`Tooling`、`Validation`、`Process Manager Gate` 和文件写入策略。
+12. 细化 `Implementation Plan`，每个阶段必须说明目标、做法、原因、位置、参考、验证、风险、回滚和 Stage Contract。
+13. 完成 `Plan Quality Gate`。
+14. 完成 `Plan Self-Review`，发现问题时先修复计划。
+15. 完成 `Readiness Gate`。
+16. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
+17. 停止工作，等待用户明确批准。不得开始代码实现、验证实现或提交代码。
 
 ## 规划循环
 
@@ -65,6 +66,24 @@ managed 计划必须把思考过程落到文件中，避免上下文压缩后只
 - 放弃的方案必须写明放弃原因，避免恢复后重复探索。
 - 发现错误假设、失败路径或不可行做法时，不删除痕迹，改写为 findings、risk 或 rejected option。
 - 每次补强计划后，如果影响目标、范围、阶段、验证、风险、工具授权或提交策略，必须重新运行 `Plan Quality Gate`、`Plan Self-Review` 和 `Readiness Gate`。
+
+## Research Gate
+
+`Research Gate` 用于防止不确定问题、可变事实和在线资料结论只停留在对话上下文中。每个 managed 计划都必须记录研究模式：
+
+- `none`：任务没有外部事实依赖，必须说明原因。
+- `local-only`：仅依赖本地源码、配置、锁文件、项目文档或用户给定资料。
+- `online-required`：涉及框架、API、协议、工具、模型、依赖版本、外部服务、浏览器行为、平台差异、法规、安全、金融、医学或其它可能变化事实。
+- `blocked-by-access`：需要在线或一手资料，但网络、权限、账号、私有资料或用户限制阻止调研。
+
+规则：
+
+- `online-required` 必须优先查询官方文档、源码仓库、release notes、标准文档、论文、厂商文档或其它一手资料。
+- 非一手资料只能作为补充；如果结论会影响方案、风险、接口、验证或兼容性，不能只依赖二手资料。
+- 搜索后必须记录查询或来源、工具、日期、结论、可信度、影响和后续动作。
+- 无法联网或资料不可访问时，不得把关键事实写成 `confirmed`；必须标为 `blocked-by-access`、`assumption` 或 blocking decision，并说明影响。
+- 不确定项能通过资料解决时先调研；只有资料无法解决、需要业务取舍、权限或用户偏好时才提 blocking 问题。
+- 进入 `Readiness Gate` 前，所有 `online-required` 项必须有来源矩阵证据，所有 blocking 不确定项必须关闭或记录为停止条件。
 
 ## Workspace 环境
 

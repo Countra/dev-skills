@@ -123,6 +123,25 @@ Stage Entry Gate 通过前不能开始编码。必须检查：
 15. 只有提交已授权时，才提交代码；提交 hash 写入 `Commit Log`。
 16. 更新 `Ledger Evidence`、`Resume Packet` 和 `Resume Summary`。
 
+## Research Drift Gate
+
+`Research Drift Gate` 用于处理实施阶段中新出现、且已批准计划没有覆盖的不确定事实。命中时不能静默继续，也不能把新假设写成已确认结论。
+
+触发条件：
+
+- 实施中发现计划未覆盖的框架、API、协议、工具、模型、依赖版本或外部服务行为。
+- 验证命令、浏览器行为、平台差异或第三方文档与计划假设不一致。
+- 必须使用在线、官方、一手或用户私有资料才能确认的关键事实。
+- 新事实可能影响 approved scope、阶段边界、风险等级、验证策略、工具授权、兼容性或提交策略。
+
+处理规则：
+
+1. 暂停当前修改动作，记录 finding、来源、影响和当前阶段。
+2. 如果能在批准范围内通过本地代码、官方文档或一手资料补证据，更新 `Research Gate`、`Validation Evidence`、`Implementation Progress` 或 artifacts，并重新运行相关验证。
+3. 如果补证据会改变 approved scope、阶段边界、必需验证、风险、工具授权、公共接口、依赖或兼容性假设，进入 `Plan Amendment Gate`，请求用户重新批准。
+4. 如果资料不可访问，记录为 `blocked-by-access` 或 blocking decision；不得凭记忆继续。
+5. 处理结果必须写入 ledger，可用 `review_finding`、`blocked`、`amendment_requested` 或 `note` 事件。
+
 ## 阶段退出和转移
 
 Stage Exit Gate 通过前不能进入下一阶段或最终交付。必须检查：

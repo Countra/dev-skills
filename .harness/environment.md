@@ -2,6 +2,7 @@
 
 ## 来源（Sources）
 
+- 用户会话：当前任务要求强化 `complex-coding-planner` 对不确定问题的深入调研和在线资源搜索机制，方案已在 `.harness/tasks/2026-07-08/feature/planner-research-gate-optimization/execution-plan.md` 获批并进入实施；后续执行按 `complex-coding-executor` 约束推进。
 - 用户会话：当前任务要求吸收 `D:\Item\vibe_coding\Ref\planning-with-files` 的优秀流程机制，优化当前 `dev-skills` 中 `complex-coding-planner` 和 `complex-coding-executor`；方案已在 `.harness/tasks/2026-07-08/feature/planning-with-files-skill-optimization/execution-plan.md` 获批并进入实施。
 - 用户会话：当前任务要求整合并落盘 `process-manager` skill 实施方案，先支持 Windows 平台、cmd-file 和 powershell-file，所有可执行程序和脚本路径必须使用绝对路径；process-manager 必须是通用长期后台进程管理，不限定为 Web 服务管理。
 - 用户会话：当前任务要求为 `process-manager` 的进程历史记录、`runs/` 同步清理、`pm_list` 默认输出和相关 skill 规则调整制定 harness 方案，并判断 `complex-coding-harness` 是否需要联动更新。
@@ -41,7 +42,7 @@ Harness 分支策略（Harness branch policy）:
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `harness/feature`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，当前使用 `harness/feature`。
-- 当前 active managed 任务为 `planning-with-files-skill-optimization`，状态为已批准实施并进入 Stage 1。
+- 当前 active managed 任务为 `planner-research-gate-optimization`，状态为已批准实施并进入 Stage 5。
 - 从本任务起，同一仓库 Git 命令串行执行，不和其它 Git 命令放入并发批次。
 - 当前 Git 只读状态可使用 `git --no-optional-locks status --short --branch`；若遇到 ownership 保护，优先使用一次性 `safe.directory` 参数，不自动写入全局配置。
 
@@ -77,10 +78,11 @@ Harness 分支策略（Harness branch policy）:
 
 - JSON 检查：解析 `.harness/active-task.json`
 - Planner 检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan <execution-plan.md>`
+- Planner 模板结构检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan skills/complex-coding-planner/templates/execution-plan.md --allow-template`
 - Executor 检查：`python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace . --task-dir <task-dir> --mode preflight|transition|final|status`
 - Python 检查：`python -m py_compile <script.py>`
 - JSONL 检查：解析 `evals/complex-coding-planner/prompts.jsonl` 和 `evals/complex-coding-executor/prompts.jsonl` 并检查 id 唯一
-- 关键规则检索：检索 `Execution Contract`、`Plan Amendment Gate`、`ledger`、`attestation`、`HARNESS_DISABLED`、`Goal Condition`、`loop_tick`、`Topic Handoff`
+- 关键规则检索：检索 `Research Gate`、`Research Drift Gate`、`Execution Contract`、`Plan Amendment Gate`、`ledger`、`attestation`、`HARNESS_DISABLED`、`Goal Condition`、`loop_tick`、`Topic Handoff`
 - 文档检查：`git -c diff.autoRefreshIndex=false diff --check`
 
 验证工具（Validation tools）:
@@ -108,6 +110,7 @@ Runtime Services:
 - 本任务不需要长期后台服务；验证命令均为 finite command，不进入 process-manager。
 - 如果后续临时出现必须启动的长期服务，仍按 `complex-coding-executor` 的 `Process Manager Gate` 使用 process-manager，不手写后台 shell 启动。
 - `execution-plan.md` 是当前任务唯一主契约；`.harness/active-task.json` 只作为恢复入口和摘要索引，二者冲突时以 `execution-plan.md` 为准。
+- 当前任务引入 Research Gate：可变事实、外部 API、工具、模型、依赖或高风险事实默认优先查官方或一手资料；无法访问时必须记录为 `blocked-by-access`、assumption 或 blocking 决策。
 
 待确认问题（Open questions）:
 
