@@ -46,3 +46,15 @@ research-drift-enters-amendment:
   records_source_and_impact: true
   writes_ledger_event: true
   enters_plan_amendment_when_scope_or_validation_changes: true
+development-quality-check-uses-standards-index:
+  reads_standards_index: true
+  performs_development_quality_check: true
+  covers_static_quality_architecture_patterns_coupling_and_cohesion: true
+architecture-drift-blocks-transition:
+  records_architecture_review_finding: true
+  blocks_stage_transition: true
+  enters_plan_amendment_when_scope_changes: true
+final-missing-development-quality-evidence-blocked:
+  blocks_final_delivery: true
+  requires_standards_index_reference: true
+  requires_development_quality_evidence: true

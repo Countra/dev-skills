@@ -18,6 +18,8 @@ REQUIRED_SECTIONS = [
     "执行循环协议",
     "上下文",
     "调研门禁",
+    "规范发现门禁",
+    "开发质量门禁",
     "候选方案",
     "决策",
     "影响面矩阵",
@@ -35,6 +37,8 @@ REQUIRED_SECTIONS = [
 ]
 
 STAGE_REQUIRED_TERMS = ["目标", "做法", "原因", "位置", "验证", "风险", "阶段契约"]
+STANDARDS_GATE_REQUIRED_TERMS = ["技术栈", "规范来源", "standards index", "官方", "适用边界"]
+DEVELOPMENT_GATE_REQUIRED_TERMS = ["代码标准", "静态质量", "架构边界", "设计模式", "耦合", "内聚", "验证映射"]
 
 CONTRACT_REQUIRED_FIELDS = [
     "contract_version",
@@ -147,6 +151,47 @@ def check_research_gate(text: str, allow_template: bool) -> list[str]:
     return errors
 
 
+def check_gate_result(section_text: str, gate_name: str, result_terms: list[str], allow_template: bool) -> list[str]:
+    errors: list[str] = []
+    for term in result_terms:
+        if term not in section_text:
+            errors.append(f"{gate_name} missing term: {term}")
+    if allow_template:
+        return errors
+    if "`pending`" in section_text or re.search(r"结论.*pending|result.*pending", section_text, re.IGNORECASE | re.DOTALL):
+        errors.append(f"{gate_name} result is still pending")
+    return errors
+
+
+def check_standards_gate(text: str, allow_template: bool) -> list[str]:
+    standards = section(text, "规范发现门禁")
+    if not standards.strip():
+        return ["Standards Discovery Gate section is empty"]
+    errors = check_gate_result(
+        standards,
+        "Standards Discovery Gate",
+        STANDARDS_GATE_REQUIRED_TERMS,
+        allow_template,
+    )
+    if allow_template:
+        return errors
+    if "online-required" in standards and "http" not in standards and "blocked-by-access" not in standards:
+        errors.append("online-required Standards Discovery Gate must include at least one URL/source link or blocked-by-access record")
+    return errors
+
+
+def check_development_quality_gate(text: str, allow_template: bool) -> list[str]:
+    quality = section(text, "开发质量门禁")
+    if not quality.strip():
+        return ["Development Quality Gate section is empty"]
+    return check_gate_result(
+        quality,
+        "Development Quality Gate",
+        DEVELOPMENT_GATE_REQUIRED_TERMS,
+        allow_template,
+    )
+
+
 def check_plan(text: str, allow_template: bool = False) -> list[str]:
     errors: list[str] = []
     for name in REQUIRED_SECTIONS:
@@ -176,10 +221,20 @@ def check_plan(text: str, allow_template: bool = False) -> list[str]:
         errors.append("Readiness Gate must confirm Plan Self-Review")
     if "Research Gate" not in readiness and "调研门禁" not in readiness:
         errors.append("Readiness Gate must confirm Research Gate")
+    if "Standards Discovery Gate" not in readiness and "规范发现门禁" not in readiness:
+        errors.append("Readiness Gate must confirm Standards Discovery Gate")
+    if "Development Quality Gate" not in readiness and "开发质量门禁" not in readiness:
+        errors.append("Readiness Gate must confirm Development Quality Gate")
 
     approval = section(text, "方案批准")
     if "提交" not in approval:
         errors.append("Plan Approval must record commit authorization")
+
+    quality_gate = section(text, "方案质量门禁")
+    if "Standards Discovery Gate" not in quality_gate and "规范发现门禁" not in quality_gate:
+        errors.append("Plan Quality Gate must confirm Standards Discovery Gate")
+    if "Development Quality Gate" not in quality_gate and "开发质量门禁" not in quality_gate:
+        errors.append("Plan Quality Gate must confirm Development Quality Gate")
 
     contract = section(text, "执行契约")
     contract_json = extract_first_json_block(contract)
@@ -194,6 +249,8 @@ def check_plan(text: str, allow_template: bool = False) -> list[str]:
         errors.append("Execution Contract must mention Plan Amendment Gate")
 
     errors.extend(check_research_gate(text, allow_template))
+    errors.extend(check_standards_gate(text, allow_template))
+    errors.extend(check_development_quality_gate(text, allow_template))
     errors.extend(check_terms(section(text, "目标条件"), GOAL_REQUIRED_TERMS, "Goal Condition"))
     errors.extend(check_terms(section(text, "规划循环协议"), PLANNING_LOOP_REQUIRED_TERMS, "Planning Loop Protocol"))
     errors.extend(check_terms(section(text, "执行循环协议"), EXECUTOR_LOOP_REQUIRED_TERMS, "Executor Work Loop"))

@@ -23,6 +23,7 @@
 - `Execution Control.overall_status` 是 `in_progress` 或可从 approved 状态安全切入。
 - 当前阶段存在于已批准的 `Implementation Plan`。
 - `Process Manager Gate`、`Git Context`、`Validation`、`Commit policy` 和 `Resume Summary` 存在。
+- 如果计划包含 `Standards Discovery Gate` 或 `Development Quality Gate`，必须读取 standards index 和对应门禁章节。
 - `active-task.json` 与 `execution-plan.md` 冲突时，以 `execution-plan.md` 为准，先修正 `active-task.json`。
 
 建议在执行前运行：
@@ -112,11 +113,11 @@ Stage Entry Gate 通过前不能开始编码。必须检查：
 4. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
 5. 复查 `Process Manager Gate`。
 6. 检查 `Git Context` 和实际 git 状态。
-7. 阅读本阶段相关代码、测试、配置、API 和文档。
+7. 阅读本阶段相关代码、测试、配置、API、文档、standards index 和开发质量门禁。
 8. 在批准范围内做最小必要修改。
 9. 修复明显缺陷；小优化只能在不改变方案方向时执行。
 10. 如果范围、风险、接口、验证成本或方案方向变化，停止并进入 `Plan Amendment Gate`。
-11. 做 code review，并将 blocking/major finding 写入计划或 ledger。
+11. 执行 `Development Quality Check` 和 code review，并将 blocking/major finding 写入计划或 ledger。
 12. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
 13. 修复 review 或验证发现的问题，并重复必要 review 和验证。
 14. 更新 changelog 或项目等价变更记录。
@@ -142,12 +143,32 @@ Stage Entry Gate 通过前不能开始编码。必须检查：
 4. 如果资料不可访问，记录为 `blocked-by-access` 或 blocking decision；不得凭记忆继续。
 5. 处理结果必须写入 ledger，可用 `review_finding`、`blocked`、`amendment_requested` 或 `note` 事件。
 
+## Development Quality Check
+
+`Development Quality Check` 用于把 planner 阶段的 standards index 和开发质量门禁真正用于实现阶段。
+
+每个阶段必须复核：
+
+- standards index：本阶段涉及的语言、框架、API、架构、设计模式或安全规范是否已读取；没有适用规范时必须说明原因。
+- 代码标准：命名、格式、注释、错误处理、日志、配置、测试风格是否符合项目规则和本阶段范围。
+- 静态质量：format、lint、typecheck、build、单测或等价验证是否已映射到 `Validation Evidence`；无法执行时必须记录原因、影响和替代证据。
+- 架构边界：模块职责、依赖方向、公共接口、数据所有权、兼容性和迁移边界是否被保持。
+- 设计模式取舍：新增抽象、复用模式或拒绝复杂模式的原因是否与计划一致。
+- 低耦合高内聚：是否引入跨层调用、循环依赖、共享状态膨胀、重复抽象、过宽接口或职责漂移。
+
+记录要求：
+
+- finding 写入 `Code Review`，质量维度可使用 standards、static quality、architecture、pattern、coupling、cohesion 或 validation。
+- 阻塞或 major finding 必须在当前阶段关闭；如果需要改变批准范围、公共接口或验证策略，进入 `Plan Amendment Gate`。
+- 最终交付前必须能在计划中看到 standards index 引用、开发质量检查结论和对应验证证据。
+
 ## 阶段退出和转移
 
 Stage Exit Gate 通过前不能进入下一阶段或最终交付。必须检查：
 
 - 阶段目标已经完成，且没有超出阶段契约。
 - code review 已完成，blocking 和 major finding 已关闭。
+- Development Quality Check 已完成，standards index、架构边界和静态质量证据已记录。
 - 必需验证已执行；无法执行时已记录原因、影响和替代证据。
 - 明显缺陷已修复，并已重复必要 review 和验证。
 - 长期进程均已通过 `process-manager` 记录 ready/log/status/stop 证据，或已明确记录本阶段不涉及长期进程。
@@ -187,6 +208,15 @@ python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace 
 - `major`：必须修复；如果不修复，必须重新请求用户批准。
 - `minor`：可在不改变方案方向时自修；不修复时必须说明影响。
 - `follow-up`：不影响当前验收，但必须记录后续建议。
+
+`Code Review` 还必须记录质量维度：
+
+- `standards`：是否遵守 standards index 或项目内开发规则。
+- `static quality`：format、lint、typecheck、build、单测或等价检查。
+- `architecture`：模块职责、依赖方向、公共接口、数据所有权和兼容性。
+- `pattern`：设计模式取舍、新抽象必要性和过度设计风险。
+- `coupling` / `cohesion`：耦合、内聚、循环依赖、共享状态和职责漂移。
+- `validation`：验证证据、未覆盖范围和替代证据。
 
 验证失败时不能提交或进入下一阶段。必须修复并重复必要验证，或记录阻塞并停止。
 
@@ -331,14 +361,15 @@ managed 任务结束前必须完成最终交付门禁：
 
 1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、changelog 和 git 状态。
 2. 确认每个阶段都有 review、验证、缺陷处理、文档更新和提交记录。
-3. 汇总已执行验证；不能把未执行验证写成通过。
-4. 汇总未覆盖范围、失败项、剩余风险和后续建议。
-5. 汇总 branch status：当前分支、主分支、是否已合回主分支、未合回时代码停留在哪个 harness 分支。
-6. 汇总 commit hash、commit message、changelog 记录和关键文件。
-7. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
-8. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
-9. 最终结论还必须更新 `Ledger Evidence`、`Resume Packet` 和 `.harness/active-task.json`。
-10. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
+3. 确认每个阶段的 Development Quality Check 已引用 standards index，并覆盖代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
+4. 汇总已执行验证；不能把未执行验证写成通过。
+5. 汇总未覆盖范围、失败项、剩余风险和后续建议。
+6. 汇总 branch status：当前分支、主分支、是否已合回主分支、未合回时代码停留在哪个 harness 分支。
+7. 汇总 commit hash、commit message、changelog 记录和关键文件。
+8. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
+9. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
+10. 最终结论还必须更新 `Ledger Evidence`、`Resume Packet` 和 `.harness/active-task.json`。
+11. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
 
 建议最终回复前运行：
 

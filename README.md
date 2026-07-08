@@ -15,6 +15,8 @@
 - 复杂任务先制定方案，再等待用户明确批准。
 - 方案制定阶段使用 `Plan Quality Gate` 检查影响面、证据等级和方案变更触发条件。
 - `Research Gate` 必须判断不确定项是否为 `none`、`local-only`、`online-required` 或 `blocked-by-access`；涉及可能变化的外部事实时优先查询官方或一手资料。
+- `Standards Discovery Gate` 必须识别语言、技术栈、框架、API 类型和架构风险，收集官方/一手或高质量规范来源并形成 standards index。
+- `Development Quality Gate` 必须覆盖代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。
 - `Plan Self-Review` 必须主动复查缺陷、优化点、缺失项、风险和一致性；发现问题先修复计划。
 - `Readiness Gate` 只表示方案可提交审批，不表示可以自动实现。
 - 用户批准前不得进入实现阶段。
@@ -34,6 +36,7 @@
 - 执行前运行或等价执行 `harness_exec_check.py --mode preflight`。
 - 实施阶段按 `Stage Contract`、`Stage Entry Gate`、`Stage Exit Gate` 和 `Stage Transition Gate` 执行。
 - 实施中发现计划未覆盖的外部事实、API/依赖变化或关键不确定项时，进入 `Research Drift Gate`，补证据或触发 `Plan Amendment Gate`。
+- 每个阶段执行 `Development Quality Check`，引用 standards index 复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
 - `run-to-completion` 模式下，阶段完成不是停止条件；仍有 pending stage 时必须继续下一阶段。
 - 用户批准实施不等于授权提交，只有明确提交授权时才能 commit。
 - managed 任务最终交付必须携带任务结论、验证结果、未覆盖范围、commit 信息和关键证据；前端或可视化任务应提供截图或替代证据。

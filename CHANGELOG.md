@@ -2,6 +2,15 @@
 
 ## 2026-07-08
 
+### Stage 1-6: complex coding 开发质量门禁
+
+- `complex-coding-planner` 增加 Standards Discovery Gate 和 Development Quality Gate，要求 managed 计划先收集规范来源，再规划代码标准、静态质量、架构边界和模式取舍。
+- `harness_plan_check.py` 增加规范发现和开发质量章节检查，并在模板模式下允许占位、普通计划下拒绝 pending。
+- `complex-coding-executor` 增加 Development Quality Check，执行期引用 standards index 复核质量证据，并让 final gate 覆盖开发质量证据。
+- 补充 planner/executor eval、README 和 `.harness` 计划记录，覆盖缺少规范发现、过度设计、架构漂移和缺少质量证据的场景。
+- Commit: pending
+- Commit message: pending
+
 ### Stage 1-6: planner 不确定问题调研门禁
 
 - `complex-coding-planner` 增加 Research Gate 规则和模板字段，区分 `none`、`local-only`、`online-required` 和 `blocked-by-access`。

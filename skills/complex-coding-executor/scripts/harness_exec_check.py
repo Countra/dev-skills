@@ -47,6 +47,14 @@ CONTRACT_REQUIRED_FIELDS = [
 ]
 
 
+def has_standards_gate(plan: str) -> bool:
+    return "规范发现门禁" in plan or "Standards Discovery Gate" in plan
+
+
+def has_development_quality_gate(plan: str) -> bool:
+    return "开发质量门禁" in plan or "Development Quality Gate" in plan
+
+
 def read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -172,6 +180,13 @@ def basic_checks(active: dict[str, Any], plan: str, task_dir: Path) -> list[str]
     for term in REQUIRED_PLAN_TERMS:
         if term not in plan:
             errors.append(f"plan missing required term: {term}")
+    if has_standards_gate(plan) or has_development_quality_gate(plan):
+        if not has_standards_gate(plan):
+            errors.append("plan missing Standards Discovery Gate")
+        if not has_development_quality_gate(plan):
+            errors.append("plan missing Development Quality Gate")
+        if "standards index" not in plan:
+            errors.append("plan missing standards index evidence")
     if active.get("state_source") and active.get("state_source") != "execution-plan.md":
         errors.append("active-task state_source must be execution-plan.md")
     errors.extend(check_contract(active, plan))
@@ -208,6 +223,10 @@ def check_final(active: dict[str, Any], plan: str, task_dir: Path, plan_path: Pa
     for term in ["验证证据", "代码审查", "提交记录", "最终交付"]:
         if term not in plan:
             errors.append(f"final delivery evidence missing term: {term}")
+    if has_standards_gate(plan) or has_development_quality_gate(plan):
+        for term in ["standards index", "开发质量", "架构边界", "静态质量"]:
+            if term not in plan:
+                errors.append(f"final development quality evidence missing term: {term}")
     events, parse_errors = read_events(task_dir / "ledger.jsonl")
     if parse_errors:
         errors.append("ledger contains parse errors")
@@ -254,6 +273,8 @@ def build_status(active: dict[str, Any], plan: str, task_dir: Path, plan_path: P
         "attestation_exists": (task_dir / "attestation.json").is_file(),
         "open_decision": has_open_decision(task_dir),
         "approval_status": "approved" if is_approved(plan) else "not_approved",
+        "standards_gate": has_standards_gate(plan),
+        "development_quality_gate": has_development_quality_gate(plan),
         "ledger_summary": ledger_summary,
     }
 

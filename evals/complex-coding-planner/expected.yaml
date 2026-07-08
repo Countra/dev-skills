@@ -44,3 +44,16 @@ assumption-cannot-pass-readiness:
   blocks_readiness: true
   requires_assumption_impact: true
   requires_reapproval_trigger_or_blocking_decision: true
+standards-discovery-required:
+  requires_standards_discovery_gate: true
+  identifies_language_framework_api_and_architecture: true
+  records_official_or_primary_standards_sources: true
+  writes_standards_index: true
+development-quality-gate-required:
+  requires_development_quality_gate: true
+  covers_code_standards_static_quality_architecture_and_patterns: true
+  maps_quality_checks_to_validation: true
+overengineering-pattern-rejected:
+  rejects_unnecessary_patterns: true
+  keeps_low_risk_tasks_lightweight: true
+  records_pattern_tradeoff: true

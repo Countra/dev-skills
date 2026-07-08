@@ -132,6 +132,58 @@
 
 - `pending`
 
+## 规范发现门禁（Standards Discovery Gate）
+
+发现模式（Discovery mode）:
+
+- none / local-only / online-required / blocked-by-access
+
+技术栈清单（Technology inventory）:
+
+| 类型（Type） | 发现（Finding） | 来源（Source） | 影响（Impact） |
+| --- | --- | --- | --- |
+| 语言（Language） |  |  |  |
+| 框架（Framework） |  |  |  |
+| API/架构类型（API/architecture） |  |  |  |
+| 工具链（Toolchain） |  |  |  |
+
+规范来源矩阵（Standards source matrix）:
+
+| 规范来源（Standard source） | 类型（Type） | 官方/一手（Official/primary） | 适用边界（Applicability） | 访问日期（Accessed） | 影响（Impact） |
+| --- | --- | --- | --- | --- | --- |
+|  | project / language / framework / API / architecture / pattern / security / other | yes/no |  |  |  |
+
+standards index:
+
+- 路径或章节（Path/section）:
+- 摘要（Summary）:
+- 未覆盖或 blocked-by-access（Not covered / blocked）:
+
+规范发现结论（Standards result）:
+
+- `pending`
+
+## 开发质量门禁（Development Quality Gate）
+
+质量范围（Quality scope）:
+
+| 维度（Dimension） | 规划结论（Plan） | 阶段映射（Stage mapping） | 验证映射（Validation mapping） |
+| --- | --- | --- | --- |
+| 代码标准（Code standards） |  |  |  |
+| 静态质量（Static quality） |  |  |  |
+| 架构边界（Architecture boundaries） |  |  |  |
+| 设计模式取舍（Design pattern decision） |  |  |  |
+| 低耦合（Low coupling） |  |  |  |
+| 高内聚（High cohesion） |  |  |  |
+
+过度设计防护（Overengineering guard）:
+
+-
+
+开发质量结论（Development quality result）:
+
+- `pending`
+
 ## 上下文（Context）
 
 本地代码（Local code）:
@@ -203,6 +255,8 @@
 | 兼容性（Compatibility） | yes/no |  |  |  |  |
 | 测试（Tests） | yes/no |  |  |  |  |
 | 文档（Documentation） | yes/no |  |  |  |  |
+| 代码标准（Code standards） | yes/no |  |  |  |  |
+| 架构设计（Architecture/design） | yes/no |  |  |  |  |
 
 ## 实施计划（Implementation Plan）
 
@@ -230,6 +284,14 @@
 
 - 
 
+适用规范（Standards applied）:
+
+-
+
+开发质量检查（Development quality checks）:
+
+-
+
 验证（Validation）:
 
 - 
@@ -245,6 +307,8 @@
 - 禁止修改（Forbidden changes）:
 - 进入条件（Entry checks）:
 - 退出条件（Exit checks）:
+- 适用规范（Standards applied）:
+- 开发质量检查（Development quality checks）:
 - 必需验证（Required validation）:
 - 是否预期提交（Commit expected）:
 
@@ -485,6 +549,8 @@ patch 失败处理（Patch failure handling）:
 | --- | --- | --- |
 | 关键判断有证据等级（Evidence levels assigned） | pending |  |
 | Research Gate 已完成（Research Gate complete） | pending |  |
+| Standards Discovery Gate 已完成（Standards discovery complete） | pending |  |
+| Development Quality Gate 已完成（Development quality complete） | pending |  |
 | 影响面矩阵完整（Impact matrix complete） | pending |  |
 | 候选方案比较充分（Options compared enough） | pending |  |
 | 每阶段可独立验证（Stages independently verifiable） | pending |  |
@@ -508,6 +574,7 @@ patch 失败处理（Patch failure handling）:
 | 缺失项（Missing items） |  |  | pending |
 | 风险（Risks） |  |  | pending |
 | 一致性（Consistency） |  |  | pending |
+| 开发质量（Development quality） |  |  | pending |
 
 门禁重跑（Gate rerun）:
 
@@ -523,6 +590,8 @@ patch 失败处理（Patch failure handling）:
 | 目标和验收清楚（Goal and acceptance clear） | pending |  |
 | 上下文已收集（Context collected） | pending |  |
 | 调研门禁已通过（Research Gate passed） | pending |  |
+| 规范发现门禁已通过（Standards Discovery Gate passed） | pending |  |
+| 开发质量门禁已通过（Development Quality Gate passed） | pending |  |
 | 候选方案已比较（Options compared） | pending |  |
 | 决策已记录（Decision recorded） | pending |  |
 | 实施阶段已细化（Implementation stages detailed） | pending |  |
@@ -691,9 +760,9 @@ Ledger 摘要（Ledger summary）:
 
 ## 代码审查（Code Review）
 
-| 阶段（Stage） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
-| --- | --- | --- | --- |
-|  |  | blocking / major / minor / follow-up |  |
+| 阶段（Stage） | 质量维度（Quality dimension） | 问题（Finding） | 严重程度（Severity） | 处理（Resolution） |
+| --- | --- | --- | --- | --- |
+|  | standards / static quality / architecture / pattern / coupling / cohesion / validation |  | blocking / major / minor / follow-up |  |
 
 ## 恢复摘要（Resume Summary）
 

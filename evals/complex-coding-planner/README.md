@@ -11,6 +11,8 @@
 - Execution Contract、Goal Condition、Planning Loop Protocol、Executor Work Loop。
 - 研究 findings 落盘、重大决策前重读计划、Plan Amendment Gate。
 - Research Gate、online-required 官方/一手来源、blocked-by-access 降级和未处理 assumption 阻断。
+- Standards Discovery Gate：识别技术栈、收集官方/一手规范来源、沉淀 standards index。
+- Development Quality Gate：覆盖代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。
 - 空模板或 pending gate 默认不得通过普通 planner 检查。
 - Readiness 后停止等待用户批准，不直接实现。
 - 提交授权必须单独记录。
