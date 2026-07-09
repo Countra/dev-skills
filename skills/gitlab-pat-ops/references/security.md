@@ -41,6 +41,7 @@ $env:SKILL_GITLAB_PAT="..."
 - 写操作必须支持 dry-run。
 - 评论正文优先使用 `--body-file` 或 `--stdin`。
 - `--body` 可用于短测试内容，但可能进入 shell history。
+- 更新 issue 描述时优先使用 `--description-file` 或 `--stdin`，dry-run 只输出长度和短 preview；空描述必须显式加 `--allow-empty-description`，避免误清空。
 - 创建 issue 时默认预检 labels，避免 GitLab 因未知 label 自动创建新 label；只有明确需要时才使用 `--allow-new-labels`。
 - issue/MR close/reopen 只允许 `state_event=close/reopen`，不得扩展为 merge、approve、delete。
 - 写操作失败时不得重复盲发，必须先定位错误原因。
@@ -54,6 +55,7 @@ $env:SKILL_GITLAB_PAT="..."
 - `/user` 认证检查。
 - 项目只读搜索或详情读取。
 - `codex_test` 内低风险 issue/MR 评论回复 smoke。
+- `codex_test` 内 issue 描述更新 dry-run；真实更新必须在确认目标 issue 和替换描述后执行。
 - `codex_test` 内 issue 创建 dry-run 和 issue/MR close/reopen dry-run。
 - 明确批准时，可在 `codex_test` 创建带 smoke 标记的 issue，并关闭同一个 smoke issue。
 

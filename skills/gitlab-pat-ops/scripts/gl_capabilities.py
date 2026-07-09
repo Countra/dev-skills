@@ -194,6 +194,21 @@ CAPABILITIES: dict[str, Any] = {
             "live_smoke": "dry-run by default; real close smoke only for disposable codex_test issue",
         },
         {
+            "capability": "update_issue_description",
+            "script": "gl_issues.py",
+            "command": "update-description",
+            "endpoint": "PUT /projects/:id/issues/:issue_iid",
+            "scopes": ["api"],
+            "safety": [
+                "dry-run by default",
+                "--confirm required",
+                "only sends the description field",
+                "prefer --description-file or --stdin for long content",
+                "empty descriptions require --allow-empty-description",
+            ],
+            "live_smoke": "dry-run by default; real update is allowed only for explicitly approved codex_test issue descriptions",
+        },
+        {
             "capability": "close_or_reopen_merge_request",
             "script": "gl_mrs.py",
             "commands": ["close", "reopen"],
@@ -222,6 +237,7 @@ CAPABILITIES: dict[str, Any] = {
         ],
         "live_write": [
             "single marked issue/MR note in codex_test only",
+            "dry-run issue description update by default; real update only for explicitly approved codex_test issue",
             "dry-run issue create and dry-run issue/MR state change by default",
             "real issue create/close only for explicitly approved codex_test smoke",
         ],

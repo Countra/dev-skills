@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitLab issue 只读命令。"""
+"""GitLab issue 查询和受保护写入命令。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 from typing import Any, Iterable
 
 from gitlab_common import (
+    GitLabSkillError,
     add_common_args,
     add_pagination_args,
     make_client,
@@ -23,7 +24,7 @@ from gl_issue_templates import DEFAULT_TEMPLATE_DIR, read_template_content
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="查询 GitLab issue")
+    parser = argparse.ArgumentParser(description="查询和受保护写入 GitLab issue")
     add_common_args(parser)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -57,6 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
         state.add_argument("--project", required=True)
         state.add_argument("--iid", required=True)
         state.add_argument("--confirm", action="store_true", help="确认真实发送状态变更")
+
+    update_description = subparsers.add_parser("update-description", help="替换 issue 描述，默认 dry-run")
+    add_common_args(update_description)
+    update_description.add_argument("--project", required=True)
+    update_description.add_argument("--iid", required=True)
+    update_source = update_description.add_mutually_exclusive_group(required=True)
+    update_source.add_argument("--description", help="直接传入描述；较长内容优先使用 --description-file")
+    update_source.add_argument("--description-file", help="从 UTF-8 文本文件读取描述")
+    update_source.add_argument("--stdin", action="store_true", help="从标准输入读取描述")
+    update_description.add_argument("--allow-empty-description", action="store_true", help="明确允许把 issue 描述清空")
+    update_description.add_argument("--confirm", action="store_true", help="确认真实发送描述更新")
 
     create = subparsers.add_parser("create", help="创建 issue，默认 dry-run")
     add_common_args(create)
@@ -158,6 +170,25 @@ def main(argv: Iterable[str] | None = None) -> int:
         path = f"/projects/{project}/issues/{quote_id(args.iid)}"
         if not args.confirm:
             output_result(client.preview("PUT", path, None, body), pretty=args.pretty)
+            return 0
+        output_result(client.request("PUT", path, json_body=body), pretty=args.pretty)
+        return 0
+    if args.command == "update-description":
+        description, description_source = read_optional_text_from_args(
+            args,
+            "description",
+            "description_file",
+            "stdin",
+            "description",
+        )
+        if description == "" and not args.allow_empty_description:
+            raise GitLabSkillError("描述内容为空；如需清空 issue 描述，请显式传入 --allow-empty-description")
+        body = {"description": description if description is not None else ""}
+        path = f"/projects/{project}/issues/{quote_id(args.iid)}"
+        if not args.confirm:
+            preview = client.preview("PUT", path, None, body)
+            preview["description_source"] = description_source
+            output_result(preview, pretty=args.pretty)
             return 0
         output_result(client.request("PUT", path, json_body=body), pretty=args.pretty)
         return 0

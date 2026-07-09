@@ -1,6 +1,6 @@
 ---
 name: gitlab-pat-ops
-description: Operate GitLab through the REST API with this repository's PAT-based GitLab operations skill. Use when Codex needs to inspect or search GitLab projects, repositories, files, labels, milestones, members, branches, issue templates, issues, comments/notes, or merge requests; create projects/issues/merge requests; close or reopen issues/MRs with guarded dry-run; parse issue/MR comments; reply to comments safely; or inspect the maintained capability boundary using SKILL_GITLAB_BASE_URL plus SKILL_GITLAB_PAT/SKILL_GITLAB_TOKEN.
+description: Operate GitLab through the REST API with this repository's PAT-based GitLab operations skill. Use when Codex needs to inspect or search GitLab projects, repositories, files, labels, milestones, members, branches, issue templates, issues, comments/notes, or merge requests; create projects/issues/merge requests; update issue descriptions; close or reopen issues/MRs with guarded dry-run; parse issue/MR comments; reply to comments safely; or inspect the maintained capability boundary using SKILL_GITLAB_BASE_URL plus SKILL_GITLAB_PAT/SKILL_GITLAB_TOKEN.
 ---
 
 # GitLab PAT Ops
@@ -58,7 +58,7 @@ Detailed workflow: read `references/workflow.md`.
 - `gl_members.py`: list/get project members for assignee/reviewer discovery.
 - `gl_branches.py`: list/get project branches for MR preparation.
 - `gl_issue_templates.py`: list/get project repository issue templates under `.gitlab/issue_templates`.
-- `gl_issues.py`: list/get issues, related MRs, closed-by MRs, guarded issue creation, and guarded issue close/reopen.
+- `gl_issues.py`: list/get issues, related MRs, closed-by MRs, guarded issue creation, guarded issue description update, and guarded issue close/reopen.
 - `gl_notes.py`: list/compact issue or MR notes, and guarded replies.
 - `gl_mrs.py`: list/get MRs, MR notes, guarded MR creation, and guarded MR close/reopen.
 
@@ -69,6 +69,7 @@ All scripts default to JSON output; pass `--pretty` for formatted JSON.
 - Write commands must support dry-run and require `--confirm` for real requests.
 - Prefer `--body-file` or `--stdin` for comment bodies; `--body` can leak into shell history.
 - Issue creation checks existing labels by default; use `--allow-new-labels` only when intentionally allowing GitLab to create missing labels.
+- Issue description updates are supported as guarded full-field replacements: read the target issue first, use `--description-file` or `--stdin` for long content, dry-run first, then `--confirm` only after the exact target and replacement description are approved. Empty descriptions require `--allow-empty-description`.
 - Live write smoke is only allowed in the `codex_test` test repository when the user has explicitly allowed it.
 - Never run destructive operations such as delete, merge, approve, force push, permission changes, token management, or bulk cross-repository writes.
 - Issue/MR close/reopen are supported only as guarded state changes: dry-run first, then `--confirm` only after the exact target is approved.

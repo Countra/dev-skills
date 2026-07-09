@@ -54,6 +54,28 @@ python skills\gitlab-pat-ops\scripts\gl_issues.py create --project group/codex_t
 
 `gl_issues.py create` 默认会检查 label 是否存在；只有明确希望 GitLab 自动创建缺失 label 时才使用 `--allow-new-labels`。
 
+### 更新 issue 描述
+
+先读取目标 issue，确认仓库、IID、标题和当前描述：
+
+```powershell
+python skills\gitlab-pat-ops\scripts\gl_issues.py get --project group/codex_test --iid 1 --pretty
+```
+
+该操作会替换整段 `description` 字段，不是追加内容。长描述优先写入 UTF-8 文本文件，再 dry-run：
+
+```powershell
+python skills\gitlab-pat-ops\scripts\gl_issues.py update-description --project group/codex_test --iid 1 --description-file .\issue-description.md --pretty
+```
+
+确认目标 issue 和替换后的描述内容无误后，再真实发送：
+
+```powershell
+python skills\gitlab-pat-ops\scripts\gl_issues.py update-description --project group/codex_test --iid 1 --description-file .\issue-description.md --confirm --pretty
+```
+
+该命令只更新 `description` 字段，不修改标题、label、milestone、assignee 或状态。默认拒绝空描述；如果确实需要清空描述，必须显式加 `--allow-empty-description`。
+
 ### 回复测试评论
 
 先 dry-run：

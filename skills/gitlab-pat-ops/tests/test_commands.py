@@ -58,6 +58,7 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(value["result"]["skill"]["name"], "gitlab-pat-ops")
         self.assertTrue(any(item["capability"] == "create_issue" for item in guarded))
         self.assertTrue(any(item["capability"] == "close_or_reopen_issue" for item in guarded))
+        self.assertTrue(any(item["capability"] == "update_issue_description" for item in guarded))
 
     def test_project_create_without_confirm_is_dry_run(self) -> None:
         client = FakeClient()
@@ -210,6 +211,76 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(client.request_calls, [])
         self.assertEqual(client.preview_calls[0][0], "PUT")
         self.assertEqual(client.preview_calls[0][3]["state_event"], "close")
+
+    def test_issue_update_description_dry_run_uses_description_file(self) -> None:
+        client = FakeClient()
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write("新的 issue 描述")
+            description_path = handle.name
+        try:
+            argv = [
+                "update-description",
+                "--project",
+                "group/proj",
+                "--iid",
+                "3",
+                "--description-file",
+                description_path,
+            ]
+            code, value = run_and_parse(gl_issues, argv, client)
+        finally:
+            Path(description_path).unlink(missing_ok=True)
+        self.assertEqual(code, 0)
+        self.assertEqual(value["result"]["dry_run"], True)
+        self.assertEqual(value["result"]["description_source"], "description-file")
+        self.assertEqual(client.request_calls, [])
+        self.assertEqual(client.preview_calls[0][0], "PUT")
+        self.assertEqual(client.preview_calls[0][3]["description"], "新的 issue 描述")
+
+    def test_issue_update_description_confirm_sends_put(self) -> None:
+        client = FakeClient()
+        argv = [
+            "update-description",
+            "--project",
+            "group/proj",
+            "--iid",
+            "3",
+            "--description",
+            "新的 issue 描述",
+            "--confirm",
+        ]
+        code, value = run_and_parse(gl_issues, argv, client)
+        self.assertEqual(code, 0)
+        self.assertEqual(value["result"]["sent"], True)
+        method, path, _params, body, _kwargs = client.request_calls[0]
+        self.assertEqual(method, "PUT")
+        self.assertEqual(path, "/projects/group%2Fproj/issues/3")
+        self.assertEqual(body, {"description": "新的 issue 描述"})
+
+    def test_issue_update_description_rejects_empty_description_by_default(self) -> None:
+        client = FakeClient()
+        argv = ["update-description", "--project", "group/proj", "--iid", "3", "--description", ""]
+        with self.assertRaises(gl_issues.GitLabSkillError):
+            run_and_parse(gl_issues, argv, client)
+        self.assertEqual(client.preview_calls, [])
+        self.assertEqual(client.request_calls, [])
+
+    def test_issue_update_description_allows_explicit_empty_description(self) -> None:
+        client = FakeClient()
+        argv = [
+            "update-description",
+            "--project",
+            "group/proj",
+            "--iid",
+            "3",
+            "--description",
+            "",
+            "--allow-empty-description",
+        ]
+        code, value = run_and_parse(gl_issues, argv, client)
+        self.assertEqual(code, 0)
+        self.assertEqual(value["result"]["dry_run"], True)
+        self.assertEqual(client.preview_calls[0][3], {"description": ""})
 
     def test_mr_reopen_confirm_sends_put(self) -> None:
         client = FakeClient()

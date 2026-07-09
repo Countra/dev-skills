@@ -75,6 +75,7 @@
 | 关联 MR | `gl_issues.py related-mrs` | `GET /projects/:id/issues/:issue_iid/related_merge_requests` | `read_api` | 只读 |
 | 关闭来源 MR | `gl_issues.py closed-by` | `GET /projects/:id/issues/:issue_iid/closed_by` | `read_api` | 只读 |
 | 新建 issue | `gl_issues.py create` | `POST /projects/:id/issues` | `api` | 默认 dry-run，真实请求必须 `--confirm`；labels 默认预检 |
+| 更新 issue 描述 | `gl_issues.py update-description` | `PUT /projects/:id/issues/:issue_iid` | `api` | 默认 dry-run，真实请求必须 `--confirm`；只发送 `description` 字段；默认拒绝空描述 |
 | 关闭/重开 issue | `gl_issues.py close/reopen` | `PUT /projects/:id/issues/:issue_iid` | `api` | 默认 dry-run，`state_event` 限定 close/reopen |
 
 ## Notes
