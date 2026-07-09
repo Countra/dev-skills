@@ -2,6 +2,8 @@
 
 ## 来源（Sources）
 
+- 用户会话：当前任务要求新增面向 GitLab 的 skill，使用 GitLab 个人访问令牌和 skill 专属环境变量 `SKILL_GITLAB_BASE_URL`、`SKILL_GITLAB_PAT` 调用 GitLab REST API，覆盖仓库访问/搜索、issue 搜索与详情、评论解析与回复、项目创建和合并请求创建；方案已获批准并按 `complex-coding-executor` 完成实施、验证和记录。
+- 用户会话：用户确认 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 已配置；实现阶段已基于这些变量完成安全 live read smoke，并仅在 GitLab 测试仓库 `Countra/codex_test` 执行一条带标记的 issue 评论写入 smoke，未执行危险命令测试。
 - 用户会话：当前任务补充要求 planner 在规划阶段主动搜索语言规范、框架工程结构、API/架构设计规范、设计模式和 SOLID 等资料；示例来源包括 Google styleguide、Google Cloud API Design Guide 和 AIP design patterns，方案需新增规范收集阶段并可将索引/摘要沉淀到 `.harness` artifacts。
 - 用户会话：当前任务要求按 `complex-coding-planner` 规则，为 planner/executor 补强代码标准、语法规范、架构设计、设计模式取舍、低耦合和高内聚等开发侧规则；方案已落盘到 `.harness/tasks/2026-07-08/feature/complex-coding-development-quality-gate/execution-plan.md`，当前等待用户审批。
 - 用户会话：当前任务要求强化 `complex-coding-planner` 对不确定问题的深入调研和在线资源搜索机制，方案已在 `.harness/tasks/2026-07-08/feature/planner-research-gate-optimization/execution-plan.md` 获批并进入实施；后续执行按 `complex-coding-executor` 约束推进。
@@ -44,7 +46,7 @@ Harness 分支策略（Harness branch policy）:
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `harness/feature`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，当前使用 `harness/feature`。
-- 当前 active managed 任务为 `complex-coding-development-quality-gate`，状态为 `in_progress`，用户已批准按 `complex-coding-executor` 进入实现阶段并允许修改完成后提交。
+- 当前 active managed 任务为 `gitlab-skill-development`，状态为 `complete`；用户已批准按 `complex-coding-executor` 执行并授权使用 `git commit -F` 提交。
 - 从本任务起，同一仓库 Git 命令串行执行，不和其它 Git 命令放入并发批次。
 - 当前 Git 只读状态可使用 `git --no-optional-locks status --short --branch`；若遇到 ownership 保护，优先使用一次性 `safe.directory` 参数，不自动写入全局配置。
 
@@ -66,7 +68,7 @@ Harness 分支策略（Harness branch policy）:
 
 运行时（Runtime）:
 
-- 本任务优化 `complex-coding-planner` 和 `complex-coding-executor` 的长期任务规划、执行、恢复和审计能力；不需要长期后台服务。
+- 本任务新增脚本型 `gitlab` skill，用 Python 标准库脚本调用 GitLab REST API；不需要长期后台服务。
 
 包管理器（Package manager）:
 
@@ -80,6 +82,7 @@ Harness 分支策略（Harness branch policy）:
 
 - JSON 检查：解析 `.harness/active-task.json`
 - Planner 检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan <execution-plan.md>`
+- 当前 GitLab skill 方案检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan .harness/tasks/2026-07-09/feature/gitlab-skill-development/execution-plan.md`
 - Planner 模板结构检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan skills/complex-coding-planner/templates/execution-plan.md --allow-template`
 - Executor 检查：`python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace . --task-dir <task-dir> --mode preflight|transition|final|status`
 - Python 检查：`python -m py_compile <script.py>`
@@ -107,7 +110,10 @@ Runtime Services:
 
 规则（Rules）:
 
-- 当前任务已获批准，executor 可在批准范围内修改 `complex-coding-planner`、`complex-coding-executor`、README、eval、CHANGELOG 和 `.harness` 任务记录；用户已授权修改完成后提交。
+- 当前 GitLab skill 任务已完成实现；executor 已按批准方案修改 `skills/gitlab`、`evals/gitlab`、README、CHANGELOG 和 `.harness` 任务记录。
+- GitLab skill 规划采用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 作为主环境变量，并兼容同前缀别名 `SKILL_GITLAB_TOKEN`；缺少变量时未来 `gl_doctor.py` 必须提示用户设置，不得泄露 token。
+- 用户声明当前环境已配置 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT`；implementation live read smoke 已通过 `/user`、项目搜索/详情、issue、notes 和 search 只读检查。
+- GitLab live 写入测试仅限 `codex_test` 测试仓库；本任务已在 `Countra/codex_test` issue 1 创建 note id `3539465182`，禁止删除、关闭、合并、force、权限变更、token 管理、批量修改或跨仓库写入测试。
 - Git 命令必须串行；只读 status 优先 `--no-optional-locks`，diff 检查优先 `diff.autoRefreshIndex=false`。
 - 本任务不需要长期后台服务；验证命令均为 finite command，不进入 process-manager。
 - 如果后续临时出现必须启动的长期服务，仍按 `complex-coding-executor` 的 `Process Manager Gate` 使用 process-manager，不手写后台 shell 启动。

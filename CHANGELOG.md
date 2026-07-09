@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-09
+
+### Stage 1-6: GitLab PAT 操作 skill
+
+- 新增 `gitlab` skill，使用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 通过 GitLab REST API 操作项目、仓库、issue、notes 和 MR。
+- 新增 `gl_*` 脚本和共享 client，覆盖 doctor、项目、搜索、仓库文件、issue、评论和合并请求流程。
+- 写操作默认 dry-run，真实请求必须 `--confirm`，并限制 live 写入 smoke 只在 `codex_test` 测试仓库内进行。
+- 补充 GitLab API 映射、安全规则、workflow reference、eval prompt 和 README 说明。
+- Commit: current commit
+- Commit message: `feat(gitlab): 新增 GitLab PAT 操作 skill`
+
 ## 2026-07-08
 
 ### Stage 1-6: complex coding 开发质量门禁
