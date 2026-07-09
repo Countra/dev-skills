@@ -11,6 +11,7 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+import gl_capabilities  # noqa: E402
 import gl_mrs  # noqa: E402
 import gl_notes  # noqa: E402
 import gl_projects  # noqa: E402
@@ -39,6 +40,16 @@ def run_and_parse(module, argv, client: FakeClient):  # noqa: ANN001
 
 
 class CommandTests(unittest.TestCase):
+    def test_capabilities_lists_supported_and_unsupported_boundaries(self) -> None:
+        output = io.StringIO()
+        with mock.patch("sys.stdout", output):
+            code = gl_capabilities.main(["--section", "not-supported"])
+        value = json.loads(output.getvalue())
+        unsupported = value["result"]["not_supported"]
+        self.assertEqual(code, 0)
+        self.assertEqual(value["result"]["skill"]["name"], "gitlab-pat-ops")
+        self.assertTrue(any(item["capability"] == "create_issue" for item in unsupported))
+
     def test_project_create_without_confirm_is_dry_run(self) -> None:
         client = FakeClient()
         code, value = run_and_parse(gl_projects, ["create", "--name", "demo"], client)
@@ -56,7 +67,7 @@ class CommandTests(unittest.TestCase):
     def test_issue_reply_dry_run_uses_body_file(self) -> None:
         client = FakeClient()
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
-            handle.write("[codex gitlab skill smoke] hello")
+            handle.write("[gitlab-pat-ops smoke] hello")
             body_path = handle.name
         try:
             argv = ["issue-reply", "--project", "group/proj", "--iid", "1", "--body-file", body_path]

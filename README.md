@@ -57,9 +57,9 @@
 - 默认隐藏窗口，stdout/stderr 写入 manager 自动生成的日志文件。
 - manager 默认端口是 `18080`；如果绑定失败，会最多向后切换 3 次并把最终端口写回 config。
 
-### gitlab
+### gitlab-pat-ops
 
-位置：`skills/gitlab/`
+位置：`skills/gitlab-pat-ops/`
 
 用途：通过 GitLab REST API 和 skill 专属个人访问令牌环境变量，执行项目、仓库、issue、评论和合并请求相关操作。
 
@@ -67,6 +67,7 @@
 
 - 只读取 `SKILL_GITLAB_BASE_URL`、`SKILL_GITLAB_PAT` 和同前缀别名 `SKILL_GITLAB_TOKEN`。
 - 默认不读取通用 `GITLAB_TOKEN`，避免和其它 GitLab 工具混用。
+- 不确定能力边界、scope 或禁止项时，可运行 `gl_capabilities.py` 查看当前维护的能力清单。
 - 先运行 `gl_doctor.py` 检查环境，再执行其它 GitLab 操作。
 - 只读能力覆盖项目搜索/详情、仓库 tree/file/raw、GitLab 搜索、issue、notes 和 MR。
 - 写操作覆盖项目创建、MR 创建和 issue/MR 评论回复，默认 dry-run，真实请求必须 `--confirm`。
@@ -98,7 +99,7 @@ skills/
 │   ├── SKILL.md
 │   ├── scripts/
 │   └── references/
-├── gitlab/
+├── gitlab-pat-ops/
 │   ├── SKILL.md
 │   ├── agents/
 │   ├── scripts/
@@ -117,7 +118,7 @@ examples/
 evals/
 ├── complex-coding-planner/
 ├── complex-coding-executor/
-├── gitlab/
+├── gitlab-pat-ops/
 └── process-manager/
 ```
 

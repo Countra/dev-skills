@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查 GitLab skill 环境变量和认证状态。"""
+"""检查 GitLab PAT Ops 环境变量和认证状态。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from gitlab_common import add_common_args, load_config, make_client, output_resu
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="检查 GitLab skill 配置和认证状态")
+    parser = argparse.ArgumentParser(description="检查 GitLab PAT Ops 配置和认证状态")
     add_common_args(parser)
     parser.add_argument("--offline-check", action="store_true", help="只检查环境变量和 URL，不访问 GitLab")
     return parser

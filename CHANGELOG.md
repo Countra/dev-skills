@@ -2,9 +2,17 @@
 
 ## 2026-07-09
 
+### Follow-up: GitLab PAT Ops 命名和能力边界
+
+- 将 GitLab 操作 skill 命名调整为 `gitlab-pat-ops`，避免与通用 `gitlab` skill 混淆。
+- 新增 `gl_capabilities.py`，以结构化 JSON 维护当前支持、受控写入和明确不支持的能力边界。
+- 同步 README、eval、skill metadata 和引用文档中的新名称与能力入口。
+- Commit: current commit
+- Commit message: `feat(gitlab-pat-ops): 调整命名和能力边界`
+
 ### Stage 1-6: GitLab PAT 操作 skill
 
-- 新增 `gitlab` skill，使用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 通过 GitLab REST API 操作项目、仓库、issue、notes 和 MR。
+- 新增 `gitlab-pat-ops` skill，使用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 通过 GitLab REST API 操作项目、仓库、issue、notes 和 MR。
 - 新增 `gl_*` 脚本和共享 client，覆盖 doctor、项目、搜索、仓库文件、issue、评论和合并请求流程。
 - 写操作默认 dry-run，真实请求必须 `--confirm`，并限制 live 写入 smoke 只在 `codex_test` 测试仓库内进行。
 - 补充 GitLab API 映射、安全规则、workflow reference、eval prompt 和 README 说明。

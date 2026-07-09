@@ -68,7 +68,7 @@ Harness 分支策略（Harness branch policy）:
 
 运行时（Runtime）:
 
-- 本任务新增脚本型 `gitlab` skill，用 Python 标准库脚本调用 GitLab REST API；不需要长期后台服务。
+- 本任务新增脚本型 `gitlab-pat-ops` skill，用 Python 标准库脚本调用 GitLab REST API；不需要长期后台服务。
 
 包管理器（Package manager）:
 
@@ -82,7 +82,7 @@ Harness 分支策略（Harness branch policy）:
 
 - JSON 检查：解析 `.harness/active-task.json`
 - Planner 检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan <execution-plan.md>`
-- 当前 GitLab skill 方案检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan .harness/tasks/2026-07-09/feature/gitlab-skill-development/execution-plan.md`
+- 当前 GitLab PAT Ops 方案检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan .harness/tasks/2026-07-09/feature/gitlab-skill-development/execution-plan.md`
 - Planner 模板结构检查：`python skills/complex-coding-planner/scripts/harness_plan_check.py --plan skills/complex-coding-planner/templates/execution-plan.md --allow-template`
 - Executor 检查：`python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace . --task-dir <task-dir> --mode preflight|transition|final|status`
 - Python 检查：`python -m py_compile <script.py>`
@@ -110,8 +110,8 @@ Runtime Services:
 
 规则（Rules）:
 
-- 当前 GitLab skill 任务已完成实现；executor 已按批准方案修改 `skills/gitlab`、`evals/gitlab`、README、CHANGELOG 和 `.harness` 任务记录。
-- GitLab skill 规划采用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 作为主环境变量，并兼容同前缀别名 `SKILL_GITLAB_TOKEN`；缺少变量时未来 `gl_doctor.py` 必须提示用户设置，不得泄露 token。
+- 当前 GitLab PAT Ops skill 任务已完成实现；executor 已按批准方案修改 `skills/gitlab-pat-ops`、`evals/gitlab-pat-ops`、README、CHANGELOG 和 `.harness` 任务记录。
+- GitLab PAT Ops skill 规划采用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 作为主环境变量，并兼容同前缀别名 `SKILL_GITLAB_TOKEN`；缺少变量时未来 `gl_doctor.py` 必须提示用户设置，不得泄露 token。
 - 用户声明当前环境已配置 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT`；implementation live read smoke 已通过 `/user`、项目搜索/详情、issue、notes 和 search 只读检查。
 - GitLab live 写入测试仅限 `codex_test` 测试仓库；本任务已在 `Countra/codex_test` issue 1 创建 note id `3539465182`，禁止删除、关闭、合并、force、权限变更、token 管理、批量修改或跨仓库写入测试。
 - Git 命令必须串行；只读 status 优先 `--no-optional-locks`，diff 检查优先 `diff.autoRefreshIndex=false`。

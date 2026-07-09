@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GitLab skill 脚本的共享 REST 客户端。"""
+"""GitLab PAT Ops 脚本的共享 REST 客户端。"""
 
 from __future__ import annotations
 

@@ -1,11 +1,12 @@
-# GitLab REST API Map
+# GitLab PAT Ops REST API Map
 
-本表只覆盖当前 skill v1 支持的 endpoint。扩展新 endpoint 前先确认 GitLab 官方文档和安全边界。
+本表只覆盖当前 skill v1 支持的 endpoint。扩展新 endpoint 前先运行 `gl_capabilities.py --pretty` 确认当前能力边界，再确认 GitLab 官方文档和安全边界。
 
 ## Authentication
 
 | 能力 | 脚本 | Endpoint | Scope | 备注 |
 | --- | --- | --- | --- | --- |
+| 能力边界清单 | `gl_capabilities.py` | none | none | 本地 JSON 输出，不读取 token、不访问网络 |
 | 认证检查 | `gl_doctor.py` | `GET /user` | `read_api` 或 `api` | 使用 `PRIVATE-TOKEN` header |
 
 ## Projects
@@ -59,6 +60,19 @@
 | MR 详情 | `gl_mrs.py get` | `GET /projects/:id/merge_requests/:merge_request_iid` | `read_api` | 只读 |
 | MR notes | `gl_mrs.py notes` | `GET /projects/:id/merge_requests/:merge_request_iid/notes` | `read_api` | 只读 |
 | 创建 MR | `gl_mrs.py create` | `POST /projects/:id/merge_requests` | `api` | 默认 dry-run，真实 live smoke 默认不执行 |
+
+## Not Supported
+
+| 能力 | 可能 Endpoint | 原因 |
+| --- | --- | --- |
+| 新建 issue | `POST /projects/:id/issues` | 当前未实现；如后续扩展需 `api` scope、dry-run、`--confirm` 和项目权限检查说明 |
+| 删除项目、文件、分支、issue、MR 或 note | varies | destructive operation |
+| 关闭 issue/MR | varies | 超出当前受控写入边界 |
+| merge / approve MR | varies | 高影响协作流程操作 |
+| force push 或删除分支 | varies | 高风险仓库操作 |
+| 权限、成员或 token 管理 | varies | 凭据和访问控制风险 |
+| CI/CD 管理 | varies | 超出当前 skill 范围 |
+| 批量跨仓库写入 | varies | 超出当前 guarded write 策略 |
 
 ## Pagination
 

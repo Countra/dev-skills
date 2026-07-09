@@ -1,4 +1,0 @@
-interface:
-  display_name: "GitLab"
-  short_description: "Operate GitLab through a skill-scoped personal access token."
-  default_prompt: "Use the GitLab skill to inspect repositories, issues, comments, and merge requests safely."

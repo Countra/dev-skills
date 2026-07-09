@@ -1,4 +1,4 @@
-# GitLab Skill Security
+# GitLab PAT Ops Security
 
 ## 环境变量
 
@@ -9,6 +9,8 @@
 - `SKILL_GITLAB_TOKEN`
 
 默认不读取通用 `GITLAB_TOKEN`，避免误用其它 GitLab 工具的凭据。
+
+`gl_capabilities.py` 不读取任何 token，也不访问网络；它只展示当前维护的能力边界。
 
 PowerShell 示例：
 
@@ -22,6 +24,7 @@ $env:SKILL_GITLAB_PAT="..."
 - 只读 API：优先 `read_api`。
 - 私有仓库文件读取：可能需要 `read_repository`。
 - 回复评论、创建项目、创建 MR：需要 `api`。
+- 新建 issue 当前未实现；如后续扩展，也需要 `api` 和用户在目标项目中具备创建 issue 的权限。
 - `write_repository` 不支持 REST API authentication，不能作为写 API 的凭据说明。
 
 ## 脱敏规则
