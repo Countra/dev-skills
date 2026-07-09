@@ -1,6 +1,6 @@
 ---
 name: gitlab-pat-ops
-description: Operate GitLab through the REST API with this repository's PAT-based GitLab operations skill. Use when Codex needs to inspect or search GitLab projects, repositories, files, issues, comments/notes, or merge requests; create projects or merge requests; parse issue/MR comments; reply to comments safely; or inspect the maintained capability boundary using SKILL_GITLAB_BASE_URL plus SKILL_GITLAB_PAT/SKILL_GITLAB_TOKEN.
+description: Operate GitLab through the REST API with this repository's PAT-based GitLab operations skill. Use when Codex needs to inspect or search GitLab projects, repositories, files, labels, milestones, members, branches, issue templates, issues, comments/notes, or merge requests; create projects/issues/merge requests; close or reopen issues/MRs with guarded dry-run; parse issue/MR comments; reply to comments safely; or inspect the maintained capability boundary using SKILL_GITLAB_BASE_URL plus SKILL_GITLAB_PAT/SKILL_GITLAB_TOKEN.
 ---
 
 # GitLab PAT Ops
@@ -38,7 +38,7 @@ python skills\gitlab-pat-ops\scripts\gl_capabilities.py --pretty
 ## Workflow
 
 1. Run `gl_doctor.py`.
-2. Use read-only commands first to locate the project, issue, note, branch, or MR.
+2. Use read-only commands first to locate the project, labels, milestones, members, branches, templates, issue, note, or MR.
 3. For writes, run dry-run first and inspect the redacted request preview.
 4. Only add `--confirm` after the user has approved the exact target and action.
 5. If the operation's support status or safety boundary is uncertain, run `gl_capabilities.py`.
@@ -53,9 +53,14 @@ Detailed workflow: read `references/workflow.md`.
 - `gl_projects.py`: list/search/get projects and guarded project creation.
 - `gl_search.py`: global or project search.
 - `gl_repo.py`: repository tree, file, raw file, blob, and raw blob.
-- `gl_issues.py`: list/get issues, related MRs, and closed-by MRs.
+- `gl_labels.py`: list/get project labels for issue metadata selection.
+- `gl_milestones.py`: list/get project milestones and milestone issues/MRs.
+- `gl_members.py`: list/get project members for assignee/reviewer discovery.
+- `gl_branches.py`: list/get project branches for MR preparation.
+- `gl_issue_templates.py`: list/get project repository issue templates under `.gitlab/issue_templates`.
+- `gl_issues.py`: list/get issues, related MRs, closed-by MRs, guarded issue creation, and guarded issue close/reopen.
 - `gl_notes.py`: list/compact issue or MR notes, and guarded replies.
-- `gl_mrs.py`: list/get MRs, MR notes, and guarded MR creation.
+- `gl_mrs.py`: list/get MRs, MR notes, guarded MR creation, and guarded MR close/reopen.
 
 All scripts default to JSON output; pass `--pretty` for formatted JSON.
 
@@ -63,8 +68,10 @@ All scripts default to JSON output; pass `--pretty` for formatted JSON.
 
 - Write commands must support dry-run and require `--confirm` for real requests.
 - Prefer `--body-file` or `--stdin` for comment bodies; `--body` can leak into shell history.
+- Issue creation checks existing labels by default; use `--allow-new-labels` only when intentionally allowing GitLab to create missing labels.
 - Live write smoke is only allowed in the `codex_test` test repository when the user has explicitly allowed it.
-- Never run destructive operations such as delete, close, merge, approve, force push, permission changes, token management, or bulk cross-repository writes.
+- Never run destructive operations such as delete, merge, approve, force push, permission changes, token management, or bulk cross-repository writes.
+- Issue/MR close/reopen are supported only as guarded state changes: dry-run first, then `--confirm` only after the exact target is approved.
 - If a requested GitLab operation is outside these scripts, inspect `gl_capabilities.py` and `references/api-map.md`, then use the same safety pattern before extending the skill.
 - When adding or removing a capability, update `gl_capabilities.py`, `references/api-map.md`, `references/security.md`, eval prompts, and tests together.
 

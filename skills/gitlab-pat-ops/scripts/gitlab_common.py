@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Iterable
 
 
@@ -302,6 +303,35 @@ def summarize_body(body: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def parse_csv(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def parse_int_csv(value: str | None, label: str) -> list[int] | None:
+    items = parse_csv(value)
+    if items is None:
+        return None
+    result: list[int] = []
+    for item in items:
+        try:
+            result.append(int(item))
+        except ValueError as exc:
+            raise GitLabSkillError(f"{label} 必须是逗号分隔的整数") from exc
+    return result
+
+
+def validate_yyyy_mm_dd(value: str | None, label: str) -> str | None:
+    if value is None:
+        return None
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+    except ValueError as exc:
+        raise GitLabSkillError(f"{label} 必须使用 YYYY-MM-DD 格式") from exc
+    return value
+
+
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--pretty", action="store_true", help="格式化 JSON 输出")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="HTTP 超时时间，单位秒")
@@ -370,11 +400,41 @@ def read_body_from_args(args: argparse.Namespace) -> tuple[str, str]:
     return sys.stdin.read(), "stdin"
 
 
+def read_optional_text_from_args(
+    args: argparse.Namespace,
+    text_attr: str,
+    file_attr: str,
+    stdin_attr: str,
+    label: str,
+) -> tuple[str | None, str]:
+    text_value = getattr(args, text_attr, None)
+    file_value = getattr(args, file_attr, None)
+    stdin_value = getattr(args, stdin_attr, False)
+    provided = [text_value is not None, bool(file_value), bool(stdin_value)]
+    if sum(1 for item in provided if item) > 1:
+        raise GitLabSkillError(f"{label} 只能从参数、文件或标准输入中选择一种来源")
+    if file_value:
+        with open(file_value, "r", encoding="utf-8") as handle:
+            return handle.read(), f"{file_attr.replace('_', '-')}"
+    if text_value is not None:
+        return text_value, f"{text_attr.replace('_', '-')}"
+    if stdin_value:
+        return sys.stdin.read(), "stdin"
+    return None, "none"
+
+
 def add_body_args(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--body-file", help="从 UTF-8 文本文件读取正文")
     group.add_argument("--body", help="直接传入正文；可能进入 shell history，优先使用 --body-file")
     group.add_argument("--stdin", action="store_true", help="从标准输入读取正文")
+
+
+def add_optional_description_args(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--description", help="直接传入描述；较长内容优先使用 --description-file")
+    group.add_argument("--description-file", help="从 UTF-8 文本文件读取描述")
+    group.add_argument("--stdin", action="store_true", help="从标准输入读取描述")
 
 
 def run_cli(handler: Any, argv: Iterable[str] | None = None) -> int:

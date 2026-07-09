@@ -46,6 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--squash", action="store_true")
     create.add_argument("--reviewer-ids", help="逗号分隔 reviewer id")
     create.add_argument("--confirm", action="store_true")
+
+    for command, help_text in (("close", "关闭 MR，默认 dry-run"), ("reopen", "重新打开 MR，默认 dry-run")):
+        state = subparsers.add_parser(command, help=help_text)
+        add_common_args(state)
+        state.add_argument("--project", required=True)
+        state.add_argument("--iid", required=True)
+        state.add_argument("--confirm", action="store_true", help="确认真实发送状态变更")
     return parser
 
 
@@ -100,6 +107,14 @@ def main(argv: Iterable[str] | None = None) -> int:
             output_result(client.preview("POST", path, None, body), pretty=args.pretty)
             return 0
         output_result(client.request("POST", path, json_body=body), pretty=args.pretty)
+        return 0
+    if args.command in {"close", "reopen"}:
+        body = {"state_event": args.command}
+        path = f"/projects/{project}/merge_requests/{quote_id(args.iid)}"
+        if not args.confirm:
+            output_result(client.preview("PUT", path, None, body), pretty=args.pretty)
+            return 0
+        output_result(client.request("PUT", path, json_body=body), pretty=args.pretty)
         return 0
     parser.error("unknown command")
     return 2

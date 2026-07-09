@@ -2,6 +2,15 @@
 
 ## 2026-07-09
 
+### Stage 1-6: GitLab PAT Ops 模块化能力扩展
+
+- 将 GitLab 操作能力拆成 label、milestone、member、branch、issue template 等独立只读资源脚本，便于按任务组合使用。
+- `gl_issues.py` 新增受保护 issue 创建，支持模板描述、label 预检、milestone、assignee、due date、confidential 和 issue_type。
+- `gl_issues.py` 和 `gl_mrs.py` 新增 close/reopen，默认 dry-run，真实状态变更必须 `--confirm`。
+- 同步能力边界、API map、workflow、安全文档、README、eval 和测试，保留删除、merge、approve、权限/token 管理等禁止边界。
+- Commit: pending
+- Commit message: pending
+
 ### Follow-up: GitLab PAT Ops 命名和能力边界
 
 - 将 GitLab 操作 skill 命名调整为 `gitlab-pat-ops`，避免与通用 `gitlab` skill 混淆。

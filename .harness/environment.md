@@ -2,6 +2,7 @@
 
 ## 来源（Sources）
 
+- 用户会话：当前任务要求按 `complex-coding-planner` 为 `gitlab-pat-ops` 制定模块化扩展方案，重点拆分 GitLab 操作能力，避免一次性场景脚本；规划需覆盖仓库/issue/MR/模板/标签/里程碑/成员/分支等独立能力，后续支持指定仓库创建 issue、选择 issue 模板、指定里程碑，并支持关闭 issue / MR。
 - 用户会话：当前任务要求新增面向 GitLab 的 skill，使用 GitLab 个人访问令牌和 skill 专属环境变量 `SKILL_GITLAB_BASE_URL`、`SKILL_GITLAB_PAT` 调用 GitLab REST API，覆盖仓库访问/搜索、issue 搜索与详情、评论解析与回复、项目创建和合并请求创建；方案已获批准并按 `complex-coding-executor` 完成实施、验证和记录。
 - 用户会话：用户确认 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT` 已配置；实现阶段已基于这些变量完成安全 live read smoke，并仅在 GitLab 测试仓库 `Countra/codex_test` 执行一条带标记的 issue 评论写入 smoke，未执行危险命令测试。
 - 用户会话：当前任务补充要求 planner 在规划阶段主动搜索语言规范、框架工程结构、API/架构设计规范、设计模式和 SOLID 等资料；示例来源包括 Google styleguide、Google Cloud API Design Guide 和 AIP design patterns，方案需新增规范收集阶段并可将索引/摘要沉淀到 `.harness` artifacts。

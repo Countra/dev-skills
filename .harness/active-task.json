@@ -1,13 +1,13 @@
 {
-  "task_id": "2026-07-09-feature-gitlab-skill-development",
-  "task_dir": ".harness/tasks/2026-07-09/feature/gitlab-skill-development",
-  "title": "新增 GitLab PAT 操作 skill",
+  "task_id": "2026-07-09-feature-gitlab-pat-ops-modular-capabilities",
+  "task_dir": ".harness/tasks/2026-07-09/feature/gitlab-pat-ops-modular-capabilities",
+  "title": "GitLab PAT Ops 模块化能力拆分与 issue/MR 扩展",
   "status": "complete",
   "execution_mode": "run-to-completion",
-  "overall_status": "complete",
+  "overall_status": "completed",
   "current_stage": "Final",
   "completed_stages": [
-    "Planning research and plan revision",
+    "Planning research and plan drafting",
     "Stage 1",
     "Stage 2",
     "Stage 3",

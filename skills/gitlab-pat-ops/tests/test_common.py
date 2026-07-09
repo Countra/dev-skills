@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+import argparse
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -91,6 +93,34 @@ class CommonTests(unittest.TestCase):
         preview = client.preview("POST", "/notes", None, {"body": "x" * 120, "title": "T"})
         self.assertEqual(preview["json_body"]["body"]["length"], 120)
         self.assertEqual(preview["json_body"]["title"], "T")
+
+    def test_parse_int_csv_rejects_invalid_value(self) -> None:
+        self.assertEqual(common.parse_int_csv("1, 2", "assignee_ids"), [1, 2])
+        with self.assertRaises(common.GitLabSkillError):
+            common.parse_int_csv("1,x", "assignee_ids")
+
+    def test_validate_yyyy_mm_dd(self) -> None:
+        self.assertEqual(common.validate_yyyy_mm_dd("2026-07-09", "due_date"), "2026-07-09")
+        with self.assertRaises(common.GitLabSkillError):
+            common.validate_yyyy_mm_dd("2026/07/09", "due_date")
+
+    def test_read_optional_text_from_args_reads_file(self) -> None:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as handle:
+            handle.write("hello")
+            body_path = handle.name
+        try:
+            args = argparse.Namespace(description=None, description_file=body_path, stdin=False)
+            value, source = common.read_optional_text_from_args(
+                args,
+                "description",
+                "description_file",
+                "stdin",
+                "描述",
+            )
+        finally:
+            Path(body_path).unlink(missing_ok=True)
+        self.assertEqual(value, "hello")
+        self.assertEqual(source, "description-file")
 
 
 if __name__ == "__main__":
