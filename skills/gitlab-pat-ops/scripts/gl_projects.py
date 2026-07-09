@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""GitLab 项目查询和受保护创建命令。"""
+
+from __future__ import annotations
+
+import argparse
+from typing import Any, Iterable
+
+from gitlab_common import add_common_args, add_pagination_args, make_client, output_result, quote_id, request_list, run_cli
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="查询或创建 GitLab 项目")
+    add_common_args(parser)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    list_parser = subparsers.add_parser("list", help="列出项目")
+    add_common_args(list_parser)
+    add_pagination_args(list_parser)
+    list_parser.add_argument("--membership", action="store_true")
+    list_parser.add_argument("--owned", action="store_true")
+    list_parser.add_argument("--search")
+
+    search_parser = subparsers.add_parser("search", help="搜索项目")
+    add_common_args(search_parser)
+    add_pagination_args(search_parser)
+    search_parser.add_argument("query")
+
+    get_parser = subparsers.add_parser("get", help="获取项目详情")
+    add_common_args(get_parser)
+    get_parser.add_argument("project")
+
+    create_parser = subparsers.add_parser("create", help="创建项目，默认 dry-run")
+    add_common_args(create_parser)
+    create_parser.add_argument("--name")
+    create_parser.add_argument("--path")
+    create_parser.add_argument("--namespace-id", type=int)
+    create_parser.add_argument("--description")
+    create_parser.add_argument("--visibility", choices=["private", "internal", "public"])
+    create_parser.add_argument("--initialize-with-readme", action="store_true")
+    create_parser.add_argument("--confirm", action="store_true", help="确认真实发送创建请求")
+    return parser
+
+
+def create_body(args: argparse.Namespace) -> dict[str, Any]:
+    body = {
+        "name": args.name,
+        "path": args.path,
+        "namespace_id": args.namespace_id,
+        "description": args.description,
+        "visibility": args.visibility,
+        "initialize_with_readme": args.initialize_with_readme or None,
+    }
+    body = {key: value for key, value in body.items() if value is not None}
+    if not body.get("name") and not body.get("path"):
+        raise ValueError("create 需要 --name 或 --path")
+    return body
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    client = make_client(args)
+
+    if args.command == "list":
+        params = {"membership": args.membership or None, "owned": args.owned or None, "search": args.search}
+        output_result(request_list(client, "/projects", args, params=params), pretty=args.pretty)
+        return 0
+    if args.command == "search":
+        output_result(request_list(client, "/projects", args, params={"search": args.query}), pretty=args.pretty)
+        return 0
+    if args.command == "get":
+        output_result(client.request("GET", f"/projects/{quote_id(args.project)}"), pretty=args.pretty)
+        return 0
+    if args.command == "create":
+        body = create_body(args)
+        if not args.confirm:
+            output_result(client.preview("POST", "/projects", None, body), pretty=args.pretty)
+            return 0
+        output_result(client.request("POST", "/projects", json_body=body), pretty=args.pretty)
+        return 0
+    parser.error("unknown command")
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(run_cli(main))

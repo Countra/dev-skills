@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitLab PAT Ops"
+  short_description: "Operate GitLab safely through SKILL_GITLAB_* personal access token settings."
+  default_prompt: "Use the GitLab PAT Ops skill to inspect repositories, issues, comments, and merge requests safely."
