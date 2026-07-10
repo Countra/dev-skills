@@ -8,6 +8,7 @@ import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from typing import Any, Callable
 
 from .errors import NotFoundError, PMError, RequestError
@@ -20,6 +21,12 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 class ControlServer(ThreadingHTTPServer):
     daemon_threads = True
+
+    def server_bind(self) -> None:
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
     def __init__(
         self,

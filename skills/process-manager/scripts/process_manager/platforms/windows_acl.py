@@ -17,6 +17,9 @@ from ..errors import SupervisorError
 DACL_SECURITY_INFORMATION = 0x00000004
 PROTECTED_DACL_SECURITY_INFORMATION = 0x80000000
 SECURITY_DESCRIPTOR_REVISION = 1
+SE_FILE_OBJECT = 1
+FILE_ALL_ACCESS = 0x001F01FF
+GENERIC_ALL = 0x10000000
 
 
 class WindowsAcl:
@@ -38,8 +41,23 @@ class WindowsAcl:
             ctypes.POINTER(wintypes.DWORD),
         ]
         self.advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW.restype = wintypes.BOOL
-        self.advapi32.SetFileSecurityW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, ctypes.c_void_p]
-        self.advapi32.SetFileSecurityW.restype = wintypes.BOOL
+        self.advapi32.GetSecurityDescriptorDacl.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(wintypes.BOOL),
+            ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(wintypes.BOOL),
+        ]
+        self.advapi32.GetSecurityDescriptorDacl.restype = wintypes.BOOL
+        self.advapi32.SetNamedSecurityInfoW.argtypes = [
+            wintypes.LPWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+        ]
+        self.advapi32.SetNamedSecurityInfoW.restype = wintypes.DWORD
         self.advapi32.GetFileSecurityW.argtypes = [
             wintypes.LPCWSTR,
             wintypes.DWORD,
@@ -104,9 +122,30 @@ class WindowsAcl:
         ):
             raise self._last_error("Windows runtime ACL 解析")
         try:
+            present = wintypes.BOOL()
+            dacl = ctypes.c_void_p()
+            defaulted = wintypes.BOOL()
+            if not self.advapi32.GetSecurityDescriptorDacl(
+                descriptor,
+                ctypes.byref(present),
+                ctypes.byref(dacl),
+                ctypes.byref(defaulted),
+            ):
+                raise self._last_error("Windows runtime DACL 提取")
+            if not present.value or not dacl.value:
+                raise SupervisorError("Windows runtime security descriptor 不包含有效 DACL")
             information = DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION
-            if not self.advapi32.SetFileSecurityW(str(path), information, descriptor):
-                raise self._last_error(f"Windows runtime ACL 设置: {path}")
+            error = self.advapi32.SetNamedSecurityInfoW(
+                str(path),
+                SE_FILE_OBJECT,
+                information,
+                None,
+                None,
+                dacl,
+                None,
+            )
+            if error:
+                raise SupervisorError(f"Windows runtime ACL 设置失败，Win32 error={error}: {path}")
         finally:
             self.kernel32.LocalFree(descriptor)
         self._verify_acl(path)
@@ -136,9 +175,22 @@ class WindowsAcl:
         ):
             raise self._last_error(f"Windows runtime ACL 序列化: {path}")
         try:
-            return ctypes.wstring_at(text_pointer, text_length.value)
+            return ctypes.wstring_at(text_pointer)
         finally:
             self.kernel32.LocalFree(text_pointer)
+
+    @staticmethod
+    def _is_full_access(rights: str) -> bool:
+        normalized = rights.strip().lower()
+        if normalized in {"fa", "ga"}:
+            return True
+        if not normalized.startswith("0x"):
+            return False
+        try:
+            mask = int(normalized, 16)
+        except ValueError:
+            return False
+        return mask in {FILE_ALL_ACCESS, GENERIC_ALL}
 
     def _verify_acl(self, path: Path) -> None:
         sddl = self._read_acl_sddl(path)
@@ -148,12 +200,14 @@ class WindowsAcl:
         valid_aces = bool(aces) and all(
             len(item) == 6
             and item[0] == "A"
-            and item[2].lower() in {"fa", "0x1f01ff"}
+            and self._is_full_access(item[2])
             and item[-1] in allowed_sids
             for item in aces
         )
         if "D:P" not in sddl or not valid_aces or self._current_sid() not in observed_sids:
-            raise SupervisorError(f"Windows runtime ACL 不是受保护的当前用户 DACL: {path}")
+            raise SupervisorError(
+                f"Windows runtime ACL 不是受保护的当前用户 DACL: {path}; observed={sddl}"
+            )
 
     def secure_directory(self, path: Path) -> None:
         path.mkdir(parents=True, exist_ok=True)

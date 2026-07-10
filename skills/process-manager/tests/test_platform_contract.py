@@ -12,10 +12,36 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import pm_manager  # noqa: E402
 from process_manager.errors import SupervisorError, UnsupportedPlatformError  # noqa: E402
 from process_manager.platforms.dispatcher import describe_platform_selection  # noqa: E402
+from process_manager.platforms.windows_acl import WindowsAcl  # noqa: E402
 from process_manager.service_host import SecretRedactor  # noqa: E402
 
 
 class PlatformContractTests(unittest.TestCase):
+    def test_windows_acl_accepts_equivalent_full_access_masks(self) -> None:
+        for value in ("FA", "GA", "0x1f01ff", "0x001f01ff", "0x10000000"):
+            with self.subTest(value=value):
+                self.assertTrue(WindowsAcl._is_full_access(value))  # noqa: SLF001
+        for value in ("FR", "0x120089", "not-a-mask"):
+            with self.subTest(value=value):
+                self.assertFalse(WindowsAcl._is_full_access(value))  # noqa: SLF001
+
+    def test_windows_acl_verifies_normalized_numeric_sddl(self) -> None:
+        sid = "S-1-5-21-1-2-3-1001"
+        acl = object.__new__(WindowsAcl)
+        with (
+            mock.patch.object(acl, "_current_sid", return_value=sid),
+            mock.patch.object(
+                acl,
+                "_read_acl_sddl",
+                return_value=(
+                    f"D:PAI(A;OICI;0x001f01ff;;;{sid})"
+                    "(A;OICI;0x001f01ff;;;S-1-5-18)"
+                    "(A;OICI;0x001f01ff;;;S-1-5-32-544)"
+                ),
+            ),
+        ):
+            acl._verify_acl(Path("runtime"))  # noqa: SLF001
+
     def test_manager_stop_fails_when_bootstrap_cleanup_is_unverified(self) -> None:
         from helpers import create_config, workspace_directory
 

@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 from unittest import mock
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -27,6 +28,14 @@ class ReadyHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):  # noqa: ANN001
         return
+
+
+class LoopbackHTTPServer(ThreadingHTTPServer):
+    def server_bind(self) -> None:
+        TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
 
 
 class LogAndProbeTests(unittest.TestCase):
@@ -157,7 +166,7 @@ class LogAndProbeTests(unittest.TestCase):
             listener.close()
         self.assertTrue(tcp["ready"])
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), ReadyHandler)
+        server = LoopbackHTTPServer(("127.0.0.1", 0), ReadyHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -235,7 +244,7 @@ class LogAndProbeTests(unittest.TestCase):
             observed_handlers.extend(handlers)
             return real_builder(*handlers)
 
-        server = ThreadingHTTPServer(("127.0.0.1", 0), ReadyHandler)
+        server = LoopbackHTTPServer(("127.0.0.1", 0), ReadyHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:

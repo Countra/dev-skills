@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import argparse
-import http.server
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import time
@@ -68,14 +68,21 @@ def parent_main(identity_path: Path, mode: str) -> int:
             print(f"large-log-{index:05d}-" + ("x" * 96), flush=True)
         print("large-log-ready", flush=True)
     elif mode == "dynamic-port":
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
-        server.timeout = 0.1
-        print(f"service-url=http://127.0.0.1:{server.server_port}", flush=True)
+        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        listener.bind(("127.0.0.1", 0))
+        listener.listen()
+        listener.settimeout(0.1)
+        print(f"service-url=http://127.0.0.1:{listener.getsockname()[1]}", flush=True)
         try:
             while not STOP:
-                server.handle_request()
+                try:
+                    connection, _ = listener.accept()
+                except socket.timeout:
+                    continue
+                connection.close()
         finally:
-            server.server_close()
+            listener.close()
             if child.poll() is None:
                 child.terminate()
                 child.wait(timeout=3)

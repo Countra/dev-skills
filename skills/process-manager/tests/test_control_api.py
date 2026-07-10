@@ -91,6 +91,16 @@ class StaticOpener:
 
 
 class ControlApiTests(unittest.TestCase):
+    def test_control_server_bind_does_not_resolve_host_name(self) -> None:
+        manager = FakeManager()
+        with mock.patch("http.server.socket.getfqdn", side_effect=AssertionError("DNS lookup")):
+            server = ControlServer(("127.0.0.1", 0), manager, "token", 128)
+        try:
+            self.assertEqual(server.server_name, "127.0.0.1")
+            self.assertGreater(server.server_port, 0)
+        finally:
+            server.server_close()
+
     def test_shutdown_schedules_server_stop_after_response(self) -> None:
         events: list[str] = []
         manager = FakeManager()
