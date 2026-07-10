@@ -223,20 +223,38 @@ def contract_fingerprint(failures: list[str]) -> dict[str, Any]:
 def _run_facade(arguments: list[str], timeout: float = 30) -> tuple[int, dict[str, Any]]:
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    result = subprocess.run(
-        [sys.executable, "-u", "-X", "utf8", "-B", *arguments],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=timeout,
-        check=False,
-        env=environment,
-    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-u", "-X", "utf8", "-B", *arguments],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=timeout,
+            check=False,
+            env=environment,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, {
+            "ok": False,
+            "error": {"code": "facade_timeout", "message": f"facade 超过 {timeout} 秒未结束"},
+        }
     try:
         value = json.loads(result.stdout)
     except json.JSONDecodeError:
         value = {}
     return result.returncode, value if isinstance(value, dict) else {}
+
+
+def _facade_diagnostic(value: dict[str, Any]) -> dict[str, Any]:
+    result = {"ok": value.get("ok")}
+    error = value.get("error")
+    if isinstance(error, dict):
+        result["error"] = {
+            key: error.get(key)
+            for key in ("code", "message", "retryable")
+            if key in error
+        }
+    return result
 
 
 def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
@@ -292,4 +310,10 @@ def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
         "managerStopped": stop_data.get("managerStopped"),
         "bootstrapCleaned": stop_data.get("bootstrapCleaned"),
         "audit": audit,
+        "responses": {
+            "init": _facade_diagnostic(initialized),
+            "start": _facade_diagnostic(started),
+            "status": _facade_diagnostic(status),
+            "stop": _facade_diagnostic(stopped),
+        },
     }

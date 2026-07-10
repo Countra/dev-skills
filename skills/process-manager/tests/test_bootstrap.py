@@ -21,11 +21,25 @@ def command_factory(backend: str, reason: str) -> list[str]:
 
 
 class BootstrapTests(unittest.TestCase):
-    def make_bootstrap(self, workspace: Path, platform: str, runner):  # noqa: ANN001,ANN201
+    def make_bootstrap(
+        self,
+        workspace: Path,
+        platform: str,
+        runner,
+        *,
+        manager_probe=None,
+    ):  # noqa: ANN001,ANN201
         config = create_config(workspace)
         adapter = FakeAdapter(workspace, config.state_root)
         adapter.selection = PlatformSelection(platform, "fake-owner", "test", "fixture")
-        bootstrap = ManagerBootstrap(config, adapter, runner=runner, which=lambda name: f"/usr/bin/{name}")
+        bootstrap = ManagerBootstrap(
+            config,
+            adapter,
+            runner=runner,
+            which=lambda name: f"/usr/bin/{name}",
+            manager_probe=manager_probe or (lambda: True),
+            native_ready_timeout=0,
+        )
         return config, adapter, bootstrap
 
     def test_linux_prefers_systemd_user_without_exposing_selector(self) -> None:
@@ -72,6 +86,58 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(result.backend, "posix-session")
                 self.assertIs(result.process, process)
                 spawn.assert_called_once()
+
+    def test_macos_falls_back_when_launchd_does_not_create_identity(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(command, **kwargs):  # noqa: ANN001,ANN201
+            del kwargs
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, adapter, bootstrap = self.make_bootstrap(
+                workspace,
+                "macos",
+                runner,
+                manager_probe=lambda: False,
+            )
+            process = object()
+            with (
+                mock.patch.object(bootstrap, "_launchd_domain", return_value="gui/501"),
+                mock.patch.object(adapter, "spawn_manager", return_value=process),
+            ):
+                result = bootstrap.start(
+                    command_factory,
+                    stdout_path=workspace / "out.log",
+                    stderr_path=workspace / "err.log",
+                    stdout=io.BytesIO(),
+                    stderr=io.BytesIO(),
+                )
+        self.assertEqual(result.backend, "posix-session")
+        self.assertIs(result.process, process)
+        self.assertTrue(any(command[:2] == ["/bin/launchctl", "bootout"] for command in calls))
+
+    def test_macos_keeps_launchd_when_manager_is_healthy(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+
+            def runner(command, **kwargs):  # noqa: ANN001,ANN201
+                del kwargs
+                return subprocess.CompletedProcess(command, 0, "", "")
+
+            _, _, bootstrap = self.make_bootstrap(workspace, "macos", runner)
+            with mock.patch.object(bootstrap, "_launchd_domain", return_value="gui/501"):
+                result = bootstrap.start(
+                    command_factory,
+                    stdout_path=workspace / "out.log",
+                    stderr_path=workspace / "err.log",
+                    stdout=io.BytesIO(),
+                    stderr=io.BytesIO(),
+                )
+        self.assertEqual(result.backend, "launchd-user")
+        self.assertIsNone(result.process)
 
     def test_windows_uses_detached_adapter_and_cleanup_is_workspace_scoped(self) -> None:
         def runner(command, **kwargs):  # noqa: ANN001,ANN201

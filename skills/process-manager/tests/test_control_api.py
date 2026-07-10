@@ -3,18 +3,20 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import types
 import unittest
 import urllib.error
 import urllib.request
 from pathlib import Path
+from unittest import mock
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from helpers import FakeAdapter, create_config, workspace_directory  # noqa: E402
 from process_manager.client import ManagerClient  # noqa: E402
-from process_manager.control_api import ControlServer  # noqa: E402
-from process_manager.errors import ManagerOfflineError  # noqa: E402
+from process_manager.control_api import ControlHandler, ControlServer  # noqa: E402
+from process_manager.errors import ManagerOfflineError, RequestError  # noqa: E402
 from process_manager.runtime import (  # noqa: E402
     build_manager_identity,
     initialize_runtime,
@@ -89,6 +91,49 @@ class StaticOpener:
 
 
 class ControlApiTests(unittest.TestCase):
+    def test_shutdown_schedules_server_stop_after_response(self) -> None:
+        events: list[str] = []
+        manager = FakeManager()
+        manager.shutdown = lambda: events.append("manager") or {"cleanupVerified": True}  # type: ignore[method-assign]
+        server = types.SimpleNamespace(manager=manager, shutdown=lambda: events.append("server"))
+        handler = object.__new__(ControlHandler)
+        handler.server = server
+        handler.path = "/shutdown"
+        handler._deny_unless_authorized = lambda: False  # type: ignore[method-assign]
+        handler._read_body = lambda: {}  # type: ignore[method-assign]
+        handler._send = lambda status, value: events.append("response")  # type: ignore[method-assign]
+
+        class ImmediateThread:
+            def __init__(self, *, target, daemon):  # noqa: ANN001
+                del daemon
+                self.target = target
+
+            def start(self) -> None:
+                self.target()
+
+        with mock.patch("process_manager.control_api.threading.Thread", ImmediateThread):
+            handler.do_POST()
+        self.assertEqual(events, ["manager", "response", "server"])
+
+    def test_shutdown_error_does_not_stop_control_server(self) -> None:
+        events: list[str] = []
+        manager = FakeManager()
+
+        def fail_shutdown():  # noqa: ANN202
+            events.append("manager")
+            raise RequestError("shutdown failed")
+
+        manager.shutdown = fail_shutdown  # type: ignore[method-assign]
+        server = types.SimpleNamespace(manager=manager, shutdown=lambda: events.append("server"))
+        handler = object.__new__(ControlHandler)
+        handler.server = server
+        handler.path = "/shutdown"
+        handler._deny_unless_authorized = lambda: False  # type: ignore[method-assign]
+        handler._read_body = lambda: {}  # type: ignore[method-assign]
+        handler._send = lambda status, value: events.append("response")  # type: ignore[method-assign]
+        handler.do_POST()
+        self.assertEqual(events, ["manager", "response"])
+
     def test_client_requires_response_instance_identity(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)

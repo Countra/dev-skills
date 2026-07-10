@@ -262,13 +262,6 @@ class TargetController:
             return
 
     def force(self) -> None:
-        if self.mode == "cgroup-v2":
-            path = Path(str(self.owner_control.get("cgroupPath", ""))) / "cgroup.kill"
-            try:
-                path.write_text("1\n", encoding="ascii")
-            except OSError:
-                pass
-            return
         try:
             if self.mode == "windows-job":
                 self.process.kill()

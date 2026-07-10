@@ -10,7 +10,7 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from process_manager.service_host import WindowsConsole, _pump  # noqa: E402
+from process_manager.service_host import TargetController, WindowsConsole, _pump  # noqa: E402
 
 
 class FakeKernel32:
@@ -115,6 +115,19 @@ class WindowsConsoleTests(unittest.TestCase):
             console.close()
         self.assertEqual(kernel32.allocations, 1)
         self.assertEqual(kernel32.releases, 1)
+
+
+class TargetControllerTests(unittest.TestCase):
+    def test_cgroup_host_force_only_signals_target_group(self) -> None:
+        process = mock.Mock(pid=4321)
+        controller = TargetController(process, "cgroup-v2", {"cgroupPath": "/sys/fs/cgroup/test"})
+        with (
+            mock.patch("process_manager.service_host.os.killpg", create=True) as kill_group,
+            mock.patch("process_manager.service_host.signal.SIGKILL", 9, create=True),
+        ):
+            controller.force()
+        kill_group.assert_called_once_with(4321, 9)
+        process.kill.assert_not_called()
 
 
 if __name__ == "__main__":

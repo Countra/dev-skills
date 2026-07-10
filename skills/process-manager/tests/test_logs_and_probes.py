@@ -15,7 +15,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from helpers import workspace_directory  # noqa: E402
 from process_manager.errors import ProbeLimitError  # noqa: E402
-from process_manager.logs import read_log_tail  # noqa: E402
+from process_manager.logs import IncrementalLogScanner, read_log_tail  # noqa: E402
 from process_manager.probes import LoopbackRedirectHandler, wait_for_readiness  # noqa: E402
 from process_manager.service_host import RotatingBinaryLog, SecretRedactor  # noqa: E402
 
@@ -41,6 +41,46 @@ class LogAndProbeTests(unittest.TestCase):
             self.assertEqual(value["lines"], ["old-2", "new-1", "new-2"])
             self.assertTrue(value["truncated"])
             self.assertEqual([item["name"] for item in value["files"]], ["stdout.log.2", "stdout.log.1", "stdout.log"])
+
+    def test_rotated_tail_skips_file_removed_during_snapshot(self) -> None:
+        with workspace_directory() as directory:
+            root = Path(directory)
+            path = root / "stdout.log"
+            rotated = root / "stdout.log.1"
+            rotated.write_text("old\n", encoding="utf-8")
+            path.write_text("new\n", encoding="utf-8")
+            original_open = Path.open
+
+            def disappearing_open(candidate: Path, *args, **kwargs):  # noqa: ANN002,ANN003,ANN202
+                if candidate == rotated and candidate.exists():
+                    candidate.unlink()
+                    raise FileNotFoundError(candidate)
+                return original_open(candidate, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", new=disappearing_open):
+                value = read_log_tail(path, 1, tail_lines=10, max_bytes=1024)
+            self.assertEqual(value["lines"], ["new"])
+            self.assertEqual([item["name"] for item in value["files"]], ["stdout.log"])
+
+    def test_incremental_scanner_skips_file_removed_during_snapshot(self) -> None:
+        with workspace_directory() as directory:
+            root = Path(directory)
+            path = root / "stdout.log"
+            rotated = root / "stdout.log.1"
+            rotated.write_text("old\n", encoding="utf-8")
+            path.write_text("ready\n", encoding="utf-8")
+            scanner = IncrementalLogScanner(path, 1, 1024)
+            original_open = Path.open
+
+            def disappearing_open(candidate: Path, *args, **kwargs):  # noqa: ANN002,ANN003,ANN202
+                if candidate == rotated and candidate.exists():
+                    candidate.unlink()
+                    raise FileNotFoundError(candidate)
+                return original_open(candidate, *args, **kwargs)
+
+            with mock.patch.object(Path, "open", new=disappearing_open):
+                self.assertTrue(scanner.scan())
+            self.assertEqual(scanner.text.splitlines(), ["ready"])
 
     def test_log_rotation_and_secret_redaction_cross_chunk_boundary(self) -> None:
         redactor = SecretRedactor(["secret-value"])

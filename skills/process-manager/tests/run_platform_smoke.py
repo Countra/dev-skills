@@ -98,7 +98,7 @@ def enable_windows_permission_harness(adapter) -> None:  # noqa: ANN001
     adapter.verify_file = types.MethodType(secure_file, adapter)
 
 
-def execute(workspace_parent: Path) -> dict[str, Any]:
+def execute(workspace_parent: Path, *, require_native_permissions: bool = False) -> dict[str, Any]:
     workspace = workspace_parent.resolve() / f"native-{uuid.uuid4().hex}"
     workspace.mkdir(parents=True)
     fixture = Path(__file__).resolve().parent / "fixtures" / "process_tree_service.py"
@@ -116,10 +116,25 @@ def execute(workspace_parent: Path) -> dict[str, Any]:
     except SupervisorError as exc:
         if adapter.selection.platform != "windows" or "ACL" not in str(exc):
             raise
+        if require_native_permissions:
+            runtime_security = {
+                "mode": "native-permission-required",
+                "failClosedObserved": True,
+                "reason": "当前执行环境拒绝 Windows DACL mutation",
+            }
+            failures.append(f"SupervisorError: {exc}")
+            return {
+                "ok": False,
+                "workspace": str(workspace),
+                "diagnostics": adapter.diagnostics(),
+                "runtimeSecurity": runtime_security,
+                "checks": checks,
+                "failures": failures,
+            }
         runtime_security = {
             "mode": "sandbox-permission-harness",
             "failClosedObserved": True,
-            "reason": "Codex sandbox denied Windows DACL mutation",
+            "reason": "当前执行环境拒绝 Windows DACL mutation",
         }
         enable_windows_permission_harness(adapter)
         initialize_runtime(config, adapter)
@@ -209,7 +224,7 @@ def execute(workspace_parent: Path) -> dict[str, Any]:
                     "pattern": r"service-url=(?P<url>http://127\.0\.0\.1:(?P<port>\d+))",
                     "extract": {"urls": ["url"], "ports": ["port"]},
                     "scanBytes": 131072,
-                    "timeoutSeconds": 8,
+                    "timeoutSeconds": 20,
                 },
             ),
         )
@@ -373,9 +388,10 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--require-native-permissions", action="store_true")
     args = parser.parse_args()
     args.workspace.mkdir(parents=True, exist_ok=True)
-    result = execute(args.workspace)
+    result = execute(args.workspace, require_native_permissions=args.require_native_permissions)
     write_json(args.output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

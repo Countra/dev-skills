@@ -7,11 +7,14 @@ import os
 import plistlib
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
 from .atomic import atomic_write_bytes
+from .client import ManagerClient
+from .errors import PMError
 from .models import ManagerConfig
 from .platforms.base import PlatformAdapter
 
@@ -34,11 +37,15 @@ class ManagerBootstrap:
         *,
         runner: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
         which: Callable[[str], str | None] = shutil.which,
+        manager_probe: Callable[[], bool] | None = None,
+        native_ready_timeout: float = 5.0,
     ) -> None:
         self.config = config
         self.adapter = adapter
         self.runner = runner
         self.which = which
+        self.manager_probe = manager_probe or self._manager_healthy
+        self.native_ready_timeout = native_ready_timeout
         digest = hashlib.sha256(str(config.workspace_root).encode("utf-8")).hexdigest()[:16]
         self.unit_name = f"dev-skills-pm-{digest}"
         self.launchd_label = f"dev.skills.process-manager.{digest}"
@@ -55,6 +62,23 @@ class ManagerBootstrap:
             timeout=timeout,
             check=False,
         )
+
+    def _manager_healthy(self) -> bool:
+        try:
+            _, value = ManagerClient(self.config, self.adapter, timeout=0.5).request("GET", "/health")
+        except PMError:
+            return False
+        data = value.get("data")
+        return value.get("ok") is True and isinstance(data, dict) and data.get("managerReady") is True
+
+    def _wait_for_native_manager(self) -> bool:
+        deadline = time.monotonic() + max(0.0, self.native_ready_timeout)
+        while True:
+            if self.manager_probe():
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.1)
 
     def _detached(
         self,
@@ -103,7 +127,12 @@ class ManagerBootstrap:
             result = self._run(command, 10)
         except (OSError, subprocess.SubprocessError):
             return None
-        return BootstrapResult("systemd-user", reason, None) if result.returncode == 0 else None
+        if result.returncode != 0:
+            return None
+        launched = BootstrapResult("systemd-user", reason, None)
+        if self._wait_for_native_manager():
+            return launched
+        return launched if not self.cleanup(launched.backend) else None
 
     def _launchd_domain(self) -> str | None:
         if not hasattr(os, "getuid") or not Path("/bin/launchctl").is_file():
@@ -144,7 +173,31 @@ class ManagerBootstrap:
             result = self._run(["/bin/launchctl", "bootstrap", domain, str(self.launchd_plist)], 10)
         except (OSError, subprocess.SubprocessError):
             return None
-        return BootstrapResult("launchd-user", reason, None) if result.returncode == 0 else None
+        if result.returncode != 0:
+            return None
+        launched = BootstrapResult("launchd-user", reason, None)
+        if self._wait_for_native_manager():
+            return launched
+        return launched if not self._cleanup_launchd_job(domain) else None
+
+    def _cleanup_launchd_job(self, domain: str) -> bool:
+        target = f"{domain}/{self.launchd_label}"
+        try:
+            result = self._run(["/bin/launchctl", "bootout", target], 5)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        if result.returncode != 0:
+            try:
+                result = self._run(["/bin/launchctl", "print", target], 3)
+            except (OSError, subprocess.SubprocessError):
+                return False
+            if result.returncode == 0:
+                return False
+        try:
+            self.launchd_plist.unlink(missing_ok=True)
+        except OSError:
+            return False
+        return True
 
     def start(
         self,
@@ -173,7 +226,7 @@ class ManagerBootstrap:
                 stdout,
                 stderr,
                 backend="posix-session",
-                reason="systemd user manager 不可用，自动使用独立 POSIX session",
+                reason="systemd user service 未形成可验证 manager，自动使用独立 POSIX session",
             )
         if platform == "macos":
             launchd = self._start_launchd(factory, stdout_path, stderr_path)
@@ -184,7 +237,7 @@ class ManagerBootstrap:
                 stdout,
                 stderr,
                 backend="posix-session",
-                reason="launchd user domain 不可用，自动使用独立 POSIX session",
+                reason="launchd 未形成可验证 manager，自动使用独立 POSIX session",
             )
         return self._detached(
             factory,
@@ -212,20 +265,4 @@ class ManagerBootstrap:
         domain = self._launchd_domain()
         if domain is None:
             return False
-        try:
-            target = f"{domain}/{self.launchd_label}"
-            result = self._run(["/bin/launchctl", "bootout", target], 5)
-        except (OSError, subprocess.SubprocessError):
-            return False
-        if result.returncode != 0:
-            try:
-                result = self._run(["/bin/launchctl", "print", target], 3)
-            except (OSError, subprocess.SubprocessError):
-                return False
-            if result.returncode == 0:
-                return False
-        try:
-            self.launchd_plist.unlink(missing_ok=True)
-        except OSError:
-            return False
-        return True
+        return self._cleanup_launchd_job(domain)

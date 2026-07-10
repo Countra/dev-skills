@@ -43,7 +43,7 @@ jobs:
         run: python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .ci-artifacts/static-schema-checks.json
 
       - name: Run native lifecycle smoke
-        run: python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace .ci-artifacts/runtime --output .ci-artifacts/native-smoke.json
+        run: python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace "${{ runner.temp }}/dev-skills-process-manager-${{ github.run_id }}-${{ github.run_attempt }}" --output .ci-artifacts/native-smoke.json --require-native-permissions
 
       - name: Upload platform evidence
         if: always()

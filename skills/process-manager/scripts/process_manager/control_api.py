@@ -172,17 +172,20 @@ class ControlHandler(BaseHTTPRequestHandler):
             raise RequestError(f"{label} 必须是 boolean")
         return value
 
-    def _handle(self, operation: str, action: Callable[[], Any]) -> None:
+    def _handle(self, operation: str, action: Callable[[], Any]) -> bool:
         try:
             data = action()
             self._send(200, success(operation, data, instance_id=self.control.manager.instance_id))
+            return True
         except PMError as exc:
             self._send(
                 exc.http_status,
                 failure(operation, exc, instance_id=self.control.manager.instance_id),
             )
+            return False
         except Exception as exc:  # noqa: BLE001
             self._send(500, failure(operation, exc, instance_id=self.control.manager.instance_id))
+            return False
 
     def do_GET(self) -> None:
         if self._deny_unless_authorized():
@@ -294,9 +297,8 @@ class ControlHandler(BaseHTTPRequestHandler):
                 )
             if path == "/shutdown":
                 self._closed_body(body, allowed=set())
-                result = self.control.manager.shutdown()
-                threading.Thread(target=self.control.shutdown, daemon=True).start()
-                return result
+                return self.control.manager.shutdown()
             raise NotFoundError("control endpoint 不存在")
 
-        self._handle(operation, action)
+        if self._handle(operation, action) and path == "/shutdown":
+            threading.Thread(target=self.control.shutdown, daemon=True).start()
