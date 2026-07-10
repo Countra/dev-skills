@@ -264,6 +264,15 @@ def check_process_workflow(failures: list[str]) -> dict[str, Any]:
     missing = [token for token in required if token not in text]
     if missing:
         failures.append("process-manager workflow 能力缺失: " + ", ".join(missing))
+    lines = [line.strip() for line in text.splitlines()]
+    try:
+        push_index = lines.index("push:")
+    except ValueError:
+        all_branch_push = False
+    else:
+        all_branch_push = lines[push_index + 1 : push_index + 3] == ["branches:", '- "**"']
+    if not all_branch_push:
+        failures.append("process-manager workflow 必须对所有分支 push 执行")
     forbidden = (
         "secrets.",
         "continue-on-error",
@@ -280,6 +289,7 @@ def check_process_workflow(failures: list[str]) -> dict[str, Any]:
         "required_tokens": len(required),
         "missing": missing,
         "forbidden": present_forbidden,
+        "all_branch_push": all_branch_push,
     }
 
 

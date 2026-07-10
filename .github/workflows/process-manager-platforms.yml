@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - "codex/process-manager-platform-ci"
-      - "codex/process-manager-platform-ci-*"
+      - "**"
 
 permissions:
   contents: read
