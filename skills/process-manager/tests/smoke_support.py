@@ -135,7 +135,12 @@ def wait_for_terminal(
         if current.get("state") in expected:
             return current
         time.sleep(0.05)
-    raise RuntimeError(f"process 未进入期望终态: {current.get('state')}")
+    observed = {
+        key: current.get(key)
+        for key in ("state", "exitCode", "completion", "cleanupVerified")
+        if key in current
+    }
+    raise RuntimeError(f"process 未进入期望终态: expected={sorted(expected)}, observed={observed}")
 
 
 def inherited_environment() -> list[str]:

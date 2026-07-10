@@ -25,6 +25,8 @@ MAX_SPEC_BYTES = 256 * 1024
 MAX_CONTROL_BYTES = 4096
 WINDOWS_ROTATION_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32)
 WINDOWS_SHARING_VIOLATIONS = {5, 32, 33}
+PROCESS_GROUP_SETTLE_SECONDS = 1.0
+PROCESS_GROUP_POLL_SECONDS = 0.02
 
 
 class WindowsConsole:
@@ -243,6 +245,26 @@ def _group_alive(pgid: int) -> bool:
         return True
 
 
+def _group_remaining_after_target(
+    pgid: int,
+    mode: str,
+    *,
+    timeout: float = PROCESS_GROUP_SETTLE_SECONDS,
+    is_alive: Callable[[int], bool] = _group_alive,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> bool:
+    if mode == "windows-job":
+        return False
+    deadline = monotonic() + max(0.0, timeout)
+    while is_alive(pgid):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            return True
+        sleep(min(PROCESS_GROUP_POLL_SECONDS, remaining))
+    return False
+
+
 class TargetController:
     def __init__(self, process: subprocess.Popen[bytes], mode: str, owner_control: dict[str, Any]) -> None:
         self.process = process
@@ -379,7 +401,7 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     for thread in pumps:
         thread.join(timeout=5)
     log_pump_timeout = any(thread.is_alive() for thread in pumps)
-    group_remaining = mode != "windows-job" and _group_alive(process.pid)
+    group_remaining = _group_remaining_after_target(process.pid, mode)
     if group_remaining:
         controller.force()
     state.update(

@@ -191,11 +191,37 @@ class ManagerTests(unittest.TestCase):
                     "exitCode": 0,
                 },
             )
-            refreshed = manager.status(process_key=started["processKey"])
+            with mock.patch.object(manager, "_wait_empty", side_effect=(False, True)) as wait_empty:
+                refreshed = manager.status(process_key=started["processKey"])
             self.assertEqual(refreshed["state"], "contract_violation")
             self.assertEqual(refreshed["completion"]["forceRequired"], True)
             self.assertEqual(refreshed["cleanupVerified"], True)
             self.assertTrue(adapter.last_owner.empty)
+            self.assertEqual(wait_empty.call_count, 2)
+            manager.shutdown()
+
+    def test_refresh_accepts_owner_that_empties_during_settlement(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, adapter, state, manager, _ = self.make_manager(workspace)
+            service_path = workspace / "service.json"
+            write_json(service_path, service_value(workspace))
+            started = manager.start(service_path)
+            record = state.get(key=started["processKey"])
+            write_json(
+                Path(record["internal"]["hostState"]),
+                {
+                    "capabilityHash": record["internal"]["capabilityHash"],
+                    "state": "exited",
+                    "exitCode": 23,
+                },
+            )
+            with mock.patch.object(manager, "_wait_empty", return_value=True) as wait_empty:
+                refreshed = manager.status(process_key=started["processKey"])
+            self.assertEqual(refreshed["state"], "exited")
+            self.assertEqual(refreshed["completion"]["forceRequired"], False)
+            self.assertFalse(adapter.last_owner.forced)
+            wait_empty.assert_called_once()
             manager.shutdown()
 
     def test_ready_logs_restart_and_force_fallback_share_run_identity(self) -> None:

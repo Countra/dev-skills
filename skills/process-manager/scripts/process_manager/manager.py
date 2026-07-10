@@ -31,6 +31,7 @@ from .state import ACTIVE_STATES, StateStore
 
 
 OWNER_FORCE_SECONDS = 5
+OWNER_SETTLE_SECONDS = 1
 
 
 @dataclass
@@ -238,6 +239,8 @@ class ProcessManager:
             force_required = False
             force_signaled = False
             owner_empty = run.owner.is_empty()
+            if not owner_empty and terminal_state == "exited":
+                owner_empty = self._wait_empty(run.owner, OWNER_SETTLE_SECONDS)
             if not owner_empty:
                 if terminal_state == "exited":
                     terminal_state = "contract_violation"

@@ -10,7 +10,12 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from process_manager.service_host import TargetController, WindowsConsole, _pump  # noqa: E402
+from process_manager.service_host import (  # noqa: E402
+    TargetController,
+    WindowsConsole,
+    _group_remaining_after_target,
+    _pump,
+)
 
 
 class FakeKernel32:
@@ -118,6 +123,41 @@ class WindowsConsoleTests(unittest.TestCase):
 
 
 class TargetControllerTests(unittest.TestCase):
+    def test_process_group_settlement_tolerates_delayed_empty_observation(self) -> None:
+        clock = [0.0]
+        observations = iter((True, True, False))
+
+        def sleep(delay: float) -> None:
+            clock[0] += delay
+
+        remaining = _group_remaining_after_target(
+            4321,
+            "cgroup-v2",
+            timeout=0.1,
+            is_alive=lambda pgid: next(observations),
+            monotonic=lambda: clock[0],
+            sleep=sleep,
+        )
+        self.assertFalse(remaining)
+        self.assertGreater(clock[0], 0)
+
+    def test_process_group_settlement_preserves_persistent_violation(self) -> None:
+        clock = [0.0]
+
+        def sleep(delay: float) -> None:
+            clock[0] += delay
+
+        remaining = _group_remaining_after_target(
+            4321,
+            "process-group",
+            timeout=0.05,
+            is_alive=lambda pgid: True,
+            monotonic=lambda: clock[0],
+            sleep=sleep,
+        )
+        self.assertTrue(remaining)
+        self.assertGreaterEqual(clock[0], 0.05)
+
     def test_cgroup_host_force_only_signals_target_group(self) -> None:
         process = mock.Mock(pid=4321)
         controller = TargetController(process, "cgroup-v2", {"cgroupPath": "/sys/fs/cgroup/test"})
