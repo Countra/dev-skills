@@ -1,397 +1,176 @@
 # Complex Coding Executor Workflow
 
-本文件是 `complex-coding-executor` 的执行阶段规则。只在已有 `execution-plan.md` 且计划已批准时使用。
+本文件定义批准后的执行流程。任务字段与状态机以 planner 的 `references/task-contract.md` 为准。
 
-## 入口检查
+## 目录
 
-每轮开始按顺序读取：
+1. [入口与真相源](#入口与真相源)
+2. [Preflight](#preflight)
+3. [初始化](#初始化)
+4. [Stage Loop](#stage-loop)
+5. [Development Quality Check](#development-quality-check)
+6. [Research Drift](#research-drift)
+7. [恢复与 Reconcile](#恢复与-reconcile)
+8. [Plan Amendment](#plan-amendment)
+9. [Git 与提交](#git-与提交)
+10. [长期进程](#长期进程)
+11. [最终门禁](#最终门禁)
+12. [错误恢复](#错误恢复)
 
-1. `.harness/active-task.json`
-2. `.harness/environment.md`
-3. 当前任务的 `execution-plan.md`
-4. `pending-decisions.md`（如存在）
-5. 项目 `docs/development.md`、`AGENTS.md`、`CLAUDE.md`（如存在）
-6. changelog 或项目等价变更记录
+## 入口与真相源
 
-执行前必须确认：
+按需读取：
 
-- `HARNESS_DISABLED=1` 未启用；若启用，只做 direct/advisory 行为，不消费历史 active task。
-- `harness_task_resolver.py` 能解析 active task，且 task_dir 和 execution-plan 都位于 workspace 内。
-- `execution-plan.md` 的 `Plan Approval` 已批准实施。
-- `Execution Contract` 存在且与 `.harness/active-task.json` 的 task_id、execution_mode、overall_status、current_stage、remaining_stages 和 stop_condition 一致。
-- 没有 open blocking 决策。
-- `Execution Control.overall_status` 是 `in_progress` 或可从 approved 状态安全切入。
-- 当前阶段存在于已批准的 `Implementation Plan`。
-- `Process Manager Gate`、`Git Context`、`Validation`、`Commit policy` 和 `Resume Summary` 存在。
-- 如果计划包含 `Standards Discovery Gate` 或 `Development Quality Gate`，必须读取 standards index 和对应门禁章节。
-- `active-task.json` 与 `execution-plan.md` 冲突时，以 `execution-plan.md` 为准，先修正 `active-task.json`。
+1. `.harness/active-task.json`：只定位 task-dir/run-state。
+2. `plan-contract.json`：Stage DAG、范围、验证、风险和授权策略。
+3. `execution-plan.md` 与 approved artifacts：批准意图和理由，只读。
+4. `attestation.json`：用户批准、实际授权和不可变哈希集合。
+5. `ledger.jsonl`：追加式执行历史与证据引用。
+6. `run-state.json`：可由 ledger 重建的当前快照。
+7. `.harness/environment.md`：稳定 workspace 能力。
 
-建议在执行前运行：
+禁止从 Markdown 标题、active pointer 或对话摘要推断 lifecycle、current/remaining stages、stop 或 next action。缺少当前必需结构时返回 `TASK_*` 诊断，不做版本判断或 fallback。
 
-```text
-python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode preflight
-```
+## Preflight
 
-需要快速汇报或恢复状态时运行：
+执行任何写操作前：
 
-```text
-python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode status
-```
+1. 解析 pointer/task-dir，确认所有路径位于 workspace/task-dir。
+2. 调用 planner 公共 CLI：`harness_plan_check.py --task-dir <task-dir> --mode approval`。
+3. 校验 attestation 的 task/revision、批准摘要、authorizations 和 immutable hash set。
+4. 读取 ledger 并 replay；若 snapshot 存在，比较所有权威字段。
+5. 确认没有 `reapproval_required`、blocked stop 或非法事件。
+6. 检查工作树、Stage Contract、工具权限、Process Manager Gate 和 commit authorization。
 
-## 执行控制
-
-用户批准 managed 方案后，默认执行模式为 `run-to-completion`。该模式表示连续完成所有已批准阶段，直到最终交付门禁通过。
-
-只有用户明确要求“只做当前阶段”“完成后等我确认”或等价表达时，才允许使用 `stage-only`。
-
-禁止把以下情况当作停止条件：
-
-- 阶段完成。
-- 阶段提交完成。
-- 恢复点完成。
-- 下一阶段已识别。
-- 上下文压缩风险。
-- 当前轮次变长。
-- 需要更新任务记录。
-
-上下文压缩或中断恢复后，如果 `execution_mode = run-to-completion`、`remaining_stages` 非空且 `stop_condition = none`，必须继续 `next_automatic_action`。
-
-每轮恢复、阶段开始或阶段转移前应执行 loop tick：
+推荐命令：
 
 ```text
-python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode loop-tick
+python scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode preflight
 ```
 
-loop tick 通过后：
+preflight 是只读检查。首次启动由 ledger append 的 `execution_started` 事件创建 run-state；不得让 checker 隐式修改状态。
 
-- 若仍有 remaining stages，下一动作必须是 `continue Stage N`。
-- 若无 remaining stages，进入最终交付门禁。
-- 若存在 blocking reason、attestation mismatch、open decision 或 plan amendment，停止并记录原因。
+## 初始化
 
-## 停止条件
+用户批准后先生成 attestation。批准记录必须明确：
 
-只有以下情况允许停止：
+- implementation：必须为 true。
+- commit、external_write、elevated_tool：只按用户明确授权记录。
+- approval summary、批准时间和批准主体。
+- plan、contract 与 approval-included artifacts 的 SHA-256。
 
-- 用户明确要求暂停、停止、只完成当前阶段或等待确认。
-- 发现方案变化，需要重新批准。
-- 有 blocking 决策必须用户确认。
-- 工作区存在用户或未知改动，继续会有覆盖风险。
-- Git 处于冲突、merge、rebase、cherry-pick 未完成或分支状态不安全。
-- 必需权限被拒绝，且无安全替代路径。
-- 必需验证失败，已按规则自修后仍无法通过，或替代验证不足。
-- `process-manager` 离线且用户未启动或授权 bootstrap，且当前阶段需要长期进程。
-- 所有已批准阶段完成，并且最终交付门禁通过。
+然后追加 `execution_started`。append 工具必须：
 
-命中停止条件时，必须更新 `Execution Control`、`Resume Summary` 和 `.harness/active-task.json`。
+1. 构造下一个连续 seq/event_id。
+2. 在内存中把候选事件与已有 ledger 完整 replay。
+3. 候选事件非法时不写文件。
+4. 先 append + flush/fsync ledger，再 atomic replace run-state。
+5. snapshot 写失败时保留合法 ledger，下次通过 reconcile 恢复。
 
-## 阶段循环
+## Stage Loop
 
-每个阶段开始前必须形成或读取 Stage Contract，至少包含：
+每个 stage 严格执行：
 
-- 阶段目标和范围。
-- 允许修改的文件、模块、接口、配置或文档。
-- 明确禁止修改的范围。
-- 阶段进入条件。
-- 阶段退出条件。
-- 必需验证。
-- 是否预期提交。
+1. `transition/status` 确认 stage 依赖完成且无 stop/reapproval。
+2. 追加 `stage_started`，attempt 必须单调递增。
+3. 读取 contract 中的 allowed/forbidden changes、REQ/AC/NFR、VAL、risk 和 commit expectation。
+4. 读取直接定义、调用方、配置、数据、错误路径、测试、standards 和必要 artifacts。
+5. 在批准范围内实现，失败写 `attempt_failed` 和证据；重试需新的 attempt。
+6. 执行 Development Quality Check 和 code review，写带摘要及 `development_quality=passed` 的 `review_recorded`。
+7. 逐项运行 required VAL，写带结果摘要的 `validation_recorded`；大证据使用 task-dir 相对 evidence refs。
+8. 修复 blocking/major findings 或失败验证并重跑。
+9. 只有所有 required VAL passed 且 review passed，才能追加 `stage_completed`。
+10. 仍有 ready stage 时立即继续；stage boundary 不是停止条件。
 
-Stage Entry Gate 通过前不能开始编码。必须检查：
-
-- 当前分支和工作区状态符合 `Git Context`。
-- 上一阶段没有未处理的 blocking 或 major finding。
-- 本阶段相关环境、命令、工具和权限可用，或替代策略已记录。
-- 本阶段范围没有超出已批准方案。
-- 如果本阶段需要长期进程，`Process Manager Gate` 已通过；如果不需要，已明确记录为 not-applicable。
-- 如果存在用户或未知改动，必须暂停确认。
-
-每个阶段执行步骤：
-
-1. 重读任务状态、环境、执行计划、pending 决策和 changelog。
-2. 运行或等价执行 status/loop-tick，确认当前阶段、范围和下一步。
-3. 写入 ledger `stage_started` 或 heartbeat。
-4. 更新 `Implementation Progress`，记录当前阶段、范围和下一步。
-5. 复查 `Process Manager Gate`。
-6. 检查 `Git Context` 和实际 git 状态。
-7. 阅读本阶段相关代码、测试、配置、API、文档、standards index 和开发质量门禁。
-8. 在批准范围内做最小必要修改。
-9. 修复明显缺陷；小优化只能在不改变方案方向时执行。
-10. 如果范围、风险、接口、验证成本或方案方向变化，停止并进入 `Plan Amendment Gate`。
-11. 执行 `Development Quality Check` 和 code review，并将 blocking/major finding 写入计划或 ledger。
-12. 按 `Validation`、`.harness/environment.md` 和 `Process Manager Gate` 执行验证。
-13. 修复 review 或验证发现的问题，并重复必要 review 和验证。
-14. 更新 changelog 或项目等价变更记录。
-15. 只有提交已授权时，才提交代码；提交 hash 写入 `Commit Log`。
-16. 更新 `Ledger Evidence`、`Resume Packet` 和 `Resume Summary`。
-
-## Research Drift Gate
-
-`Research Drift Gate` 用于处理实施阶段中新出现、且已批准计划没有覆盖的不确定事实。命中时不能静默继续，也不能把新假设写成已确认结论。
-
-触发条件：
-
-- 实施中发现计划未覆盖的框架、API、协议、工具、模型、依赖版本或外部服务行为。
-- 验证命令、浏览器行为、平台差异或第三方文档与计划假设不一致。
-- 必须使用在线、官方、一手或用户私有资料才能确认的关键事实。
-- 新事实可能影响 approved scope、阶段边界、风险等级、验证策略、工具授权、兼容性或提交策略。
-
-处理规则：
-
-1. 暂停当前修改动作，记录 finding、来源、影响和当前阶段。
-2. 如果能在批准范围内通过本地代码、官方文档或一手资料补证据，更新 `Research Gate`、`Validation Evidence`、`Implementation Progress` 或 artifacts，并重新运行相关验证。
-3. 如果补证据会改变 approved scope、阶段边界、必需验证、风险、工具授权、公共接口、依赖或兼容性假设，进入 `Plan Amendment Gate`，请求用户重新批准。
-4. 如果资料不可访问，记录为 `blocked-by-access` 或 blocking decision；不得凭记忆继续。
-5. 处理结果必须写入 ledger，可用 `review_finding`、`blocked`、`amendment_requested` 或 `note` 事件。
+大日志、截图、trace 和报告写入 task artifacts；ledger 只保存摘要和相对路径。不得写入 token、秘密或无意义终端转储。
 
 ## Development Quality Check
 
-`Development Quality Check` 用于把 planner 阶段的 standards index 和开发质量门禁真正用于实现阶段。
+每个 stage 对照 standards artifact 和 contract 映射复核：
 
-每个阶段必须复核：
+- standards：项目规则与适用官方规范。
+- static quality：syntax、format、lint、typecheck、build、unit/integration tests。
+- architecture：职责、依赖方向、公共接口、数据所有权和迁移边界。
+- pattern：抽象必要性、模式取舍和过度设计。
+- coupling/cohesion：跨层调用、循环依赖、共享状态、重复和过宽接口。
+- validation：required evidence、未覆盖范围和替代证据。
 
-- standards index：本阶段涉及的语言、框架、API、架构、设计模式或安全规范是否已读取；没有适用规范时必须说明原因。
-- 代码标准：命名、格式、注释、错误处理、日志、配置、测试风格是否符合项目规则和本阶段范围。
-- 静态质量：format、lint、typecheck、build、单测或等价验证是否已映射到 `Validation Evidence`；无法执行时必须记录原因、影响和替代证据。
-- 架构边界：模块职责、依赖方向、公共接口、数据所有权、兼容性和迁移边界是否被保持。
-- 设计模式取舍：新增抽象、复用模式或拒绝复杂模式的原因是否与计划一致。
-- 低耦合高内聚：是否引入跨层调用、循环依赖、共享状态膨胀、重复抽象、过宽接口或职责漂移。
+review 结果必须真实。blocking/major finding 未关闭时 reducer 不应接受 stage completion；改变批准边界时进入 amendment。
 
-记录要求：
+## Research Drift
 
-- finding 写入 `Code Review`，质量维度可使用 standards、static quality、architecture、pattern、coupling、cohesion 或 validation。
-- 阻塞或 major finding 必须在当前阶段关闭；如果需要改变批准范围、公共接口或验证策略，进入 `Plan Amendment Gate`。
-- 最终交付前必须能在计划中看到 standards index 引用、开发质量检查结论和对应验证证据。
+发现计划未覆盖且可能改变行为的框架/API/协议/依赖/平台事实时：
 
-## 阶段退出和转移
+1. 追加 `research_drift`，记录来源、影响和当前 stage。
+2. 在不改变批准边界时补官方/一手证据和验证后恢复。
+3. 影响 scope、DAG、required VAL、风险、依赖、外部写入或授权时追加 `amendment_requested` 并停止。
+4. 无法访问资料时保留 `blocked-by-access`；不得凭记忆继续。
 
-Stage Exit Gate 通过前不能进入下一阶段或最终交付。必须检查：
+## 恢复与 Reconcile
 
-- 阶段目标已经完成，且没有超出阶段契约。
-- code review 已完成，blocking 和 major finding 已关闭。
-- Development Quality Check 已完成，standards index、架构边界和静态质量证据已记录。
-- 必需验证已执行；无法执行时已记录原因、影响和替代证据。
-- 明显缺陷已修复，并已重复必要 review 和验证。
-- 长期进程均已通过 `process-manager` 记录 ready/log/status/stop 证据，或已明确记录本阶段不涉及长期进程。
-- `execution-plan.md`、changelog 或等价变更记录、`Commit Log` 已更新。
-- 如阶段提交已授权，已完成提交并记录 commit hash；未提交时已说明原因。
+每次恢复都先完整 replay ledger，再读取 snapshot：
 
-Stage Transition Gate 在每个阶段退出后立即执行。通过前不能最终回复。
+- ledger 合法且 snapshot 缺失/滞后：`reconcile` 可 atomic rewrite snapshot。
+- snapshot 与 replay 完全一致：继续 `next_action`。
+- snapshot 领先、ledger 断号/重复/非法 JSON、未知 stage、非法转移或 attestation mismatch：fail closed。
+- run-state 不是第二历史源；不得通过编辑 snapshot 绕过 ledger。
 
-如果还有 pending stage、没有停止条件、也不需要重新批准，下一动作必须是 `continue Stage N`。可以发送简短进度更新，但不能发送最终回复并停止。进入下一阶段前必须同步：
+`status` 只读输出 lifecycle、current/completed/remaining、last seq、next/stop、drift 和 evidence summary。`reconcile` 只能写可证明的 replay 结果，不能修复损坏 ledger 或批准集合。
 
-- `Execution Control`
-- `Resume Summary`
-- `.harness/active-task.json`
+## Plan Amendment
 
-建议在阶段转移前运行：
+amendment 必须由用户重新批准：
 
-```text
-python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode transition
-```
+1. 将上一 revision 的 immutable set、attestation、ledger 和 run-state 归档到 `artifacts/amendments/revision-N/`。
+2. planner 生成递增 revision 的 plan/contract/artifacts，并重跑 approval checker。
+3. 用户批准后生成新 attestation。
+4. 只有上一 ledger 已完成，且 stage 本体及其 REQ/AC/NFR/VAL 定义与归档 contract 语义相同，才允许作为 completed stage 继承。
+5. 轮换当前 ledger/run-state，新 ledger 首条 `amendment_approved` 记录前一 archive/hash 和获批继承 stages。
+6. 未批准时不得继续代码、Git、外部写入或长期进程操作。
 
-只有 `pending stage = no` 时，才能进入最终交付门禁。
+禁止直接改写 approved plan 或 contract 后重新哈希来冒充批准。
 
-## 验证和审查
+## Git 与提交
 
-验证规则：
-
-- 前端交互工作必须使用环境清单指定的浏览器验证工具。如果要求 Chrome DevTools MCP，必须用它检查 UI、console、network 和必要截图。
-- 后端工作必须包含相关单元测试；API 变更还需要接口 smoke 或契约检查。
-- Python 工作必须使用配置的 conda、venv、解释器或包管理器。
-- 每轮大修改必须运行配置的 smoke 检查。
-- 如果某项验证无法执行，必须记录原因、影响和替代证据，不能声称通过。
-- 验证证据必须写入 `execution-plan.md`，包括命令或工具、结果、覆盖范围、未覆盖范围和 artifact。
-
-`Code Review` 严重程度：
-
-- `blocking`：不修复不能继续当前阶段。
-- `major`：必须修复；如果不修复，必须重新请求用户批准。
-- `minor`：可在不改变方案方向时自修；不修复时必须说明影响。
-- `follow-up`：不影响当前验收，但必须记录后续建议。
-
-`Code Review` 还必须记录质量维度：
-
-- `standards`：是否遵守 standards index 或项目内开发规则。
-- `static quality`：format、lint、typecheck、build、单测或等价检查。
-- `architecture`：模块职责、依赖方向、公共接口、数据所有权和兼容性。
-- `pattern`：设计模式取舍、新抽象必要性和过度设计风险。
-- `coupling` / `cohesion`：耦合、内聚、循环依赖、共享状态和职责漂移。
-- `validation`：验证证据、未覆盖范围和替代证据。
-
-验证失败时不能提交或进入下一阶段。必须修复并重复必要验证，或记录阻塞并停止。
-
-## 错误恢复协议
-
-失败动作必须记录：
-
-- command/tool
-- attempt number
-- failure reason
-- impact
-- next strategy
-
-同一失败原因不得静默重复第三次。第三次前必须改变策略，例如缩小命令范围、改用 fixture、补读上下文、降级为替代验证或进入 blocking 状态。
-
-记录位置优先级：
-
-1. `execution-plan.md` 的 Validation Evidence、Code Review、Implementation Progress 或 Resume Summary。
-2. ledger 的 `validation_failed`、`review_finding`、`blocked` 或 `note` 事件。
-3. 大段日志放入 task artifacts，并在计划中引用摘要。
-
-## Topic Handoff Protocol
-
-当某个子主题包含较长研究、运行状态、跨阶段风险或需要下一轮快速接手时，写入：
-
-```text
-.harness/tasks/<date>/<type>/<task-slug>/artifacts/handoffs/<topic>.md
-```
-
-handoff 至少包含：
-
-- 当前状态。
-- 如何检查。
-- 已修改内容。
-- 分支、提交或 PR 状态。
-- 剩余风险。
-- 下一步建议。
-
-`Implementation Progress` 必须把 handoff 文件作为索引记录，避免交接信息只留在对话中。
+- 同一 working tree 的 Git 命令串行；禁止并发 agent/shell 执行同仓库 Git。
+- 不自动 stash、reset、rebase、切分支、覆盖未知改动或删除 lock。
+- 遇到 index.lock 时解析精确路径，确认文件稳定且无相关/未知 Git 进程，只删除该精确文件并立刻重跑 status。
+- stage 的 `commit_expectation` 只表示计划时机；attestation 中 commit authorization 为 false 时不得提交。
+- `stage` expectation 在对应 stage 完成后提交并记录该 `stage_id`；`final` expectation 在所有 stage 完成后、`completed` 事件前记录。
+- 提交前完成 required validation、review、`git diff --check` 和范围审查。
+- 使用单个 `git commit -F <message-file>`；标题后一个空行，bullet 间无空行。
+- 成功提交后写 `commit_recorded`，payload 必须包含 `commit` hash 和 `repository`，可按需补充 message/scope；不要伪造未发生的提交。
 
 ## 长期进程
 
-如果当前会话可用 skill 列表中存在 `process-manager`，所有服务、后台和需要挂起运行的长期进程都必须由 `process-manager` 管理。
+存在 process-manager skill 时，dev server、Web/API 服务、worker、watcher 和模型服务必须由它管理。按 health -> config validate -> start -> ready/status -> logs -> stop/restart 取证。
 
-长期进程包括：
+finite test、build、lint、format、migration 和一次性脚本直接运行。禁止 `Start-Process`、shell background、`nohup` 或自制 launcher 绕过 process-manager。manager 不可用且阶段必需长期进程时进入 blocked。
 
-- 前端 dev server，例如 `pnpm dev`、`npm run dev`、`vite`。
-- 后端 web/API 服务，例如 Go、Python、Node、Java 的本地服务。
-- worker、watcher、队列消费者、模型服务、文件监听器。
-- 任何启动后不会马上返回、需要持续占用终端或端口的进程。
+## 最终门禁
 
-finite command 不进入 `process-manager`：
+完成最后一个 stage 后：
 
-- 单元测试、集成测试、lint、format、build。
-- 数据迁移、代码生成、一次性脚本。
-- 任何预期马上返回标准输出结果的命令。
+1. 确认每个 stage 都有 required VAL、review 和 `stage_completed` evidence。
+2. 核对 attestation、run-state、ledger、授权、Git/changelog 和 artifacts。
+3. 运行 planner/executor unit、conformance/eval、skill validator 和 `git diff --check`。
+4. 做最终 code review；修复 blocking/major findings 并重跑相关验证。
+5. 未授权时不得提交；已授权且 contract 预期 final commit 时，使用显式 task-dir 收口 pointer、实际提交并追加无 `stage_id` 的 `commit_recorded`。提交失败时恢复 pointer 或保持显式 task-dir 恢复路径，不能追加伪证据。
+6. 在所有已授权 commit expectation 都有 evidence 后追加 `completed`；未提交任务此时删除指向它的 active pointer。
+7. 确认 replay lifecycle 为 completed、active pointer 已关闭，再用显式 task-dir 运行 final checker。只有 final 通过后才能最终回复。
 
-需要长期进程时必须：
+最终回复说明核心改动、实际验证、未覆盖范围、review 结论、branch/commit、关键证据和残余风险。
 
-1. 读取 `process-manager` 的 `SKILL.md` 和 `references/workflow.md`。
-2. 运行 `pm_health.py`；manager 离线时停止长期进程操作，请求用户手动启动或授权 bootstrap。
-3. 准备或更新 service config 后运行 `pm_validate.py`。
-4. 使用 `pm_start.py` 启动。
-5. 使用 `pm_ready.py` 或 `pm_status.py` 判断可用。
-6. 使用 `pm_logs.py` 采集日志证据。
-7. 使用 `pm_stop.py` 或 `pm_restart.py` 清理或重启。
+## 错误恢复
 
-禁止手写 `Start-Process`、`cmd /c start`、`powershell -Command`、`nohup`、`&` 或自制后台 launcher 作为替代。
+失败动作记录 command/tool、attempt、原因、影响和下一策略。相同原因不得静默重复第三次；第三次前必须改变策略、缩小范围、补上下文、使用替代验证或进入 blocked。
 
-每阶段退出前必须把关键日志摘要、ready/status 结果、processKey、截图或 trace 写入 `execution-plan.md` 或任务 artifacts。不要只引用可能被 prune 的 runDir。
+常见诊断：
 
-## Git
+- `TASK_POINTER_*`：active pointer 缺失、含运行字段或路径越界。
+- `TASK_CONTRACT_*`：当前 task contract 缺失或结构/语义无效。
+- `ATTESTATION_*`：批准缺失、授权不足或 immutable hash mismatch。
+- `LEDGER_*`：事件 JSON、seq、ID、引用或转移无效。
+- `RUN_STATE_*`：snapshot 无效、drift 不可修复或 stage/validation/review 未闭环。
 
-同一仓库、同一 working tree 内，所有 Git 命令必须串行执行。禁止通过任何 agent 并发工具、子 agent、后台任务、多 shell、脚本并发任务或自定义调度同时运行多个同仓库 Git 命令。
-
-只读状态检查优先使用：
-
-```text
-git --no-optional-locks status --short --branch
-```
-
-diff 类检查优先禁用自动刷新 index：
-
-```text
-git -c diff.autoRefreshIndex=false diff --check
-git -c diff.autoRefreshIndex=false diff <range>
-```
-
-提交、切换分支或最终交付前如果需要精确工作区状态，可以在确认无其它 Git 命令运行后，串行执行普通 `git status --short --branch`。
-
-遇到 `index.lock` 时：
-
-1. 停止继续运行其它 Git 命令。
-2. 串行执行 `git rev-parse --git-path index.lock`，获取精确 lock 路径。
-3. 确认目标路径是单个精确 `index.lock` 文件。
-4. 检查 lock 文件存在、大小和 mtime；短暂等待后复查，确认文件状态稳定。
-5. 检查是否存在活跃 `git` / `git.exe` 进程。若存在当前仓库相关 Git 进程，或存在无法判断归属的未知 Git 进程，不得删除 lock。
-6. 确认无活跃 Git 进程且 lock 文件稳定后，只删除第 2 步解析出的精确 lock 文件。
-7. 删除后立即串行执行 `git --no-optional-locks status --short --branch`。
-8. 将恢复动作写入 `Git Lock Recovery Log`。
-
-禁止通配符、递归删除或删除其它 `.lock` 文件。
-
-如果多个 agent 或脚本需要并行处理同一个仓库，优先使用独立 `git worktree`；不要在同一个 working tree 内并发运行 Git。
-
-## 提交和 Changelog
-
-只有用户明确批准，或已批准方案明确要求阶段提交时，才能提交。用户批准实施不等于批准提交。
-
-默认提交信息格式：
-
-```text
-feat(scope): 标题
-
-- 重点一
-- 重点二
-- 重点三
-```
-
-标题和分列之间保留一个空行；分列之间不加空行。
-
-禁止使用多个 `-m` 分别传入每条 bullet。首选方式是把完整提交信息写入临时文件，然后使用：
-
-```text
-git commit -F <commit-message-file>
-```
-
-提交信息临时文件应放在 `.harness/tasks/<date>/<task-slug>/tmp/commit-message.txt` 或等价的 ignored 运行时目录。
-
-提交前必须检查：
-
-- 标题后正好一个空行。
-- bullet 行之间没有空行。
-- 没有尾随空格。
-- scope、标题和 bullet 与本阶段改动一致。
-
-`Commit Log` 必须记录仓库、commit hash、commit message、对应阶段和 changelog 记录。未提交时必须记录原因。
-
-## 最终交付门禁
-
-managed 任务结束前必须完成最终交付门禁：
-
-1. 重读 `.harness/active-task.json`、`.harness/environment.md`、`execution-plan.md`、changelog 和 git 状态。
-2. 确认每个阶段都有 review、验证、缺陷处理、文档更新和提交记录。
-3. 确认每个阶段的 Development Quality Check 已引用 standards index，并覆盖代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
-4. 汇总已执行验证；不能把未执行验证写成通过。
-5. 汇总未覆盖范围、失败项、剩余风险和后续建议。
-6. 汇总 branch status：当前分支、主分支、是否已合回主分支、未合回时代码停留在哪个 harness 分支。
-7. 汇总 commit hash、commit message、changelog 记录和关键文件。
-8. 前端、UI、可视化、图表、地图、canvas、图片处理、报告预览或浏览器流程任务，必须提供截图、日志、trace、报告或替代证据。
-9. 将最终结论写入 `execution-plan.md` 的 `Validation`、`Implementation Progress`、`Code Review` 和 `Commit Log`。
-10. 最终结论还必须更新 `Ledger Evidence`、`Resume Packet` 和 `.harness/active-task.json`。
-11. 最终回复必须携带任务结论、核心改动、验证结果、未覆盖范围、code review 结论、branch status、commit 信息、关键证据和剩余风险。
-
-建议最终回复前运行：
-
-```text
-python skills/complex-coding-executor/scripts/harness_exec_check.py --workspace <workspace> --task-dir <task-dir> --mode final
-```
-
-## 恢复流程
-
-上下文压缩或中断后：
-
-1. 读取 `.harness/active-task.json`。
-2. 读取 `pending-decisions.md`（如存在）。
-3. 读取当前 `execution-plan.md`。
-4. 读取 `.harness/environment.md`。
-5. 复查 `Process Manager Gate` 和 `Resume Summary` 的长期进程规则状态。
-6. 检查 `Git Context`、实际文件和 git 状态。
-7. 读取 `Execution Control`、`Stage Transition Gate` 和 `Resume Summary`，确认整体剩余阶段。
-8. 读取 `Execution Contract`、`Ledger Evidence` 和 `Resume Packet`。
-9. 运行 status/loop-tick，确认当前阶段、剩余阶段、阻塞原因和下一动作。
-10. 如果 `execution_mode = run-to-completion` 且没有停止条件，继续 `next_automatic_action`，不要重新开任务，也不要只完成局部恢复点后停止。
-
-## 故障排查
-
-详细流程见 `references/troubleshooting.md`。遇到 wrong task dir、stale active-task、missing ledger、attestation mismatch、`HARNESS_DISABLED`、Windows 路径或 hook advisory 行为时，先按该文档定位，再决定是否继续、修正状态或进入 Plan Amendment Gate。
+详细排查见 `troubleshooting.md`。历史任务缺少当前必需文件时按结构错误处理，不迁移、不 fallback。

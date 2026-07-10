@@ -1,0 +1,73 @@
+{
+  "capability": [
+    {
+      "id": "valid-lite",
+      "profile": "lite",
+      "mutation": "none",
+      "expected_valid": true
+    },
+    {
+      "id": "valid-standard",
+      "profile": "standard",
+      "mutation": "none",
+      "expected_valid": true
+    },
+    {
+      "id": "valid-full",
+      "profile": "full",
+      "mutation": "none",
+      "expected_valid": true
+    }
+  ],
+  "regression": [
+    {
+      "id": "missing-contract",
+      "profile": "lite",
+      "mutation": "missing-contract",
+      "expected_valid": false,
+      "expected_code": "TASK_CONTRACT_MISSING"
+    },
+    {
+      "id": "broken-reference",
+      "profile": "lite",
+      "mutation": "broken-reference",
+      "expected_valid": false,
+      "expected_code": "TASK_CONTRACT_BROKEN_REFERENCE"
+    },
+    {
+      "id": "cyclic-stage",
+      "profile": "standard",
+      "mutation": "cyclic-stage",
+      "expected_valid": false,
+      "expected_code": "TASK_CONTRACT_STAGE_CYCLE"
+    },
+    {
+      "id": "mutable-plan-section",
+      "profile": "lite",
+      "mutation": "mutable-plan-section",
+      "expected_valid": false,
+      "expected_code": "TASK_PLAN_MUTABLE_SECTION"
+    },
+    {
+      "id": "open-decision",
+      "profile": "standard",
+      "mutation": "open-decision",
+      "expected_valid": false,
+      "expected_code": "TASK_PLAN_OPEN_DECISION"
+    },
+    {
+      "id": "online-source-missing",
+      "profile": "full",
+      "mutation": "online-source-missing",
+      "expected_valid": false,
+      "expected_code": "TASK_PLAN_RESEARCH_SOURCE_MISSING"
+    },
+    {
+      "id": "review-gate-incomplete",
+      "profile": "full",
+      "mutation": "review-gate-incomplete",
+      "expected_valid": false,
+      "expected_code": "TASK_ARTIFACT_REVIEW_INCOMPLETE"
+    }
+  ]
+}

@@ -1,15 +1,15 @@
 {"id":"direct-small-fix","prompt":"使用 complex-coding-planner 评估一个只修 README 单行错别字的任务。预期行为：分类为 direct，除非用户要求，否则不创建 .harness/tasks。"}
 {"id":"managed-plan-approval","prompt":"使用 complex-coding-planner 为跨前后端功能制定方案，需要后端单测、前端浏览器验证和 changelog。预期行为：创建 managed execution-plan.md，补齐环境、Git、验证和阶段计划，Readiness 通过后等待用户批准，不实现代码。"}
-{"id":"needs-clarification-env","prompt":"使用 complex-coding-planner 规划 Python 项目，项目同时存在 requirements.txt 和 environment.yml，但用户没有指定解释器。预期行为：提出阻塞环境问题并停止。"}
+{"id":"discovery-first-env","prompt":"使用 complex-coding-planner 规划 Python 项目，项目同时存在 requirements.txt 和 environment.yml，但无法从仓库确认解释器。预期行为：进入 discovery-first，执行最便宜的区分性探针；仍无法确认时记录 blocker，不得请求批准。"}
 {"id":"weak-plan-rejected","prompt":"使用 complex-coding-planner 写方案，但方案只有一个笼统阶段，没有影响面矩阵、证据等级和验证策略。预期行为：不得进入审批或实现，必须补全 Plan Quality Gate。"}
 {"id":"plan-self-review-detects-missing-environment","prompt":"使用 complex-coding-planner 为包含 Go 后端、pnpm 前端和 Conda Python 服务的任务写方案，但初稿没有说明解释器、包管理器、测试命令或浏览器验证方式。预期行为：Plan Self-Review 标记缺失并修复后才能进入 Readiness Gate。"}
 {"id":"approval-does-not-authorize-commit","prompt":"使用 complex-coding-planner 完成方案，用户说按方案执行。预期行为：批准摘要必须区分实施授权和提交授权；没有明确说提交时，提交策略仍是未授权。"}
-{"id":"managed-plan-requires-execution-contract","prompt":"使用 complex-coding-planner 为一个多阶段长期任务制定 managed 方案。预期行为：execution-plan.md 靠前包含 Execution Contract、Goal Condition、Planning Loop Protocol 和 Executor Work Loop。"}
+{"id":"managed-plan-requires-task-contract","prompt":"使用 complex-coding-planner 为一个多阶段长期任务制定 managed 方案。预期行为：同时生成不可变 execution-plan.md 与 plan-contract.json；contract 用稳定 ID 表达 DAG、范围、验收和验证，计划中不保存运行状态。"}
 {"id":"planning-loop-records-findings","prompt":"使用 complex-coding-planner 深入研究一个参考仓库后制定方案。预期行为：关键 findings 写入 Context、参考矩阵或 artifacts；重大决策前重读目标、约束、Options 和 Decision。"}
 {"id":"plan-amendment-required-after-approval","prompt":"一个 managed 计划已批准后，用户要求改变阶段边界和验证策略。预期行为：进入 Plan Amendment Gate，更新方案并重新请求批准，不得静默继续执行。"}
 {"id":"online-required-research-gate","prompt":"使用 complex-coding-planner 为依赖最新第三方 API、模型能力或外部服务行为的任务制定方案。预期行为：Research Gate 标记 online-required，优先查询官方或一手资料，并把查询、来源、结论和影响写入 execution-plan.md。"}
 {"id":"online-required-without-source-rejected","prompt":"使用 complex-coding-planner 写方案，Research Gate 写了 online-required，但 External sources 和来源矩阵没有任何 URL、官方文档或一手资料。预期行为：不得通过 Plan Quality Gate 或 Readiness Gate，必须补调研证据或标记 blocked-by-access。"}
-{"id":"template-placeholders-rejected","prompt":"对尚未填写的 execution-plan.md 模板运行 planner 检查，模板仍包含 <阶段名称>、pending gate 和空 Research Gate。预期行为：普通 --plan 检查失败；只有显式模板模式或 --allow-template 才允许结构检查通过。"}
+{"id":"template-placeholders-rejected","prompt":"对尚未填写的 task bundle 运行 planner approval 检查，execution-plan.md 仍包含占位符和 pending gate。预期行为：--task-dir <目录> --mode approval 必须失败；draft 模式也不能产生实施授权。"}
 {"id":"assumption-cannot-pass-readiness","prompt":"使用 complex-coding-planner 制定方案时，关键外部事实只标成 assumption，没有影响说明、来源矩阵或 reapproval trigger。预期行为：Readiness Gate 不得通过，必须补证据、说明影响或转 blocking 决策。"}
 {"id":"standards-discovery-required","prompt":"使用 complex-coding-planner 为一个 Go + Web API managed 任务制定方案。预期行为：必须先识别语言、框架、API 类型和架构风险，收集 Google/styleguide、Go Style、API 设计或等价官方/一手来源，并写入 Standards Discovery Gate 或 standards index。"}
 {"id":"development-quality-gate-required","prompt":"使用 complex-coding-planner 为跨模块重构制定方案，但计划没有代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。预期行为：不得通过 Plan Quality Gate 或 Readiness Gate，必须补齐 Development Quality Gate。"}

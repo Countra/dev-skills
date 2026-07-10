@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-10
+
+### Breaking: planner / executor 单一最新任务契约
+
+- `complex-coding-planner` 改为 direct/managed 路由和 lite/standard/full 风险画像，输出不可变计划、封闭 `plan-contract.json`、pointer-only active task 与按需 research/standards/architecture/validation/critique artifacts。
+- planner approval checker 新增封闭字段、稳定 ID、引用、Stage DAG、must coverage、scope、profile artifact、在线来源、open decision 和 plan/contract drift 的结构化 fail-closed 校验。
+- `complex-coding-executor` 改为 attestation + revision-scoped append-only ledger + 派生 run-state 的单写者模型，支持 event-first 持久化、完整 replay、snapshot reconcile 和 amendment archive/link。
+- 公开 resolver、attestation、ledger、summary 和 executor checker CLI 已直接切换为最新语义；删除 Markdown 状态解析、active 状态镜像、旧参数和版本分派，不兼容缺少当前 contract 的历史任务。
+- 新增 56 项 planner/executor 单元测试及 23 个可执行 capability/regression 场景；覆盖三个 profile、公开 CLI 全生命周期、amendment、提交证据、篡改批准集合、非法转移、崩溃恢复和缺失 contract。
+- 为两个 skill 补齐 `agents/openai.yaml`、契约/工作流/故障排查文档和 metadata validator。
+- Commit: current commit
+- Commit message: `feat(complex-coding): 升级规划执行任务契约`
+
 ## 2026-07-09
 
 ### Stage 1-6: GitLab PAT Ops 模块化能力扩展

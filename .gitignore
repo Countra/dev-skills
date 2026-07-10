@@ -4,6 +4,7 @@
 .harness/tasks/**/tmp/
 .harness/tasks/**/scratch/
 .harness/tasks/**/ledger*.jsonl
+.harness/tasks/**/run-state*.json
 .harness/tasks/**/attestation*.json*
 .harness/tasks/**/status*.json
 .harness/sessions/

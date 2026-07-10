@@ -1,0 +1,86 @@
+{
+  "capability": [
+    {
+      "id": "complete-lite",
+      "profile": "lite",
+      "scenario": "complete",
+      "commit_authorized": false
+    },
+    {
+      "id": "complete-standard",
+      "profile": "standard",
+      "scenario": "complete",
+      "commit_authorized": true
+    },
+    {
+      "id": "complete-full",
+      "profile": "full",
+      "scenario": "complete",
+      "commit_authorized": false
+    },
+    {
+      "id": "complete-cli",
+      "profile": "lite",
+      "scenario": "complete-cli",
+      "commit_authorized": false
+    },
+    {
+      "id": "complete-stage-commit",
+      "profile": "standard",
+      "scenario": "complete",
+      "commit_authorized": true,
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "snapshot-loss-reconcile",
+      "profile": "lite",
+      "scenario": "snapshot-loss-reconcile",
+      "commit_authorized": false
+    },
+    {
+      "id": "amendment-cli",
+      "profile": "lite",
+      "scenario": "amendment-cli",
+      "commit_authorized": false
+    }
+  ],
+  "regression": [
+    {
+      "id": "missing-attestation",
+      "profile": "lite",
+      "scenario": "missing-attestation",
+      "expected_code": "ATTESTATION_MISSING"
+    },
+    {
+      "id": "tampered-plan",
+      "profile": "standard",
+      "scenario": "tampered-plan",
+      "expected_code": "ATTESTATION_HASH_MISMATCH"
+    },
+    {
+      "id": "illegal-stage-completion",
+      "profile": "lite",
+      "scenario": "illegal-stage-completion",
+      "expected_code": "RUN_STATE_VALIDATION_INCOMPLETE"
+    },
+    {
+      "id": "active-pointer-not-closed",
+      "profile": "lite",
+      "scenario": "active-pointer-not-closed",
+      "expected_code": "TASK_POINTER_NOT_CLOSED"
+    },
+    {
+      "id": "missing-contract",
+      "profile": "lite",
+      "scenario": "missing-contract",
+      "expected_code": "TASK_CONTRACT_MISSING"
+    },
+    {
+      "id": "missing-stage-commit",
+      "profile": "lite",
+      "scenario": "missing-stage-commit",
+      "commit_expectation": "stage",
+      "expected_code": "RUN_STATE_COMMIT_EVIDENCE_MISSING"
+    }
+  ]
+}

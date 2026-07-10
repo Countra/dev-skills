@@ -8,38 +8,39 @@
 
 位置：`skills/complex-coding-planner/`
 
-用途：为复杂、长周期、高风险、多阶段、多仓库或容易受上下文压缩影响的 coding 任务制定可恢复、可审计的实施方案。
+用途：为复杂、长周期、高风险、多阶段或不确定性较高的 coding 任务生成可审批、可验证、可恢复的 task bundle。
 
 核心约束：
 
-- 复杂任务先制定方案，再等待用户明确批准。
-- 方案制定阶段使用 `Plan Quality Gate` 检查影响面、证据等级和方案变更触发条件。
+- direct 请求轻量处理；managed 请求按风险选择 `lite`、`standard` 或 `full`，高影响未知先进入 discovery-first。
+- 同时生成不可变 `execution-plan.md` 和封闭 `plan-contract.json`，用稳定 ID 追踪 requirement、acceptance、stage、validation 与 artifact。
+- `Plan Quality Gate` 检查影响面、DAG、覆盖、scope、证据和 amendment trigger。
 - `Research Gate` 必须判断不确定项是否为 `none`、`local-only`、`online-required` 或 `blocked-by-access`；涉及可能变化的外部事实时优先查询官方或一手资料。
 - `Standards Discovery Gate` 必须识别语言、技术栈、框架、API 类型和架构风险，收集官方/一手或高质量规范来源并形成 standards index。
 - `Development Quality Gate` 必须覆盖代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。
-- `Plan Self-Review` 必须主动复查缺陷、优化点、缺失项、风险和一致性；发现问题先修复计划。
+- `Plan Self-Review` 主动复查缺陷、优化点、缺失项、风险和一致性；full/高风险优先 clean-context critique。
 - `Readiness Gate` 只表示方案可提交审批，不表示可以自动实现。
 - 用户批准前不得进入实现阶段。
-- 用户可用自然语言维护各项目 `docs/development.md`，agent 负责整理 `.harness/environment.md`。
-- managed 任务使用统一 harness 工作分支，例如 `harness/feature`、`harness/fix`，并在 `execution-plan.md` 记录 `Git Context`。
-- `Readiness Gate` 通过后必须停止，等待用户批准；实施阶段交给 `complex-coding-executor`。
+- `.harness/active-task.json` 只保存 task pointer；计划中不保存 lifecycle、current stage 或 progress 镜像。
+- `harness_plan_check.py --task-dir <dir> --mode approval` 通过后停止等待用户批准；实施交给 `complex-coding-executor`。
 
 ### complex-coding-executor
 
 位置：`skills/complex-coding-executor/`
 
-用途：执行已经由 `complex-coding-planner` 制定并获用户批准的 managed 任务计划。
+用途：消费 planner 生成并获用户批准的 task bundle，连续执行 stages，并提供可重放状态、崩溃恢复和最终证据门禁。
 
 核心约束：
 
-- 每轮开始读取 `.harness/active-task.json`、`.harness/environment.md` 和当前任务 `execution-plan.md`。
-- 执行前运行或等价执行 `harness_exec_check.py --mode preflight`。
-- 实施阶段按 `Stage Contract`、`Stage Entry Gate`、`Stage Exit Gate` 和 `Stage Transition Gate` 执行。
+- 每轮读取 pointer、contract、attestation、append-only ledger 和派生 `run-state.json`；不解析 Markdown 状态。
+- 执行前运行 `harness_exec_check.py --mode preflight`，恢复时使用 `status|reconcile`，阶段完成后使用 `transition`。
+- 每个开始、attempt、validation、review、stage completion、block、amendment 和 commit 都先追加合法 event，再原子刷新 snapshot。
 - 实施中发现计划未覆盖的外部事实、API/依赖变化或关键不确定项时，进入 `Research Drift Gate`，补证据或触发 `Plan Amendment Gate`。
 - 每个阶段执行 `Development Quality Check`，引用 standards index 复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
-- `run-to-completion` 模式下，阶段完成不是停止条件；仍有 pending stage 时必须继续下一阶段。
-- 用户批准实施不等于授权提交，只有明确提交授权时才能 commit。
-- managed 任务最终交付必须携带任务结论、验证结果、未覆盖范围、commit 信息和关键证据；前端或可视化任务应提供截图或替代证据。
+- validation/review failure 会撤销旧通过证据；ledger 合法而 snapshot 缺失/滞后时才能 reconcile。
+- scope、DAG、required validation、风险或授权变化时归档上一 revision，重新批准并用新 ledger 首事件连接旧 hash。
+- 阶段完成不是停止条件；只有所有 stage、验证、review、授权、pointer closure 和 final checker 闭环后才能交付。
+- 实施授权不等于提交授权；提交必须由 attestation 明确授权并使用 `git commit -F`。
 
 ### process-manager
 
@@ -92,13 +93,18 @@ skill.sh
 skills/
 ├── complex-coding-planner/
 │   ├── SKILL.md
+│   ├── agents/
 │   ├── scripts/
 │   ├── references/
-│   └── templates/
+│   ├── templates/
+│   └── tests/
 ├── complex-coding-executor/
 │   ├── SKILL.md
+│   ├── agents/
 │   ├── scripts/
-│   └── references/
+│   ├── references/
+│   ├── templates/
+│   └── tests/
 ├── gitlab-pat-ops/
 │   ├── SKILL.md
 │   ├── agents/

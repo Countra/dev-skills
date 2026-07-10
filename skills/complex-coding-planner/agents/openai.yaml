@@ -1,0 +1,4 @@
+interface:
+  display_name: "Complex Coding Planner"
+  short_description: "为复杂编码任务生成风险自适应、可审批且可验证的持久规划"
+  default_prompt: "Use $complex-coding-planner to research this complex coding task and produce an approval-ready task bundle."

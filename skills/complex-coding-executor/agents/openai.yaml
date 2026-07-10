@@ -1,0 +1,4 @@
+interface:
+  display_name: "Complex Coding Executor"
+  short_description: "按已批准任务契约连续执行、可靠恢复并完整验证复杂编码工作"
+  default_prompt: "Use $complex-coding-executor to execute the approved task bundle through all required stages and final gates."

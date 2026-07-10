@@ -1,337 +1,259 @@
 # Complex Coding Planner Workflow
 
-本文件只描述复杂 coding 任务的规划阶段。方案获批后的实现、验证、提交和最终交付交给 `complex-coding-executor`。
+本文件只描述规划阶段。实现、运行状态、执行证据和最终提交由 `complex-coding-executor` 负责。字段与状态语义见 `task-contract.md`。
 
-## 任务分级
+## 目录
 
-- `direct`：小而清晰、低风险。直接按普通最小实现和聚焦验证处理，不创建 `.harness/tasks/`。
-- `needs-clarification`：目标、验收、环境、权限或验证信息存在阻塞不确定项。只向用户提问，然后停止。
-- `managed`：复杂、高风险、多阶段、多模块、多仓库、前后端联动、公共接口、数据库、外部服务，或用户担心上下文压缩影响的任务。
+1. [任务路由](#任务路由)
+2. [规划画像](#规划画像)
+3. [任务制品](#任务制品)
+4. [规划流程](#规划流程)
+5. [自主消歧](#自主消歧)
+6. [Research Gate](#research-gate)
+7. [Standards Discovery Gate](#standards-discovery-gate)
+8. [Development Quality Gate](#development-quality-gate)
+9. [代码探索](#代码探索)
+10. [计划与契约](#计划与契约)
+11. [规划门禁](#规划门禁)
+12. [Git、工具与进程](#git工具与进程)
+13. [批准与交接](#批准与交接)
+14. [Plan Amendment Gate](#plan-amendment-gate)
+15. [文件写入](#文件写入)
 
-只有 `managed` 任务使用本规划流程。
+## 任务路由
 
-## 运行时文件
+先区分生命周期，再决定 managed 任务的规划深度：
 
-只有任务属于 `managed`，且用户允许落盘任务状态时，才创建 `.harness/tasks/`。
+| 路由 | 条件 | 行为 |
+| --- | --- | --- |
+| `direct` | 目标清晰、局部、低风险、短时且不需要恢复 | 不创建 task bundle；若用户请求执行，交回普通 direct coding flow |
+| `managed` | 多阶段、跨模块、高风险、长时、外部写入、公共契约或用户要求持久规划 | 创建 task bundle 并完成本流程 |
+| `blocked` | 经自主消歧后仍缺少业务取舍、权限、秘密或不可替代输入 | 记录阻塞问题并停止 |
+
+不要把“需要先调查”直接等同于 blocked。能从仓库、配置、官方资料或低成本探针确定的内容，应先自主确认。
+
+## 规划画像
+
+managed 任务使用 `lite`、`standard` 或 `full`。记录以下信号及证据：
+
+- 影响面：文件、模块、仓库、公共接口和数据范围。
+- 不确定性：目标、技术事实和验证方式的未知程度。
+- 时间与恢复跨度：阶段数、跨会话概率和中断成本。
+- 可逆性：回滚是否简单，是否涉及迁移、权限或外部写入。
+- 质量风险：安全、并发、数据完整性、架构边界和回归风险。
+- 工具与授权：网络、浏览器、长期进程、提权和外部系统写入。
+
+选择规则：
+
+- `lite`：信号均低，通常 1-3 stages，无公共契约、迁移或外部写入。
+- `full`：任一高风险信号成立，或预计超过 5 stages、跨仓库、长时恢复敏感、涉及迁移/安全/权限/外部写入。
+- `standard`：其余 managed 任务。
+
+核心方向尚未稳定且未知会改变范围、架构或验证时，先标记 `discovery-first`。discovery 只产出证据、候选方案和阻塞决策；方向稳定后再生成 approval-ready contract。
+
+## 任务制品
 
 ```text
 .harness/
-├── environment.md
-├── active-task.json
-└── tasks/
-    └── YYYY-MM-DD/
-        └── <type>/
-            └── <task-slug>/
-                ├── execution-plan.md
-                ├── pending-decisions.md
-                └── artifacts/
+  environment.md
+  active-task.json
+  tasks/YYYY-MM-DD/<type>/<task-slug>/
+    execution-plan.md
+    plan-contract.json
+    pending-decisions.md       # 条件创建
+    artifacts/                 # 条件创建
 ```
 
 规则：
 
-- `.harness/environment.md` 是 workspace 级环境清单，不按任务重复创建。
-- `execution-plan.md` 是任务级唯一主契约。
-- `pending-decisions.md` 是可选文件，只用于需要异步填写或审计记录的 blocking 决策。
-- `artifacts/`、`logs/`、`tmp/`、`scratch/` 属于运行产物，通常应忽略。
+- `.harness/environment.md` 只保存稳定 workspace 事实，不追加任务进度和临时用户约束。
+- `active-task.json` 只保存 task ID、task-dir、run-state 路径和更新时间。
+- `execution-plan.md` 保存人类可审查意图，`plan-contract.json` 保存机器可验证契约。
+- 批准前 planner 独占 plan、contract 和 planning artifacts；批准后全部不可变。
+- 不预创建空 artifact。只有 profile 或风险触发时才生成并写入 contract index。
+
+Artifact 策略：
+
+| Artifact | lite | standard | full |
+| --- | --- | --- | --- |
+| research findings | 内联 | 证据较多时独立 | 必需 |
+| standards index | 内联 | 建议独立 | 必需 |
+| change map | 简表内联 | 必需 | 必需 |
+| traceability | contract 内联关系 | 需求密集时独立 | 必需 |
+| plan critique | 不需要 | 条件启用 | 高风险时必需 |
 
 ## 规划流程
 
-1. 读取 `.harness/active-task.json`（如存在）。
-2. 读取 `.harness/environment.md`（如存在）。
-3. 读取当前任务的 `execution-plan.md`（如存在）。
-4. 检查项目规则文件，例如 `AGENTS.md`、`CLAUDE.md` 和项目 `docs/development.md`。
-5. 在提出方案前收集本地代码、测试、配置、接口和文档上下文。
-6. 完成 `Research Gate`：识别不确定项，判断是否需要本地调研、在线搜索、用户确认或阻塞。
-7. 如果任务依赖框架、API、协议、工具、模型或其他可能变化的事实，查询官方或一手资料。
-8. 完成 `Standards Discovery Gate`：识别语言、技术栈、框架、API 类型和架构风险，收集适用规范来源。
-9. 完成 `Development Quality Gate`：把代码标准、静态质量、架构边界、设计模式取舍、耦合/内聚和验证映射写入计划。
-10. 创建或更新 `execution-plan.md`。
-11. 在计划靠前位置写入 `Execution Contract`、`Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`。
-12. 确认 `Git Context`：主分支、harness 工作分支、同步来源、分支占用和提交策略。
-13. 写清 `Environment`、`Tooling`、`Validation`、`Process Manager Gate` 和文件写入策略。
-14. 细化 `Implementation Plan`，每个阶段必须说明目标、做法、原因、位置、参考、验证、风险、回滚和 Stage Contract。
-15. 完成 `Plan Quality Gate`。
-16. 完成 `Plan Self-Review`，发现问题时先修复计划。
-17. 完成 `Readiness Gate`。
-18. 将状态设为 `awaiting_plan_approval`，请求用户批准方案。
-19. 停止工作，等待用户明确批准。不得开始代码实现、验证实现或提交代码。
+1. 读取项目规则、active pointer、稳定环境和已有 task bundle。
+2. 完成任务路由、profile 选择和 discovery-first 判断。
+3. 收集本地实现、调用方、配置、数据、测试和错误路径。
+4. 完成自主消歧与 Research Gate；必要时使用在线官方或一手资料。
+5. 完成 Standards Discovery Gate 和 Development Quality Gate。
+6. 形成 options、decision、change map、requirements、acceptance 和 validation mapping。
+7. 生成 `execution-plan.md`、`plan-contract.json` 和触发的 artifacts。
+8. 运行 planner checker `draft`，修复结构、ID、DAG、引用和 profile 问题。
+9. 完成 Plan Quality Gate、Plan Self-Review，必要时做独立 critique。
+10. 运行 planner checker `approval` 并完成 Readiness Gate。
+11. 将 pointer 写入 `.harness/active-task.json`，请求用户批准后停止。
 
-## 规划循环
+lite 通常 1-3 stages，standard 2-5 stages，full 3-7 stages。超过 7 个阶段必须解释为何不能合并。
 
-managed 计划必须把思考过程落到文件中，避免上下文压缩后只剩口头状态。
+## 自主消歧
 
-规则：
+按以下顺序处理未知：
 
-- 阶段拆分默认 3-7 个可独立验证阶段；超过 7 个阶段必须说明为什么不能合并。
-- 读取多个关键源码、文档、网页、日志或参考项目文件后，必须把关键 findings 写入 `Context`、参考矩阵或 artifacts。
-- 重大决策前必须重读目标、约束、Options、Decision、影响面和 reapproval triggers。
-- 放弃的方案必须写明放弃原因，避免恢复后重复探索。
-- 发现错误假设、失败路径或不可行做法时，不删除痕迹，改写为 findings、risk 或 rejected option。
-- 每次补强计划后，如果影响目标、范围、阶段、验证、风险、工具授权或提交策略，必须重新运行 `Plan Quality Gate`、`Plan Self-Review` 和 `Readiness Gate`。
+1. 搜索仓库中的定义、调用、配置、测试、历史实现和文档。
+2. 查询官方文档、标准、源码或 release notes。
+3. 运行最便宜且无破坏性的区分性探针。
+4. 记录假设、证据强度和不同答案对方案的影响。
+5. 只把仍需业务偏好、权限、秘密或不可替代输入的问题交给用户。
+
+按“影响 x 不确定性”排序问题。每个用户问题说明推荐默认值、选择差异和会改变的阶段/接口/验证；避免一次提出大量低价值问题。
 
 ## Research Gate
 
-`Research Gate` 用于防止不确定问题、可变事实和在线资料结论只停留在对话上下文中。每个 managed 计划都必须记录研究模式：
+每个 managed 任务记录一种模式：
 
-- `none`：任务没有外部事实依赖，必须说明原因。
-- `local-only`：仅依赖本地源码、配置、锁文件、项目文档或用户给定资料。
-- `online-required`：涉及框架、API、协议、工具、模型、依赖版本、外部服务、浏览器行为、平台差异、法规、安全、金融、医学或其它可能变化事实。
-- `blocked-by-access`：需要在线或一手资料，但网络、权限、账号、私有资料或用户限制阻止调研。
+- `none`：无外部或不稳定事实依赖，并说明原因。
+- `local-only`：本地代码、配置、锁文件和用户资料足以确认。
+- `online-required`：涉及可能变化的框架、API、协议、工具、模型、依赖、平台行为、法规或高风险事实。
+- `blocked-by-access`：需要的一手资料因网络、权限或私有访问不可用。
 
 规则：
 
-- `online-required` 必须优先查询官方文档、源码仓库、release notes、标准文档、论文、厂商文档或其它一手资料。
-- 非一手资料只能作为补充；如果结论会影响方案、风险、接口、验证或兼容性，不能只依赖二手资料。
-- 搜索后必须记录查询或来源、工具、日期、结论、可信度、影响和后续动作。
-- 无法联网或资料不可访问时，不得把关键事实写成 `confirmed`；必须标为 `blocked-by-access`、`assumption` 或 blocking decision，并说明影响。
-- 不确定项能通过资料解决时先调研；只有资料无法解决、需要业务取舍、权限或用户偏好时才提 blocking 问题。
-- 进入 `Readiness Gate` 前，所有 `online-required` 项必须有来源矩阵证据，所有 blocking 不确定项必须关闭或记录为停止条件。
+- 优先官方文档、标准、源码仓库、release notes、论文和厂商文档。
+- 记录查询、来源 URL/路径、访问日期、结论、可信度、适用限制和方案影响。
+- 关键结论不得只依赖二手资料或模型记忆。
+- 无法访问时标记 assumption 或 blocker，并说明影响与替代证据，不伪造 confirmed。
+- 新来源连续不再改变问题定义、影响面、options 或 validation 时停止搜索。
 
 ## Standards Discovery Gate
 
-`Standards Discovery Gate` 用于把“应该按什么标准开发”从隐含经验变成可追踪输入。它只强制 managed 任务执行；direct 任务可按项目现有规则轻量处理。
+先识别语言、框架、包管理器、API 类型、数据层、部署形态和架构风险，再收集适用规范。
 
-规划时必须记录：
+优先级：项目规则 > 官方语言/框架/标准 > 高质量一手参考 > 二手背景资料。
 
-- 技术栈识别：语言、框架、包管理器、运行形态、API 类型、数据层、部署环境和架构风险。
-- 规范来源：项目内 `AGENTS.md`、`docs/development.md`、配置文件、官方语言规范、官方框架文档、API/架构设计规范和高质量参考。
-- standards index：优先写入 `execution-plan.md`；资料较多时写入 `.harness/tasks/<date>/<type>/<task-slug>/artifacts/standards/standards-index.md` 并在计划中引用。
-- 适用边界：哪些规范必须遵守，哪些只作为参考，哪些因为项目现状、风险或范围不适用。
-- 更新策略：在线来源必须记录访问日期、可信度和影响；无法访问时标为 `blocked-by-access` 或 assumption。
-
-来源选择规则：
-
-- 优先项目内已有规则，其次官方/一手资料，再使用高质量二手资料补充背景。
-- 例如 Go 项目可优先查 Google Go Style 和项目内 `gofmt`、`go vet`、`golangci-lint` 配置；Web 后端项目还应按框架和 API 类型查官方工程结构、REST/gRPC/API 设计规范。
-- 不把外部规范全集复制进 skill；默认沉淀索引、摘要、URL、适用性和少量必要摘录。
-- 设计模式、SOLID 或数量口径不得凭记忆硬编码；需要时在 standards index 中核验来源、定义和项目适用性。
+standards index 至少记录来源、URL/路径、访问日期、适用范围、必须/参考级别和不适用原因。语言规范可从 Google styleguide、语言官方规范或项目配置开始；Web/API 项目还应查框架工程结构、协议和 API design guidance。不要把规范全集复制进 skill。
 
 ## Development Quality Gate
 
-`Development Quality Gate` 用于在审批前确认实现方案是否具备可维护开发质量，不用于强迫所有任务采用复杂架构或设计模式。
+按 profile 深度记录：
 
-计划必须覆盖：
+- 代码标准：命名、格式、注释、异常、日志、配置和测试风格。
+- 静态质量：syntax、format、lint、typecheck、build、unit/integration checks。
+- 架构边界：职责、依赖方向、公共接口、数据所有权和迁移边界。
+- 模式取舍：说明采用或拒绝抽象/设计模式的理由，避免模式驱动设计。
+- 耦合与内聚：识别跨层调用、循环依赖、共享状态、重复逻辑和过宽接口。
+- 验证映射：把质量要求映射到 stage、VAL、review 或替代证据。
 
-- 代码标准：命名、格式化、注释、错误处理、日志、配置、测试风格和项目现有约定。
-- 静态质量：语法检查、format、lint、typecheck、build、单测或等价验证；无法执行时必须记录原因和替代证据。
-- 架构边界：模块职责、依赖方向、公共接口、数据所有权、兼容性和迁移边界。
-- 设计模式取舍：说明是否需要创建型、结构型、行为型或领域内常见模式；不采用模式时记录原因，避免过度设计。
-- 低耦合高内聚：识别共享状态、跨层调用、循环依赖、重复抽象、过宽接口和单一职责风险。
-- 验证映射：把每类质量要求映射到阶段、命令、代码审查项或替代证据。
+项目规则与外部规范冲突时以项目明确规则为准，并记录取舍。规范发现若改变范围、接口、风险或必需验证，必须进入重新决策。
 
-处理规则：
+## 代码探索
 
-- 风险越高，Development Quality Gate 越具体；低风险 managed 任务可以用简洁表格完成。
-- 如果 standards index 发现的规范会改变 approved scope、阶段边界、公共接口或验证策略，必须记录 reapproval trigger。
-- 如果项目规范和外部规范冲突，优先项目内明确规则，并在计划中说明取舍。
-- 每个 Stage Contract 应说明本阶段适用的 standards 和 development quality checks。
+change map 必须覆盖：
 
-## Workspace 环境
+- 直接修改点及其定义。
+- 入口、调用方、消费者和依赖方向。
+- 数据结构、配置、错误处理和权限边界。
+- 相关测试、文档和生成物。
+- 已检查但不受影响的邻接区域。
 
-用户可以用自然语言维护各项目 `docs/development.md`。planner 负责整理为 `.harness/environment.md`。
+为发现记录 `confirmed`、`read`、`external` 或 `assumption`。按相关性读取文件；当新增证据不再改变影响面或决策时停止。不能以“阅读了很多文件”代替定位质量。
 
-优先读取：
+## 计划与契约
 
-- `docs/development.md`
-- `go.mod`
-- `package.json`
-- 锁文件，例如 `pnpm-lock.yaml`、`package-lock.json`、`yarn.lock`
-- `pyproject.toml`、`requirements.txt`、`environment.yml`、`.python-version`
-- `Dockerfile`、`compose.yaml`、`.devcontainer/`
+`execution-plan.md` 说明为什么这样做，至少包含：
 
-如果环境信息冲突，并会影响安装、运行、测试、验证或最终声明，必须先向用户确认。
+- profile、目标、非目标、约束和证据。
+- requirements、acceptance、nonfunctional requirements。
+- options、decision、影响面和风险。
+- Stage Contracts、验证、Git/工具/进程策略。
+- Plan Quality、Self-Review、Readiness 和 Approval Request。
+- artifact index 与 amendment triggers。
 
-## Git 规划
+`plan-contract.json` 承载所有 enforceable 字段。不要从 Markdown 标题、关键词或表格推导 stage 状态、依赖、授权或验证。
 
-managed 任务采用统一 harness 工作分支，不按任务名创建分支：
+同步规则：
 
-- `feature` / `feat` -> `harness/feature`
-- `fix` -> `harness/fix`
-- `refactor` -> `harness/refactor`
-- `docs` -> `harness/docs`
-- `test` -> `harness/test`
-- `chore` -> `harness/chore`
+- plan 与 contract 的 REQ/AC/NFR/STG/VAL ID 必须一致。
+- must requirement 必须被 AC、stage 和 required validation 闭环覆盖。
+- stage DAG 无环，所有引用存在，allowed/forbidden changes 不冲突。
+- profile 必需 artifact 必须存在并在 index 中声明。
+- plan 中不得包含 current stage、remaining stages、运行结果、ledger 摘要或 commit log。
 
-主分支优先来自 `.harness/environment.md` 的 `Git` 区域。未配置时按 `dev -> main -> master -> origin/HEAD` 探测；结果不唯一或会影响提交、合并、验证时，必须停止并询问用户。
+具体字段、事件和错误语义见 `task-contract.md`。
 
-计划必须记录：
+## 规划门禁
 
-- 主分支、任务类型、工作分支。
-- 创建或复用动作、同步来源、最近同步时间。
-- 分支占用检查计划：`git log <main>..HEAD` 和 `git -c diff.autoRefreshIndex=false diff <main>...HEAD --name-only`。
-- 同一仓库 Git 命令必须串行。
-- `index.lock` 精确恢复策略。
-- 热修复插入策略。
-- 提交授权策略。实施批准不等于提交授权。
+### Plan Quality Gate
 
-planner 只规划 Git 策略，不执行提交。
+确认：
 
-## 方案质量
+- 关键判断有来源和证据等级。
+- Research、Standards 和 Development Quality gates 已闭环。
+- 至少比较两个可区分方案；只有一个合理方案时说明排除依据。
+- change map 覆盖接口、数据、配置、测试、文档和调用链。
+- 每个 stage 有可观察退出条件、风险、回滚和独立验证。
+- requirements、acceptance、stages 和 validations 可追踪。
+- 授权、长期进程、Git、文档与最终证据要求明确。
 
-`Implementation Plan` 不能是空泛清单。每个阶段必须包含：
+### Plan Self-Review
 
-- 目标
-- 怎么做
-- 为什么这么做
-- 在哪里做，包括文件、模块、API、配置、测试或文档
-- 参考来源
-- 适用规范和开发质量检查
-- 验证
-- 风险和回滚
-- 阶段契约
+主动检查并修复：
 
-`Execution Contract` 必须包含：
+- 缺陷：矛盾、错误假设、断链引用、不可执行步骤。
+- 优化：不必要阶段、artifact、抽象、用户问题或验证成本。
+- 缺失：环境、调用方、错误路径、权限、回滚、文档或提交策略。
+- 风险：高风险行为缺少缓解、替代证据或 fail-closed 行为。
+- 一致性：plan、contract、artifacts 和 active pointer 漂移。
+- 开发质量：规范、静态质量、架构、模式、耦合和内聚缺口。
 
-- `contract_version`
-- `task_id`
-- `execution_mode`
-- `overall_status`
-- `approval_status`
-- `approved_contract_hash`
-- `current_stage_id`
-- `remaining_stage_ids`
-- `stop_condition`
-- `commit_authorization`
-- `ledger_policy`
-- `single_writer`
-- `reapproval_required`
+full/高风险任务优先使用 clean-context critique。若独立 evaluator 不可用，执行 deterministic checker + self-review，并明确记录降级；不得伪造独立评审。
 
-`Goal Condition` 必须说明所有 approved stages、final gate、open decisions、验证证据和提交授权状态如何共同决定最终完成。
+### Readiness Gate
 
-`Context` 必须区分本地代码、本地文档、外部资料和用户约束。不能只写“参考官方文档”，必须写来源和结论。
+依次确认 Plan Quality、Self-Review、planner `approval` checker、无 blocker、artifact 完整、Git/工具/验证可执行和批准摘要已准备。Readiness 只表示可以请求批准，不授权实现。
 
-`Plan Quality Gate` 用于判断方案是否足够进入审批，不等同于 `Readiness Gate`。进入审批前必须检查：
+## Git、工具与进程
 
-- 关键判断都有证据来源，来源必须标为 `read`、`confirmed`、`external` 或 `assumption`。
-- 影响面矩阵已覆盖 API、数据结构、前端交互、配置/环境、兼容性、测试和文档。
-- Standards Discovery Gate 已识别技术栈、规范来源、standards index、适用边界和在线来源状态。
-- Development Quality Gate 已覆盖代码标准、静态质量、架构边界、设计模式取舍、耦合/内聚和验证映射。
-- 至少比较两个候选方案；如果只有一个合理方案，必须说明原因。
-- 每个实施阶段都能独立验证，不能只写“最终一起测试”。
-- 方案变更触发条件已记录。
-- 用户批准摘要已记录批准范围、提交授权、工具授权和文档更新授权。
+- 记录主分支、工作分支、同步来源、分支占用、串行 Git 策略、index.lock 恢复和提交授权。
+- 不自动 stash、reset、rebase、切分支或覆盖未知改动。
+- 列出实施需要的 shell、语言运行时、浏览器/MCP、外部服务和降级路径。
+- 识别长期进程；若需要，写 Process Manager Gate 和 ready/log/stop 证据要求。finite commands 不进入 process-manager。
+- 提交授权必须与实施批准分开；没有明确授权时 contract 仍要求 commit gate 拒绝。
 
-## Plan Self-Review
+`.harness/environment.md` 只维护长期 workspace 能力。任务特有的网络、工具、秘密、路径或限制写入 task plan/artifact；秘密值不得落盘。
 
-`Plan Quality Gate` 通过后，必须执行 `Plan Self-Review`。该自查用于主动挑出并修复方案问题，不等同于 `Plan Quality Gate` 或 `Readiness Gate`。
+## 批准与交接
 
-`Plan Self-Review` 必须覆盖：
+请求批准前：
 
-- `Defects`：逻辑矛盾、错误假设、不可执行步骤、遗漏前置条件。
-- `Optimizations`：可减少复杂度、文件数量、阶段数量、用户交互或验证成本的改进。
-- `Missing items`：缺少环境、Git、验证、工具、MCP、process-manager、回滚、文档或提交策略。
-- `Risks`：高风险改动缺少验证、缓解或回滚。
-- `Consistency`：`Execution Control`、阶段计划、验证、Git、状态记录和恢复摘要之间存在冲突。
-- `Development quality`：规范发现、代码标准、静态质量、架构边界、模式取舍、低耦合高内聚或验证映射缺失。
+1. 运行 `harness_plan_check.py --task-dir <task-dir> --mode approval`。
+2. 写 pointer-only `.harness/active-task.json`。
+3. 向用户总结范围、breaking behavior、验证、授权请求和残余风险。
+4. 停止，不实现代码、不创建 run-state/ledger、不提交。
 
-处理规则：
+用户批准后，批准事实和实际 authorizations 写入 `attestation.json`。planner 不回写 plan/contract；executor 验证 attestation 后初始化 ledger/run-state 并连续执行。
 
-- 发现 defect 时，必须先修复计划，不得进入 `Readiness Gate`。
-- 发现 missing item 时，必须补充到对应章节。
-- 发现 optimization 时，如果不改变目标、范围和风险，应直接优化计划；如果会改变目标、范围、阶段、验证或风险，必须记录为方案变更并请求用户确认。
-- 发现 risk 时，必须补充验证、缓解或回滚策略。
-- 发现 consistency 问题时，必须修正冲突字段；`execution-plan.md` 仍是任务状态唯一主契约。
-- 用户审批前只要方案内容被修改，必须重新执行 `Plan Self-Review` 并更新自查结论。
-- 自查修复影响目标、范围、阶段、验证、工具依赖、风险或提交策略时，必须重新跑 `Plan Quality Gate` 和 `Readiness Gate`。
-
-## 文件写入策略
-
-所有落盘写文件动作都适用分段 patch 策略，包括代码、Markdown 文档、规划文档、模板、JSON、JSONL、YAML、changelog、eval fixture 和 harness 任务状态文件。
-
-规则：
-
-- 分段 patch 是落盘策略，不要求一次性生成全部细节。
-- 大内容首次写入前必须先形成全局框架，包括目标、影响范围、模块边界、接口关系、验证策略和整体复查计划。
-- 单次 `apply_patch` 新增内容建议不超过 120 行，硬上限为 200 行；超过必须拆分。
-- 当写入范围可能较大或无法判断规模时，必须先在计划中记录分段判断。
-- 目标文件超过 500 行时，默认禁止整文件重写，优先局部 patch。
-- 分段边界必须保持语义完整，优先使用 Markdown 章节、完整表格、完整函数、完整配置节或完整 changelog 日期块。
-- 所有分段写入完成后，必须重新读取完整目标文件检查一致性。
-
-如果 `apply_patch` 失败，必须先读取目标文件确认是否有部分写入，再缩小失败段重试。不得用 shell 拼接文件绕过 patch 失败。
-
-## 用户批准门禁
-
-`Readiness Gate` 只是技术就绪检查，不授权实现。
-
-Readiness 通过后必须：
-
-1. 更新 `execution-plan.md`。
-2. 将 `.harness/active-task.json` 状态设为 `awaiting_plan_approval`。
-3. 总结最终方案、影响范围、验证策略和提交策略。
-4. 停止工作，等待用户明确批准。
-
-可接受的批准表达：
-
-- “确认执行”
-- “按方案执行”
-- “方案没问题，开始实现”
-- “同意方案 A”
-
-实施批准不等于提交授权。只有用户明确说“提交”“阶段提交”或批准摘要明确记录提交授权，executor 才能提交。
-
-如果用户改变方案、环境、工具或验证策略，必须更新计划并重新通过 readiness 和批准。
+实施批准不等于提交授权。只有用户明确说“提交”、批准摘要明确包含提交，或后续单独授权时，attestation 才能记录 commit authorization。
 
 ## Plan Amendment Gate
 
-计划获批后，以下变化必须停止实施并重新请求用户批准：
+以下变化必须停止并重新批准：
 
-- approved scope 改变。
-- 阶段边界、阶段顺序、阶段数量或 Stage Contract 改变。
-- 必需验证、工具授权、长期进程策略或提交策略改变。
-- 风险等级、公共接口、数据结构、权限、依赖或兼容性假设改变。
-- attestation mismatch 且无法证明是预期文档更新。
+- approved scope、公共行为、REQ/AC/NFR 或 artifact 集合实质改变。
+- stage 数量、DAG、边界、顺序或 required VAL 改变。
+- 风险、依赖、数据迁移、外部写入、长期进程或授权改变。
+- immutable 文件变化或 attestation mismatch。
 
-不触发重新批准的情况必须记录原因，例如只补充验证证据、更新实施进度、写入 ledger 摘要或修正明显错别字。
+amendment 将上一 revision 清单归档到 `artifacts/amendments/`，生成递增 `plan_revision`，重跑 approval checker，获得用户批准并生成新 attestation。执行状态必须标记 `reapproval_required`，批准前不得继续写操作。
 
-## Blocking 决策
+不改变行为的诊断文案、执行 evidence 或 snapshot reconcile 不修改 immutable plan，因此不触发 amendment。
 
-只询问会影响方案、环境、权限、验证、接口、数据、依赖、风险或提交行为的 blocking 问题。
+## 文件写入
 
-推荐格式：
-
-```text
-D-001：决策标题
-A（recommended）：...
-B：...
-C：...
-Custom：...
-```
-
-提出问题后必须停止。不能继续规划、编码、验证或用默认假设绕过阻塞点。
-
-如果使用 `pending-decisions.md`，必须在会话中同步摘要同一组问题。用户可以在会话中回答，也可以编辑文件。答案最终必须合并回 `execution-plan.md`，它仍然是唯一主契约。
-
-## Executor 交接契约
-
-planner 生成的 `execution-plan.md` 必须包含 executor 可消费的状态和门禁：
-
-- `Execution Control Snapshot`：放在文档靠前位置，记录 execution mode、overall status、current stage、completed stages、remaining stages、next automatic action、stop condition 和 state source。
-- `Execution Contract`：放在文档靠前位置，记录 executor 可读机器字段。
-- `Goal Condition`、`Planning Loop Protocol` 和 `Executor Work Loop`：说明如何持续推进和如何判断完成。
-- `Implementation Plan`：每个阶段都有 Stage Contract。
-- `Environment`、`Git Context`、`Tooling`、`Process Manager Gate`。
-- `Standards Discovery Gate` 和 `Development Quality Gate`：说明规范来源、适用边界、架构和质量验证映射。
-- `Validation` 和验证证据表。
-- `Documentation`、`File Write Strategy`、`Questions And Overrides`。
-- `Plan Quality Gate`、`Plan Self-Review`、`Readiness Gate`、`Plan Approval`。
-- `Execution Control`、`Implementation Progress`、`Stage Entry Gate`、`Stage Exit Gate`、`Stage Transition Gate`。
-- `Ledger Evidence`、`Code Review`、`Resume Packet`、`Resume Summary`、`Commit Log`。
-
-方案获批后，应由 `complex-coding-executor` 读取该计划并继续。planner 不执行实现阶段。
-
-## Skill 更新后的继续工作
-
-如果用户提示 `complex-coding-planner` 已更新，继续当前规划任务前必须：
-
-1. 重新读取最新 `SKILL.md` 和 `references/planning-workflow.md`。
-2. 重新读取 `.harness/active-task.json`、`.harness/environment.md` 和当前任务的 `execution-plan.md`。
-3. 对照新规则和旧任务状态，只说明会影响当前工作的差异。
-4. 不自动大范围重写旧状态，不删除旧字段，不迁移已批准方案。
-
-以下差异必须先向用户确认：
-
-- 改变已批准方案、阶段拆分或阶段边界。
-- 改变 Git 分支、同步、合并或提交策略。
-- 改变验证工具、验证命令、证据要求或最终声明范围。
-- 改变公共接口、数据结构、依赖、权限或运行环境。
+- 长内容先建立全局框架，再按完整章节、函数或配置块分段 patch。
+- 单次新增建议不超过 120 行，最多 200 行。
+- 超过 500 行的现有文件优先定点修改，不无故整文件重写。
+- patch 失败后先检查是否部分写入，再缩小锚点；不得盲目重复。
+- 写完后完整重读目标文件，并检查 JSON、ID、链接、重复、顺序、末尾换行和 `git diff --check`。

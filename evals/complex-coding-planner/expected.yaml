@@ -5,9 +5,10 @@ managed-plan-approval:
   classification: managed
   requires_execution_plan: true
   waits_for_user_approval: true
-needs-clarification-env:
-  classification: needs-clarification
-  stops_for_user_input: true
+discovery-first-env:
+  classification: managed
+  enters_discovery_first: true
+  blocks_approval_until_resolved: true
 weak-plan-rejected:
   requires_plan_quality_gate: true
   does_not_enter_implementation: true
@@ -17,11 +18,10 @@ plan-self-review-detects-missing-environment:
 approval-does-not-authorize-commit:
   records_commit_authorization: true
   implementation_approval_is_not_commit_authorization: true
-managed-plan-requires-execution-contract:
-  includes_execution_contract: true
-  includes_goal_condition: true
-  includes_planning_loop_protocol: true
-  includes_executor_work_loop: true
+managed-plan-requires-task-contract:
+  writes_plan_contract: true
+  keeps_runtime_state_out_of_plan: true
+  validates_ids_dag_scope_and_coverage: true
 planning-loop-records-findings:
   records_findings_to_plan_or_artifacts: true
   rereads_plan_before_major_decision: true
@@ -39,7 +39,7 @@ online-required-without-source-rejected:
   allows_blocked_by_access_fallback: true
 template-placeholders-rejected:
   rejects_unfilled_template_by_default: true
-  allows_explicit_template_mode: true
+  draft_mode_does_not_grant_approval: true
 assumption-cannot-pass-readiness:
   blocks_readiness: true
   requires_assumption_impact: true

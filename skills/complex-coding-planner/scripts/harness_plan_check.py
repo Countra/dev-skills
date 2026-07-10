@@ -1,25 +1,31 @@
 #!/usr/bin/env python3
-"""检查 complex-coding-planner 生成的 execution-plan.md 结构。"""
+"""校验 planner task bundle 的结构和跨制品语义。"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
+from typing import Any
+
+from harness_contract import (
+    ValidationIssue,
+    add_issue,
+    contains_placeholder,
+    load_json_object,
+)
+from harness_contract_rules import validate_contract
 
 
-REQUIRED_SECTIONS = [
+REQUIRED_PLAN_SECTIONS = [
+    "规划摘要",
     "问题定义",
-    "执行契约",
-    "目标条件",
-    "规划循环协议",
-    "执行循环协议",
-    "上下文",
+    "需求与验收",
     "调研门禁",
     "规范发现门禁",
     "开发质量门禁",
+    "上下文",
     "候选方案",
     "决策",
     "影响面矩阵",
@@ -27,54 +33,58 @@ REQUIRED_SECTIONS = [
     "环境",
     "Git",
     "工具",
+    "长期进程",
     "验证",
+    "文档",
     "文件写入策略",
     "方案质量门禁",
     "规划自查",
     "就绪门禁",
     "方案批准",
+    "方案变更门禁",
+    "Artifact Index",
+    "Executor Handoff",
+]
+
+FORBIDDEN_MUTABLE_SECTIONS = [
     "执行控制",
+    "实施进度",
+    "Ledger Evidence",
+    "阶段进入门禁",
+    "阶段退出门禁",
+    "阶段转移门禁",
+    "代码审查",
+    "恢复摘要",
+    "提交记录",
 ]
 
-STAGE_REQUIRED_TERMS = ["目标", "做法", "原因", "位置", "验证", "风险", "阶段契约"]
-STANDARDS_GATE_REQUIRED_TERMS = ["技术栈", "规范来源", "standards index", "官方", "适用边界"]
-DEVELOPMENT_GATE_REQUIRED_TERMS = ["代码标准", "静态质量", "架构边界", "设计模式", "耦合", "内聚", "验证映射"]
-
-CONTRACT_REQUIRED_FIELDS = [
-    "contract_version",
-    "task_id",
-    "execution_mode",
-    "overall_status",
-    "approval_status",
-    "approved_contract_hash",
-    "current_stage_id",
-    "remaining_stage_ids",
-    "stop_condition",
-    "commit_authorization",
-    "ledger_policy",
-    "single_writer",
-    "reapproval_required",
-]
-
-GOAL_REQUIRED_TERMS = ["approved stages", "final", "blocking", "验证", "提交"]
-PLANNING_LOOP_REQUIRED_TERMS = ["findings", "重读", "rejected options", "Readiness"]
-EXECUTOR_LOOP_REQUIRED_TERMS = ["Stage Contract", "ledger", "attempt", "continue Stage", "Goal Condition"]
+ID_REGEX = {
+    "GOAL": re.compile(r"\bGOAL-\d{2,}\b"),
+    "REQ": re.compile(r"\bREQ-\d{2,}\b"),
+    "AC": re.compile(r"\bAC-\d{2,}\b"),
+    "NFR": re.compile(r"\bNFR-\d{2,}\b"),
+    "STG": re.compile(r"\bSTG-\d{2,}\b"),
+    "VAL": re.compile(r"\bVAL-\d{2,}\b"),
+    "ART": re.compile(r"\bART-\d{2,}\b"),
+}
 
 
-def read_text(path: Path) -> str:
+def read_text(path: Path, issues: list[ValidationIssue]) -> str:
     try:
         return path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
-        return path.read_text()
+    except FileNotFoundError:
+        add_issue(issues, "TASK_PLAN_MISSING", "$plan", f"缺少计划：{path}", "创建 execution-plan.md。")
+    except (OSError, UnicodeError) as exc:
+        add_issue(issues, "TASK_PLAN_UNREADABLE", "$plan", f"无法读取计划：{exc}", "修复文件权限或 UTF-8 编码。")
+    return ""
 
 
 def has_heading(text: str, name: str) -> bool:
-    pattern = re.compile(rf"^##+\s+.*{re.escape(name)}", re.MULTILINE)
-    return bool(pattern.search(text))
+    return bool(re.search(rf"^##\s+.*{re.escape(name)}", text, re.MULTILINE))
 
 
 def section(text: str, name: str) -> str:
-    match = re.search(rf"^##+\s+.*{re.escape(name)}.*$", text, re.MULTILINE)
+    match = re.search(rf"^##\s+.*{re.escape(name)}.*$", text, re.MULTILINE)
     if not match:
         return ""
     start = match.end()
@@ -83,204 +93,320 @@ def section(text: str, name: str) -> str:
     return text[start:end]
 
 
-def heading_position(text: str, name: str) -> int:
-    match = re.search(rf"^##+\s+.*{re.escape(name)}.*$", text, re.MULTILINE)
-    return match.start() if match else -1
+def stage_sections(plan: str) -> dict[str, tuple[str, str]]:
+    implementation = section(plan, "实施计划")
+    matches = list(
+        re.finditer(r"^###\s+(STG-\d{2,})\b.*$", implementation, re.MULTILINE)
+    )
+    result: dict[str, tuple[str, str]] = {}
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(implementation)
+        result[match.group(1)] = (match.group(0), implementation[match.end() : end])
+    return result
 
 
-def extract_first_json_block(text: str) -> dict[str, object] | None:
-    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
-    if not match:
-        return None
+def contract_ids(contract: dict[str, Any]) -> dict[str, set[str]]:
+    def ids(field: str) -> set[str]:
+        values = contract.get(field, [])
+        if not isinstance(values, list):
+            return set()
+        return {str(item.get("id")) for item in values if isinstance(item, dict) and item.get("id")}
+
+    return {
+        "GOAL": {str(contract.get("goal", {}).get("id"))}
+        if isinstance(contract.get("goal"), dict) and contract["goal"].get("id")
+        else set(),
+        "REQ": ids("requirements"),
+        "AC": ids("acceptance_criteria"),
+        "NFR": ids("nonfunctional_requirements"),
+        "STG": ids("stages"),
+        "VAL": ids("validations"),
+        "ART": ids("artifacts"),
+    }
+
+
+def validation_context(task_dir: Path, contract: dict[str, Any], plan: str) -> str:
+    chunks = [plan]
+    task_root = task_dir.resolve()
+    artifacts = contract.get("artifacts", [])
+    if not isinstance(artifacts, list):
+        return plan
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or artifact.get("kind") != "research":
+            continue
+        path = artifact.get("path")
+        if isinstance(path, str):
+            try:
+                artifact_path = (task_dir / path).resolve()
+                artifact_path.relative_to(task_root)
+                chunks.append(artifact_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, ValueError):
+                pass
+    return "\n".join(chunks)
+
+
+def validate_plan(
+    task_dir: Path,
+    contract: dict[str, Any],
+    mode: str,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    plan = read_text(task_dir / "execution-plan.md", issues)
+    if not plan:
+        return issues
+
+    for name in REQUIRED_PLAN_SECTIONS:
+        if not has_heading(plan, name):
+            add_issue(
+                issues,
+                "TASK_PLAN_MISSING_SECTION",
+                f"$plan.{name}",
+                f"缺少章节：{name}",
+                "按 execution-plan 模板补齐。",
+            )
+    for name in FORBIDDEN_MUTABLE_SECTIONS:
+        if has_heading(plan, name):
+            add_issue(
+                issues,
+                "TASK_PLAN_MUTABLE_SECTION",
+                f"$plan.{name}",
+                f"批准计划不得包含可变执行章节：{name}",
+                "把运行状态移到 run-state/ledger。",
+            )
+
+    summary = section(plan, "规划摘要")
+    task_id = contract.get("task_id")
+    if isinstance(task_id, str) and task_id not in summary:
+        add_issue(
+            issues,
+            "TASK_PLAN_CONTRACT_DRIFT",
+            "$plan.规划摘要",
+            "Task ID 与 contract 不一致。",
+            "在 Plan Summary 使用相同 task_id。",
+        )
+    profile = contract.get("plan_profile")
+    if isinstance(profile, str) and profile not in summary:
+        add_issue(issues, "TASK_PLAN_CONTRACT_DRIFT", "$plan.规划摘要", "Plan profile 与 contract 不一致。", "同步 profile。")
+    revision = contract.get("plan_revision")
+    if isinstance(revision, int) and not re.search(
+        rf"Plan revision[^\n]*\b{revision}\b",
+        summary,
+        re.IGNORECASE,
+    ):
+        add_issue(
+            issues,
+            "TASK_PLAN_CONTRACT_DRIFT",
+            "$plan.规划摘要",
+            "Plan revision 与 contract 不一致。",
+            "在 Plan Summary 使用相同 plan_revision。",
+        )
+    route = contract.get("lifecycle_route")
+    if isinstance(route, str) and not re.search(
+        rf"Lifecycle route[^\n]*\b{re.escape(route)}\b",
+        summary,
+        re.IGNORECASE,
+    ):
+        add_issue(
+            issues,
+            "TASK_PLAN_CONTRACT_DRIFT",
+            "$plan.规划摘要",
+            "Lifecycle route 与 contract 不一致。",
+            "在 Plan Summary 使用相同 lifecycle_route。",
+        )
+
+    expected_ids = contract_ids(contract)
+    for prefix, expected in expected_ids.items():
+        actual = set(ID_REGEX[prefix].findall(plan))
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        for value in missing:
+            add_issue(
+                issues,
+                "TASK_PLAN_MISSING_ID",
+                "$plan",
+                f"计划未解释 contract ID：{value}",
+                "在对应需求、阶段、验证或 artifact 章节引用。",
+            )
+        for value in extra:
+            add_issue(
+                issues,
+                "TASK_PLAN_EXTRA_ID",
+                "$plan",
+                f"计划包含 contract 未定义 ID：{value}",
+                "同步 plan-contract.json 或删除漂移引用。",
+            )
+
+    implementation = section(plan, "实施计划")
+    stage_heading_values = re.findall(
+        r"^###\s+(STG-\d{2,})\b",
+        implementation,
+        re.MULTILINE,
+    )
+    if len(stage_heading_values) != len(set(stage_heading_values)):
+        add_issue(
+            issues,
+            "TASK_PLAN_STAGE_DUPLICATE",
+            "$plan.实施计划",
+            "同一 Stage heading 出现多次。",
+            "每个 contract stage 只保留一个对应章节。",
+        )
+    plan_stages = stage_sections(plan)
+    stage_headings = set(plan_stages)
+    if stage_headings != expected_ids["STG"]:
+        add_issue(
+            issues,
+            "TASK_PLAN_STAGE_DRIFT",
+            "$plan.实施计划",
+            "Stage headings 与 contract stages 不一致。",
+            "为每个 STG 写一个且仅一个阶段章节。",
+        )
+    stages = contract.get("stages", [])
+    if isinstance(stages, list):
+        for stage in stages:
+            if not isinstance(stage, dict) or stage.get("id") not in plan_stages:
+                continue
+            stage_id = str(stage["id"])
+            heading, body = plan_stages[stage_id]
+            title = stage.get("title")
+            if isinstance(title, str) and title not in heading:
+                add_issue(
+                    issues,
+                    "TASK_PLAN_STAGE_DRIFT",
+                    f"$plan.实施计划.{stage_id}",
+                    "Stage title 与 contract 不一致。",
+                    "同步 stage heading title。",
+                )
+            stage_text = f"{heading}\n{body}"
+            for field in (
+                "depends_on",
+                "requirement_ids",
+                "acceptance_ids",
+                "nonfunctional_ids",
+                "validation_ids",
+                "allowed_changes",
+                "forbidden_changes",
+            ):
+                values = stage.get(field, [])
+                if not isinstance(values, list):
+                    continue
+                for value in values:
+                    if isinstance(value, str) and value not in stage_text:
+                        add_issue(
+                            issues,
+                            "TASK_PLAN_STAGE_DRIFT",
+                            f"$plan.实施计划.{stage_id}",
+                            f"Stage 未解释 contract {field}：{value}",
+                            "在对应 Stage Contract 中同步依赖、追踪、验证和 scope。",
+                        )
+
+    if mode == "approval":
+        if contains_placeholder(plan):
+            add_issue(
+                issues,
+                "TASK_PLAN_PLACEHOLDER",
+                "$plan",
+                "计划仍包含模板占位符。",
+                "用任务真实内容替换占位符。",
+            )
+        gates = (
+            "调研门禁",
+            "规范发现门禁",
+            "开发质量门禁",
+            "方案质量门禁",
+            "规划自查",
+            "就绪门禁",
+        )
+        for gate in gates:
+            gate_text = section(plan, gate)
+            if re.search(r"\bpending\b", gate_text, re.IGNORECASE):
+                add_issue(issues, "TASK_PLAN_GATE_PENDING", f"$plan.{gate}", f"{gate} 仍为 pending。", "完成门禁并记录证据。")
+
+        pending_path = task_dir / "pending-decisions.md"
+        if pending_path.is_file():
+            pending = read_text(pending_path, issues)
+            if re.search(r"(?:状态|status)[^\n]*\bopen\b", pending, re.IGNORECASE):
+                add_issue(
+                    issues,
+                    "TASK_PLAN_OPEN_DECISION",
+                    "$plan.pending-decisions",
+                    "仍有 open 决策。",
+                    "关闭决策或停止在 blocked。",
+                )
+
+        research = contract.get("research", {})
+        if isinstance(research, dict) and research.get("mode") == "online-required":
+            if not re.search(r"https?://", validation_context(task_dir, contract, plan)):
+                add_issue(
+                    issues,
+                    "TASK_PLAN_RESEARCH_SOURCE_MISSING",
+                    "$plan.调研门禁",
+                    "online-required 缺少 URL 证据。",
+                    "引用官方或一手来源。",
+                )
+
+        options = section(plan, "候选方案")
+        option_count = len(re.findall(r"^###\s+", options, re.MULTILINE))
+        if option_count < 2 and "只有一个合理方案" not in options:
+            add_issue(
+                issues,
+                "TASK_PLAN_OPTIONS_INCOMPLETE",
+                "$plan.候选方案",
+                "缺少可区分候选方案。",
+                "比较至少两个方案或说明唯一方案的排除依据。",
+            )
+    return issues
+
+
+def validate_task(task_dir: Path, mode: str) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
     try:
-        value = json.loads(match.group(1))
-    except json.JSONDecodeError:
-        return None
-    return value if isinstance(value, dict) else None
+        resolved_task_dir = task_dir.resolve(strict=True)
+    except FileNotFoundError:
+        add_issue(issues, "TASK_DIR_MISSING", "$", f"任务目录不存在：{task_dir}", "传入已有 task-dir。")
+        return issues
+    if not resolved_task_dir.is_dir():
+        add_issue(issues, "TASK_DIR_INVALID", "$", f"不是任务目录：{resolved_task_dir}", "传入目录路径。")
+        return issues
+
+    contract, load_issues = load_json_object(resolved_task_dir / "plan-contract.json")
+    issues.extend(load_issues)
+    if contract is None:
+        return issues
+    issues.extend(validate_contract(contract, resolved_task_dir, mode))
+    issues.extend(validate_plan(resolved_task_dir, contract, mode))
+    return issues
 
 
-def check_terms(section_text: str, terms: list[str], label: str) -> list[str]:
-    return [f"{label} missing term: {term}" for term in terms if term not in section_text]
-
-
-def check_gate_status(section_text: str, gate_name: str) -> list[str]:
-    if re.search(r"\|\s*[^|\n]+\|\s*pending\s*\|", section_text, re.IGNORECASE):
-        return [f"{gate_name} contains pending status"]
-    return []
-
-
-def check_template_placeholders(text: str) -> list[str]:
-    errors: list[str] = []
-    first_line = text.splitlines()[0] if text.splitlines() else ""
-    if first_line.strip() == "# 执行计划（Execution Plan）":
-        errors.append("plan still uses the template title")
-    placeholder_patterns = [
-        r"<阶段名称>",
-        r"<decision-title>",
-        r"<这里说明",
-        r"<推荐选项>",
-        r"<备选项>",
-        r"<这里",
-    ]
-    if any(re.search(pattern, text) for pattern in placeholder_patterns):
-        errors.append("plan contains template placeholder markers")
-    if "none / local-only / online-required / blocked-by-access" in section(text, "调研门禁"):
-        errors.append("Research Gate still contains the template research mode placeholder")
-    return errors
-
-
-def check_research_gate(text: str, allow_template: bool) -> list[str]:
-    errors: list[str] = []
-    research = section(text, "调研门禁")
-    if not research.strip():
-        return ["Research Gate section is empty"]
-    required_terms = ["研究模式", "不确定项", "搜索记录", "来源矩阵"]
-    for term in required_terms:
-        if term not in research:
-            errors.append(f"Research Gate missing term: {term}")
-    if "调研结论" not in research and "Research Gate 结论" not in research:
-        errors.append("Research Gate missing term: 调研结论")
-    if allow_template:
-        return errors
-    if "`pending`" in research or re.search(r"调研结论.*pending", research, re.IGNORECASE | re.DOTALL):
-        errors.append("Research Gate result is still pending")
-    if "online-required" in research and "http" not in research:
-        errors.append("online-required Research Gate must include at least one URL/source link")
-    if "blocked-by-access" in research and "影响" not in research:
-        errors.append("blocked-by-access Research Gate must record impact")
-    return errors
-
-
-def check_gate_result(section_text: str, gate_name: str, result_terms: list[str], allow_template: bool) -> list[str]:
-    errors: list[str] = []
-    for term in result_terms:
-        if term not in section_text:
-            errors.append(f"{gate_name} missing term: {term}")
-    if allow_template:
-        return errors
-    if "`pending`" in section_text or re.search(r"结论.*pending|result.*pending", section_text, re.IGNORECASE | re.DOTALL):
-        errors.append(f"{gate_name} result is still pending")
-    return errors
-
-
-def check_standards_gate(text: str, allow_template: bool) -> list[str]:
-    standards = section(text, "规范发现门禁")
-    if not standards.strip():
-        return ["Standards Discovery Gate section is empty"]
-    errors = check_gate_result(
-        standards,
-        "Standards Discovery Gate",
-        STANDARDS_GATE_REQUIRED_TERMS,
-        allow_template,
-    )
-    if allow_template:
-        return errors
-    if "online-required" in standards and "http" not in standards and "blocked-by-access" not in standards:
-        errors.append("online-required Standards Discovery Gate must include at least one URL/source link or blocked-by-access record")
-    return errors
-
-
-def check_development_quality_gate(text: str, allow_template: bool) -> list[str]:
-    quality = section(text, "开发质量门禁")
-    if not quality.strip():
-        return ["Development Quality Gate section is empty"]
-    return check_gate_result(
-        quality,
-        "Development Quality Gate",
-        DEVELOPMENT_GATE_REQUIRED_TERMS,
-        allow_template,
-    )
-
-
-def check_plan(text: str, allow_template: bool = False) -> list[str]:
-    errors: list[str] = []
-    for name in REQUIRED_SECTIONS:
-        if not has_heading(text, name):
-            errors.append(f"missing section: {name}")
-
-    implementation = section(text, "实施计划")
-    if not implementation.strip():
-        errors.append("missing implementation plan content")
+def print_text(issues: list[ValidationIssue], mode: str) -> None:
+    for issue in issues:
+        print(f"{issue.level.upper()} [{issue.code}] {issue.path}: {issue.message} Hint: {issue.hint}")
+    errors = sum(issue.level == "error" for issue in issues)
+    warnings = sum(issue.level == "warning" for issue in issues)
+    if errors == 0:
+        print(f"PASS: {mode} task bundle is valid ({warnings} warning(s))")
     else:
-        stage_count = len(re.findall(r"^###\s+.*Stage|^###\s+.*阶段", implementation, re.MULTILINE))
-        if stage_count == 0:
-            errors.append("implementation plan has no stage headings")
-        for term in STAGE_REQUIRED_TERMS:
-            if term not in implementation:
-                errors.append(f"implementation plan missing term: {term}")
-
-    gate_order = ["方案质量门禁", "规划自查", "就绪门禁", "方案批准"]
-    positions = [heading_position(text, name) for name in gate_order]
-    if any(pos < 0 for pos in positions):
-        errors.append("approval gate order cannot be checked because a gate is missing")
-    elif positions != sorted(positions):
-        errors.append("approval gate order must be Plan Quality -> Plan Self-Review -> Readiness -> Plan Approval")
-
-    readiness = section(text, "就绪门禁")
-    if "规划自查" not in readiness:
-        errors.append("Readiness Gate must confirm Plan Self-Review")
-    if "Research Gate" not in readiness and "调研门禁" not in readiness:
-        errors.append("Readiness Gate must confirm Research Gate")
-    if "Standards Discovery Gate" not in readiness and "规范发现门禁" not in readiness:
-        errors.append("Readiness Gate must confirm Standards Discovery Gate")
-    if "Development Quality Gate" not in readiness and "开发质量门禁" not in readiness:
-        errors.append("Readiness Gate must confirm Development Quality Gate")
-
-    approval = section(text, "方案批准")
-    if "提交" not in approval:
-        errors.append("Plan Approval must record commit authorization")
-
-    quality_gate = section(text, "方案质量门禁")
-    if "Standards Discovery Gate" not in quality_gate and "规范发现门禁" not in quality_gate:
-        errors.append("Plan Quality Gate must confirm Standards Discovery Gate")
-    if "Development Quality Gate" not in quality_gate and "开发质量门禁" not in quality_gate:
-        errors.append("Plan Quality Gate must confirm Development Quality Gate")
-
-    contract = section(text, "执行契约")
-    contract_json = extract_first_json_block(contract)
-    if contract_json is None:
-        errors.append("Execution Contract must include a valid json block")
-    else:
-        for field in CONTRACT_REQUIRED_FIELDS:
-            if field not in contract_json:
-                errors.append(f"Execution Contract missing field: {field}")
-
-    if "Plan Amendment Gate" not in contract:
-        errors.append("Execution Contract must mention Plan Amendment Gate")
-
-    errors.extend(check_research_gate(text, allow_template))
-    errors.extend(check_standards_gate(text, allow_template))
-    errors.extend(check_development_quality_gate(text, allow_template))
-    errors.extend(check_terms(section(text, "目标条件"), GOAL_REQUIRED_TERMS, "Goal Condition"))
-    errors.extend(check_terms(section(text, "规划循环协议"), PLANNING_LOOP_REQUIRED_TERMS, "Planning Loop Protocol"))
-    errors.extend(check_terms(section(text, "执行循环协议"), EXECUTOR_LOOP_REQUIRED_TERMS, "Executor Work Loop"))
-    if not allow_template:
-        errors.extend(check_template_placeholders(text))
-        errors.extend(check_gate_status(section(text, "方案质量门禁"), "Plan Quality Gate"))
-        errors.extend(check_gate_status(readiness, "Readiness Gate"))
-
-    return errors
+        print(f"FAIL: {errors} error(s), {warnings} warning(s)")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="检查 complex-coding-planner 的执行计划结构")
-    parser.add_argument("--plan", required=True, help="execution-plan.md 的路径")
-    parser.add_argument("--allow-template", action="store_true", help="允许模板占位内容通过结构检查")
+    parser = argparse.ArgumentParser(description="校验 complex-coding-planner task bundle")
+    parser.add_argument("--task-dir", required=True, help="包含 execution-plan.md 和 plan-contract.json 的任务目录")
+    parser.add_argument("--mode", choices=["draft", "approval"], default="approval")
+    parser.add_argument("--format", choices=["text", "json"], default="text", dest="output_format")
     args = parser.parse_args()
 
-    plan_path = Path(args.plan)
-    if not plan_path.is_file():
-        print(f"FAIL: plan not found: {plan_path}", file=sys.stderr)
-        return 2
-
-    errors = check_plan(read_text(plan_path), allow_template=args.allow_template)
-    if errors:
-        for error in errors:
-            print(f"FAIL: {error}")
-        return 1
-
-    print("PASS: plan structure is ready for approval")
-    return 0
+    issues = validate_task(Path(args.task_dir), args.mode)
+    if args.output_format == "json":
+        errors = sum(issue.level == "error" for issue in issues)
+        payload = {
+            "mode": args.mode,
+            "valid": errors == 0,
+            "issues": [issue.to_dict() for issue in issues],
+        }
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True))
+    else:
+        print_text(issues, args.mode)
+    return 1 if any(issue.level == "error" for issue in issues) else 0
 
 
 if __name__ == "__main__":
