@@ -1,15 +1,17 @@
 {
-  "host": "127.0.0.1",
-  "port": 18080,
-  "portRetry": {
-    "enabled": true,
-    "maxSwitches": 3
+  "workspaceRoot": "/ABSOLUTE/PATH/TO/WORKSPACE",
+  "stateRoot": "/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager",
+  "control": {
+    "host": "127.0.0.1",
+    "port": 0,
+    "maxRequestBytes": 65536
   },
   "history": {
     "maxInactive": 20,
     "deleteRunDirs": true
   },
-  "workspaceRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
-  "stateRoot": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager",
-  "tokenFile": "D:/ABSOLUTE/PATH/TO/WORKSPACE/.harness/process-manager/token"
+  "logs": {
+    "maxBytes": 10485760,
+    "backups": 3
+  }
 }

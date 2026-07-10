@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from typing import Iterable
 
-from gitlab_common import add_common_args, add_pagination_args, make_client, output_result, quote_id, request_list, run_cli
+from gitlab_ops import add_common_args, add_pagination_args, make_client, output_client_result, quote_id, request_list, run_cli
 
 
 def add_project_milestone_args(parser: argparse.ArgumentParser) -> None:
@@ -59,19 +59,19 @@ def main(argv: Iterable[str] | None = None) -> int:
             "search": args.search,
             "include_ancestors": args.include_ancestors or None,
         }
-        output_result(request_list(client, f"/projects/{project}/milestones", args, params=params), pretty=args.pretty)
+        output_client_result(client, request_list(client, f"/projects/{project}/milestones", args, params=params), pretty=args.pretty, operation="milestones.list")
         return 0
     if args.command == "get":
         path = f"/projects/{project}/milestones/{quote_id(args.milestone_id)}"
-        output_result(client.request("GET", path), pretty=args.pretty)
+        output_client_result(client, client.request("GET", path), pretty=args.pretty, operation="milestones.get")
         return 0
     if args.command == "issues":
         path = f"/projects/{project}/milestones/{quote_id(args.milestone_id)}/issues"
-        output_result(request_list(client, path, args), pretty=args.pretty)
+        output_client_result(client, request_list(client, path, args), pretty=args.pretty, operation="milestones.issues")
         return 0
     if args.command == "mrs":
         path = f"/projects/{project}/milestones/{quote_id(args.milestone_id)}/merge_requests"
-        output_result(request_list(client, path, args), pretty=args.pretty)
+        output_client_result(client, request_list(client, path, args), pretty=args.pretty, operation="milestones.merge_requests")
         return 0
     parser.error("unknown command")
     return 2

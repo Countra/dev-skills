@@ -87,10 +87,14 @@ knowledge/
 按 process-manager 规则启动：
 
 ```powershell
-python skills/process-manager/scripts/pm_health.py
-python skills/process-manager/scripts/pm_validate.py --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
-python skills/process-manager/scripts/pm_start.py --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
-python skills/process-manager/scripts/pm_ready.py --service electron-ui-verifier
+# 仅在 process-manager config 不存在时初始化。
+python skills/process-manager/scripts/pm_init.py --workspace E:/work/hl/videoForensic/AI/dev-skills
+python skills/process-manager/scripts/pm_manager.py status --config E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/config.json
+# 仅在 manager_offline 时执行 start；不要判断 OS 或选择 backend。
+python skills/process-manager/scripts/pm_manager.py start --config E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/config.json
+python skills/process-manager/scripts/pm_validate.py --config E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/config.json --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
+python skills/process-manager/scripts/pm_start.py --config E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/config.json --service E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/services/electron-ui-verifier.json
+python skills/process-manager/scripts/pm_ready.py --config E:/work/hl/videoForensic/AI/dev-skills/.harness/process-manager/config.json --process-key <pm_start 返回的 processKey>
 python skills/electron-ui-verifier/scripts/ev_health.py --workspace E:/work/hl/videoForensic/AI/dev-skills
 ```
 
@@ -100,7 +104,7 @@ python skills/electron-ui-verifier/scripts/ev_health.py --workspace E:/work/hl/v
 EV_READY http://127.0.0.1:<port>/health
 ```
 
-process-manager service 使用 log readiness，因此端口重试后也能识别真实 health URL。
+process-manager service 使用有界增量 log readiness 和命名捕获组，因此 verifier 内部端口重试后也能识别真实 health URL。停止或重启 server 时必须保存 `cleanupVerified` 与 `stopResult.ownerEmpty` 证据。
 
 ## Session 流程
 

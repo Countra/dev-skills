@@ -2,6 +2,16 @@
 
 ## 2026-07-10
 
+### Breaking: GitLab PAT Ops 与跨平台 process-manager 能力升级
+
+- `gitlab-pat-ops` 直接切换为模块化 resource CLI、单一 capability registry、统一安全 transport 与 fingerprint/preflight guarded write，不兼容旧 token alias、旧脚本和旧一次性子命令。
+- `process-manager` 直接切换为 Windows/Linux/macOS 共用 CLI 与 `direct`/`script` schema，内部自动选择 Job Object、delegated cgroup/process-group guardian 和 user service/session bootstrap。
+- 新增 authenticated manager identity、graceful-force stop、processKey restart、增量 readiness、轮转日志、事务化 prune、manager crash cleanup 与按需 doctor 诊断。
+- `electron-ui-verifier`、planner/executor Process Manager Gate、仓级示例/ignore/environment/eval 已同步 current contract，不保留平台专属公共入口或旧 runtime fallback。
+- 验证覆盖 GitLab fake transport/resource/write tests、process-manager unit/executable eval/static/skill validation、Windows 原生生命周期和三平台 candidate-tree CI。
+- Commit: current commit
+- Commit message: `feat(dev-skills): 升级 GitLab 与跨平台进程能力`
+
 ### Breaking: planner / executor 单一最新任务契约
 
 - `complex-coding-planner` 改为 direct/managed 路由和 lite/standard/full 风险画像，输出不可变计划、封闭 `plan-contract.json`、pointer-only active task 与按需 research/standards/architecture/validation/critique artifacts。

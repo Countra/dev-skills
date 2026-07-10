@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from typing import Iterable
 
-from gitlab_common import add_common_args, add_pagination_args, make_client, output_result, quote_id, request_list, run_cli
+from gitlab_ops import add_common_args, add_pagination_args, make_client, output_client_result, quote_id, request_list, run_cli
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -44,12 +44,12 @@ def main(argv: Iterable[str] | None = None) -> int:
             "include_ancestor_groups": args.include_ancestor_groups,
             "archived": args.archived,
         }
-        output_result(request_list(client, f"/projects/{project}/labels", args, params=params), pretty=args.pretty)
+        output_client_result(client, request_list(client, f"/projects/{project}/labels", args, params=params), pretty=args.pretty, operation="labels.list")
         return 0
     if args.command == "get":
         params = {"include_ancestor_groups": args.include_ancestor_groups}
         path = f"/projects/{project}/labels/{quote_id(args.label_id)}"
-        output_result(client.request("GET", path, params=params), pretty=args.pretty)
+        output_client_result(client, client.request("GET", path, params=params), pretty=args.pretty, operation="labels.get")
         return 0
     parser.error("unknown command")
     return 2

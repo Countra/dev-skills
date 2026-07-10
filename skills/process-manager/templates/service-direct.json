@@ -1,25 +1,36 @@
 {
   "name": "frontend",
   "kind": "long-running",
-  "cwd": "D:/ABSOLUTE/PATH/TO/PROJECT",
+  "cwd": "/ABSOLUTE/PATH/TO/PROJECT",
   "launcher": {
     "type": "direct",
-    "argv": [
-      "C:/ABSOLUTE/PATH/TO/pnpm.cmd",
+    "executable": "/ABSOLUTE/PATH/TO/EXECUTABLE",
+    "args": [
       "dev",
       "--host",
-      "127.0.0.1",
-      "--port",
-      "5173"
-    ]
+      "127.0.0.1"
+    ],
+    "pathArgs": []
   },
-  "env": {
-    "BROWSER": "none"
+  "environment": {
+    "inherit": [
+      "PATH"
+    ],
+    "set": {
+      "BROWSER": "none"
+    },
+    "fromEnv": []
   },
-  "window": "hidden",
+  "stop": {
+    "graceSeconds": 8
+  },
   "readiness": {
     "type": "http",
-    "url": "http://127.0.0.1:5173",
+    "url": "http://127.0.0.1:5173/health",
     "timeoutSeconds": 30
+  },
+  "logs": {
+    "maxBytes": 10485760,
+    "backups": 3
   }
 }

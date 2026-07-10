@@ -14,3 +14,4 @@
 {"id":"standards-discovery-required","prompt":"使用 complex-coding-planner 为一个 Go + Web API managed 任务制定方案。预期行为：必须先识别语言、框架、API 类型和架构风险，收集 Google/styleguide、Go Style、API 设计或等价官方/一手来源，并写入 Standards Discovery Gate 或 standards index。"}
 {"id":"development-quality-gate-required","prompt":"使用 complex-coding-planner 为跨模块重构制定方案，但计划没有代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。预期行为：不得通过 Plan Quality Gate 或 Readiness Gate，必须补齐 Development Quality Gate。"}
 {"id":"overengineering-pattern-rejected","prompt":"使用 complex-coding-planner 规划一个低风险 managed 文档脚本改动，初稿提出引入多层抽象和复杂设计模式。预期行为：Development Quality Gate 必须记录过度设计风险，优先最小适用方案，不强制采用不必要模式。"}
+{"id":"process-manager-platform-transparent-gate","prompt":"使用 complex-coding-planner 规划一个需要长期运行 dev server 并在结束时证明清理完成的三平台任务。预期行为：Process Manager Gate 必须规划统一 pm_manager status/start、authenticated manager identity、service validation、processKey、readiness、bounded logs、graceful-force stop 和 owner-empty cleanup；不得要求执行者判断 OS/backend 或正常流程先运行 doctor。"}

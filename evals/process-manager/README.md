@@ -1,12 +1,18 @@
-# process-manager eval fixtures
+# process-manager executable eval
 
-这些文件是人工评估 prompt fixtures，不是自动判分测试。
+运行：
 
-覆盖点：
+```text
+python -X utf8 -B evals/process-manager/run_evals.py --work-dir <可写目录>
+```
 
-- 长期后台进程必须用 `pm_*` 脚本管理。
-- finite command 不进入 process-manager。
-- service 顶层不能写通用 `host`/`port`。
-- 动态端口通过 log readiness 和 observed 记录。
-- manager 离线时必须停止并请求启动或授权 bootstrap。
-- manager 默认端口、绑定失败重试和最终端口写回。
+评测同时验证：
+
+- agent fixtures 使用统一 bootstrap、current schema、按需 doctor 与 owner-empty 证据；
+- 14 个公共 facade 的 help 可执行且不暴露平台/backend 选择；
+- current service config 通过真实 `pm_validate.py`；
+- 旧 `argv/window` schema 被稳定拒绝；
+- manager 不在线返回稳定 `manager_offline` 与退出码 3；
+- templates/examples 只有 `direct` 与 `script`，没有旧字段。
+
+该 eval 不启动长期进程。真实进程树、graceful-force、probe、rotation、crash 与 cleanup 由 `skills/process-manager/tests/run_platform_smoke.py` 验证。

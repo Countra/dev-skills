@@ -284,11 +284,13 @@ Workspace 环境来源（Workspace environment source）:
 ## 长期进程管理（Process Manager Gate）
 
 - Needs long-running process：`yes / no`
-- Managed services、stage 和 readiness：
-- Required process-manager evidence：config / health / ready / logs / stop
+- Manager bootstrap：统一 `pm_manager.py status|start`；不判断 OS/backend；普通流程不先运行 doctor
+- Managed services、stage、service config 和 readiness：
+- Required process-manager evidence：authenticated manager identity / config validation / processKey / ready / bounded logs / graceful-force stop / owner-empty cleanup
+- Completion fields：`cleanupVerified: true` / `stopResult.ownerEmpty: true` / manager shutdown or intentional retention
 - Fallback or blocker：
 
-存在 process-manager 时，服务、worker、watcher 和 dev server 必须由它管理；finite test/build/lint command 直接运行。不得用手写后台 shell 绕过 manager。
+存在 process-manager 时，服务、worker、watcher 和 dev server 必须由统一公共 CLI 管理；finite test/build/lint command 直接运行。不得用手写后台 shell 绕过 manager，不得把平台 backend 选择责任交给调用方。
 
 ## 验证（Validation）
 

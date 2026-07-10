@@ -1,86 +1,73 @@
 ---
 name: gitlab-pat-ops
-description: Operate GitLab through the REST API with this repository's PAT-based GitLab operations skill. Use when Codex needs to inspect or search GitLab projects, repositories, files, labels, milestones, members, branches, issue templates, issues, comments/notes, or merge requests; create projects/issues/merge requests; update issue descriptions; close or reopen issues/MRs with guarded dry-run; parse issue/MR comments; reply to comments safely; or inspect the maintained capability boundary using SKILL_GITLAB_BASE_URL plus SKILL_GITLAB_PAT/SKILL_GITLAB_TOKEN.
+description: Operate GitLab REST resources with this repository's PAT-based, guarded-write skill. Use when Codex needs to locate projects or namespaces; inspect repositories, commits, branches, templates, issues, merge requests, notes, discussions, diffs, pipelines, jobs, approvals, or resource events; create projects/issues/MRs; update or close/reopen issues/MRs; reply to notes/discussions; resolve MR threads; or diagnose access through SKILL_GITLAB_BASE_URL and SKILL_GITLAB_PAT.
 ---
 
 # GitLab PAT Ops
 
-Use this skill for GitLab repository, issue, note, and merge request work through the bundled `gl_*` scripts. The scripts read only skill-scoped environment variables:
+Use the bundled `gl_*` scripts as composable resource commands. They share one authenticated transport, capability registry, JSON envelope, pagination budget, and guarded-write primitive. Do not bypass them with ad hoc REST calls for a capability they already cover.
+
+## Configuration
+
+Required environment variables:
 
 - `SKILL_GITLAB_BASE_URL`
 - `SKILL_GITLAB_PAT`
-- `SKILL_GITLAB_TOKEN` as a same-prefix token alias
 
-Do not use generic `GITLAB_TOKEN` by default. Never ask the user to paste a token into a command, file, log, commit message, or `.harness` artifact.
+Optional variables:
 
-## Required First Step
+- `SKILL_GITLAB_CA_BUNDLE`: absolute CA bundle path.
+- `SKILL_GITLAB_ALLOW_HTTP`: explicit opt-in for non-loopback HTTP.
+- `SKILL_GITLAB_TEST_PROJECT`: exact disposable project allowed only for separately authorized live-write validation.
 
-Run the doctor before any live GitLab operation:
+Never ask the user to put a PAT in argv, files, logs, commit messages, or `.harness` artifacts. Do not read generic or legacy token aliases.
+
+When configuration is absent or uncertain, run:
 
 ```powershell
 python skills\gitlab-pat-ops\scripts\gl_doctor.py --offline-check --pretty
 ```
 
-If live access is needed and the user has authorized it, run:
+Use the live doctor only when identity, scope, instance version, or authentication is uncertain and live access is needed.
+
+## Core Workflow
+
+1. Locate the namespace and project.
+2. Read the exact issue, MR, branch, commit, template, or pipeline involved.
+3. Compose additional resource reads only as needed: metadata, notes, discussions, events, diffs, approvals, jobs.
+4. For a write, first run the command without `--confirm`.
+5. Inspect the exact target, summarized payload, preflight, and full `confirm_fingerprint`.
+6. After that exact action is approved, rerun with `--confirm <full-fingerprint>`; apply rereads preflight and sends at most one request.
+7. Read the resulting resource. If the response outcome is unknown, do not replay the write before this read.
+
+Read [workflow.md](references/workflow.md) for composition patterns and [security.md](references/security.md) for failure and write boundaries.
+
+## Capability Discovery
+
+Do not dump capabilities on every task. Run `gl_capabilities.py` only when the resource, subcommand, scope, tier behavior, or prohibited boundary is unclear. Prefer an exact query:
 
 ```powershell
-python skills\gitlab-pat-ops\scripts\gl_doctor.py --pretty
+python skills\gitlab-pat-ops\scripts\gl_capabilities.py --capability discussions.mr.resolve --pretty
+python skills\gitlab-pat-ops\scripts\gl_capabilities.py --resource pipelines --pretty
+python skills\gitlab-pat-ops\scripts\gl_capabilities.py --prohibited --pretty
 ```
 
-If required variables are missing, stop and ask the user to set them. The scripts print PowerShell examples without exposing token values.
+An exact query for a prohibited capability returns `unsupported_capability`. The registry is the only machine-readable endpoint and safety truth. Read [capability-guide.md](references/capability-guide.md) only when composing unfamiliar resources.
 
-Only inspect the maintained capability boundary when the requested operation, safety status, scope requirement, or supported/unsupported boundary is unclear:
+## Resource Commands
 
-```powershell
-python skills\gitlab-pat-ops\scripts\gl_capabilities.py --pretty
-```
+- Discovery: `gl_projects.py`, `gl_namespaces.py`, `gl_search.py`.
+- Repository: `gl_repo.py`, `gl_commits.py`, `gl_branches.py`.
+- Planning metadata: `gl_templates.py`, `gl_labels.py`, `gl_milestones.py`, `gl_members.py`.
+- Work items: `gl_issues.py`, `gl_mrs.py`.
+- Collaboration and history: `gl_notes.py`, `gl_discussions.py`, `gl_resource_events.py`.
+- Review and CI context: `gl_mr_diffs.py`, `gl_approvals.py`, `gl_pipelines.py`.
+- Diagnostics: `gl_doctor.py`; conditional registry lookup: `gl_capabilities.py`.
 
-## Workflow
+All commands emit `{ok, operation, data|error, meta}` JSON. Repository raw/blob bytes default to base64 inside the envelope; use `--text` only for strict UTF-8 or `--output` for atomic binary output. Existing output files are not replaced unless `--overwrite` is explicit.
 
-1. Run `gl_doctor.py`.
-2. Use read-only commands first to locate the project, labels, milestones, members, branches, templates, issue, note, or MR.
-3. For writes, run dry-run first and inspect the redacted request preview.
-4. Only add `--confirm` after the user has approved the exact target and action.
-5. If the operation's support status or safety boundary is uncertain, run `gl_capabilities.py`.
-6. Record live smoke results without token values.
+## Write Boundary
 
-Detailed workflow: read `references/workflow.md`.
+Allowed writes are project/issue/MR create, issue/MR metadata update and close/reopen, top-level note reply, discussion reply, and MR discussion resolve/reopen. Metadata removal uses explicit flags such as `--clear-description`, `--unassign`, `--unassign-reviewers`, `--remove-milestone`, and `--remove-due-date`.
 
-## Scripts
-
-- `gl_capabilities.py`: print the current supported, guarded, and prohibited capability boundary when it is unclear.
-- `gl_doctor.py`: check environment variables and optional `/user` auth.
-- `gl_projects.py`: list/search/get projects and guarded project creation.
-- `gl_search.py`: global or project search.
-- `gl_repo.py`: repository tree, file, raw file, blob, and raw blob.
-- `gl_labels.py`: list/get project labels for issue metadata selection.
-- `gl_milestones.py`: list/get project milestones and milestone issues/MRs.
-- `gl_members.py`: list/get project members for assignee/reviewer discovery.
-- `gl_branches.py`: list/get project branches for MR preparation.
-- `gl_issue_templates.py`: list/get project repository issue templates under `.gitlab/issue_templates`.
-- `gl_issues.py`: list/get issues, related MRs, closed-by MRs, guarded issue creation, guarded issue description update, and guarded issue close/reopen.
-- `gl_notes.py`: list/compact issue or MR notes, and guarded replies.
-- `gl_mrs.py`: list/get MRs, MR notes, guarded MR creation, and guarded MR close/reopen.
-
-All scripts default to JSON output; pass `--pretty` for formatted JSON.
-
-## Safety Rules
-
-- Write commands must support dry-run and require `--confirm` for real requests.
-- Prefer `--body-file` or `--stdin` for comment bodies; `--body` can leak into shell history.
-- Issue creation checks existing labels by default; use `--allow-new-labels` only when intentionally allowing GitLab to create missing labels.
-- Issue description updates are supported as guarded full-field replacements: read the target issue first, use `--description-file` or `--stdin` for long content, dry-run first, then `--confirm` only after the exact target and replacement description are approved. Empty descriptions require `--allow-empty-description`.
-- Live write smoke is only allowed in the `codex_test` test repository when the user has explicitly allowed it.
-- Never run destructive operations such as delete, merge, approve, force push, permission changes, token management, or bulk cross-repository writes.
-- Issue/MR close/reopen are supported only as guarded state changes: dry-run first, then `--confirm` only after the exact target is approved.
-- If a requested GitLab operation is outside these scripts, inspect `gl_capabilities.py` and `references/api-map.md`, then use the same safety pattern before extending the skill.
-- When adding or removing a capability, update `gl_capabilities.py`, `references/api-map.md`, `references/security.md`, eval prompts, and tests together.
-
-Security details: read `references/security.md`.
-
-## Reference Routing
-
-- API endpoints, scopes, pagination, and script mapping: `references/api-map.md`.
-- Step-by-step task flows and examples: `references/workflow.md`.
-- Token handling, dry-run, confirm, and live smoke limits: `references/security.md`.
-- Machine-readable capability boundary for uncertain cases: run `scripts/gl_capabilities.py`.
+Delete, merge, approve, token/permission management, repository or branch mutation, CI mutation, and bulk writes are prohibited. Live writes are not routine validation and always require separate authorization plus an exact disposable target.

@@ -1,0 +1,414 @@
+{
+  "task_id": "2026-07-10-feature-gitlab-process-manager-capability-upgrade",
+  "plan_revision": 5,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "直接切换到一套不含旧版兼容分支的当前实现，使 gitlab-pat-ops 具备安全、模块化、可组合的 GitLab 操作能力，使 process-manager 在 Windows、Linux、macOS 暴露同一公共 CLI/schema/envelope，并由内部 dispatcher 自动选择最佳安全原生监管后端，具备身份校验、并发一致性、秘密保护和崩溃收口能力，同时同步所有仓内消费者与验证资产。"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "重构 GitLab HTTP 传输层，落实同源 token 边界、严格 URL/TLS、受控重定向、读取上限、请求追踪、限流退避，以及只对安全读取自动重试。"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "建立 GitLab 认证诊断和单一能力注册表，只保留 SKILL_GITLAB_PAT，并删除旧别名、v1/v2/version 标识和重复能力真相源。"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "按 GitLab 资源职责扩展可组合只读命令，覆盖 namespace、项目模板、提交、MR diff、pipeline/job 状态、approval 状态、discussion 和资源事件。"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "统一 GitLab 写操作门禁，支持 issue/MR 通用元数据更新、discussion 回复与 MR thread resolve/reopen，并以目标预检、精确 preview 指纹和显式确认绑定真实请求。"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "补齐 GitLab transport、命令、能力边界和安全回归测试，以及可执行 eval、精简 skill 文档和官方 endpoint/scope 指引。"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "重构 process-manager 跨平台控制面，建立单一公共 contract 与不可由调用方选择的内部 supervisor dispatcher，以单实例/run capability 和系统分配 endpoint 自动驱动 Windows Job Object、Linux delegated cgroup v2 或安全 process-group fallback、macOS process-group guardian。"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "建立 process-manager 线程安全且可恢复的状态存储、封闭配置 schema、秘密环境变量引用、Windows current-user DACL、POSIX owner-only mode、受限本地 API 和路径边界。"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "完善 process-manager 的统一 graceful-then-force 意图与内部平台映射、精确 restart、增量 readiness、轮转日志、退出码采集、按需平台诊断和三平台一致 CLI 错误语义。"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "为 process-manager 增加 portable unit、Windows/Linux/macOS 原生生命周期、降级、并发、崩溃、PID 复用、秘密、日志和损坏状态测试，以及三平台 CI、可执行 eval、agent metadata 和分层 references。"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "直接适配 electron-ui-verifier、complex-coding-planner、complex-coding-executor、README、示例、ignore、eval 和 changelog，使其只描述并消费平台无关的新契约，不探测 OS 或依赖 backend 字段。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "给定恶意跨源 Link/redirect、超限响应或瞬时失败，当 GitLab client 发起请求时，PAT 不会离开配置 origin/API prefix，响应和分页有硬上限，429/5xx 退避有界且 POST/PUT 不会被自动重放。"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02"],
+      "summary": "给定有效或缺失配置，当运行 doctor/capabilities 时，仅使用当前 SKILL_GITLAB_* 契约并安全报告 server metadata、用户、PAT scope/expiry 和能力边界，仓内不存在旧 token 别名或技能版本标签。"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-03"],
+      "summary": "给定一个项目或 MR，agent 能按资源脚本组合查询 namespace、issue/MR 模板、commit、非弃用 MR diffs、pipeline/jobs、approval、discussion 和资源事件，而无需一次性场景命令。"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-04"],
+      "summary": "给定 issue/MR 更新或 discussion 写入，dry-run 返回绑定 host、project/resource identity、规范化 payload 和 preflight snapshot 的指纹；只有完全匹配的显式确认才发送一次真实写请求。"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-04"],
+      "summary": "给定高影响或测试写入，删除、merge、approve、token/权限、CI mutation、branch mutation 和批量跨仓库写入保持拒绝；自动 live smoke 只能命中显式配置的测试项目。"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-05"],
+      "summary": "给定 GitLab skill 修改，离线单元/集成测试、能力 eval、skill 校验和文档一致性检查全部通过，且无需真实 GitLab 写入。"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-06"],
+      "summary": "给定 Windows、Linux 或 macOS，公共 pm_manager.py/pm_* 方法、参数、manager/service schema、response envelope 和错误码完全相同；并发 manager 启动或控制端口冲突时 workspace 只能存在一个经内部平台锁和身份校验的 manager，调用方无需判断平台。"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-06"],
+      "summary": "给定服务派生子孙进程、manager 异常退出或 PID 被复用，内部 dispatcher 自动选择 Windows Job、Linux delegated cgroup 或安全 process-group fallback、macOS guardian，并只通过 run capability/native owner 收口 owned run；未知平台、无安全 owner 或身份不可验证时拒绝启动，任何无关 PID 都不会被停止，普通响应不要求调用方处理 backend 差异。"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-07"],
+      "summary": "给定并发 start/stop/status/prune、状态损坏或秘密环境变量，状态转移保持线性一致并可从合法 run record 重建，token/secret/完整敏感 argv 不进入状态、响应或日志。"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-08"],
+      "summary": "给定三平台正常、忽略优雅信号、动态端口、超量日志或启动失败的服务，manager 对外执行相同 graceful-then-force 流程并在内部映射平台实现，readiness 与日志读取有界，公共结果记录真实退出和 owner-empty 证据，backend/capability 只进入内部审计或按需诊断。"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-09"],
+      "summary": "给定 process-manager 修改，可执行测试、eval 和 Windows/Ubuntu/macOS matrix 验证公共 CLI/schema/envelope/error parity，以及内部平台探测、自动 backend 选择、原生 lifecycle、fallback、并发、进程树、崩溃、身份、秘密、日志、bootstrap 和恢复路径，skill metadata/references 与当前命令一致。"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-10"],
+      "summary": "给定新 GitLab/process-manager 契约，所有仓内消费者、planner/executor 门禁、electron-ui-verifier service 生成、README、示例、ignore 和 eval 都只使用 current 平台无关字段与证据，不探测 OS、不选择 backend，也不要求正常流程先读取 doctor。"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "安全默认：凭据不得跨 origin、落盘或进入日志；真实外部写入与进程终止必须 fail closed。"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "可靠性：写请求不隐式重放，进程状态转移可确定重放/修复，并发操作不能产生重复 active service。"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "资源有界：分页、HTTP body/response、日志、readiness 扫描、历史和重试均有显式默认上限及可审计覆盖。"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "可维护性：资源 CLI、transport/safety、内部 supervisor dispatcher/adapters、state、runtime、probe 和 log 各自高内聚；公共 runtime/API 不散落 OS 分支；新增生产 Python 文件不超过 500 行。"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "运行依赖保持 Python 3.11+ 标准库、ctypes 与受控 OS 原生设施，公共 bootstrap 不依赖 PowerShell，不引入 pywin32、psutil、python-systemd 或后台 GitLab 服务。"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "只维护当前契约：不保留 legacy fallback、旧 env/schema/CLI 别名、迁移分支或 v1/v2 命名；旧 runtime 由 doctor 明确要求隔离重建。"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "平台透明性：Windows、Linux、macOS 使用同一 CLI、manager/service schema、response envelope 和 workflow；内部 dispatcher 自动选择当前环境最强安全后端，普通调用没有平台参数或分支，真实 capability/selection reason 只在内部审计与按需诊断中可观察，并由真实 OS runner 验证。"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/domain-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/target-architecture.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "GitLab 安全传输与能力契约",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02"],
+      "acceptance_ids": ["AC-01", "AC-02"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/gitlab-pat-ops/scripts/**", "skills/gitlab-pat-ops/tests/**", "skills/gitlab-pat-ops/references/**", "skills/gitlab-pat-ops/SKILL.md", "evals/gitlab-pat-ops/**", "evals/process-manager/run_static_checks.py"],
+      "forbidden_changes": ["skills/process-manager/**", "真实 GitLab 写请求", "旧 token alias 或版本化 skill 目录", "未列入 contract 的第三方依赖"],
+      "entry_conditions": ["基线 29 个 GitLab 单元测试已记录", "ART-01 至 ART-03 的传输与能力决策已重读", "不读取或输出 PAT 值"],
+      "exit_conditions": ["同源、TLS、重定向、重试、限流、响应上限和请求 ID 测试通过", "doctor 与单一能力注册表生效", "旧 env alias 和版本标签已删除"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-02",
+      "title": "GitLab 模块化资源与受控写入",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-03", "REQ-04", "REQ-05"],
+      "acceptance_ids": ["AC-03", "AC-04", "AC-05", "AC-06"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-07", "VAL-08", "VAL-10", "VAL-11"],
+      "allowed_changes": ["skills/gitlab-pat-ops/**", "evals/gitlab-pat-ops/**"],
+      "forbidden_changes": ["GitLab delete/merge/approve/token/permission/CI mutation/branch mutation/bulk write", "GitLab 后台服务", "旧 CLI fallback", "生产项目 live smoke"],
+      "entry_conditions": ["STG-01 完成", "官方 endpoint、scope 和弃用项映射已确认", "写入预览指纹与 preflight 规则已冻结"],
+      "exit_conditions": ["新增资源命令可独立组合且能力注册表覆盖", "所有受控写入使用同一 preview/confirm primitive", "离线测试和 eval 通过且不产生外部写入"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-03",
+      "title": "跨平台进程所有权、身份与状态核心",
+      "depends_on": [],
+      "requirement_ids": ["REQ-06", "REQ-07"],
+      "acceptance_ids": ["AC-07", "AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-03", "VAL-04", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/process-manager/scripts/**", "skills/process-manager/tests/**", "skills/process-manager/templates/**", "evals/process-manager/run_static_checks.py"],
+      "forbidden_changes": ["任意 PID 强杀 fallback", "未委托 cgroup 写、自动 sudo、enable-linger 或全局 service install", "旧 manager.pid/portRetry schema", "第三方进程管理依赖", "公共 platform/backend selector 或平台专属入口", "不可审计的内部降级"],
+      "entry_conditions": ["ART-03 的 platform backend/service-host/ephemeral control plane 决策已重读", "使用隔离临时 workspace", "测试 process 均由本轮夹具创建并记录 run identity"],
+      "exit_conditions": ["platform lock 和 runtime identity 生效", "Windows Job、Linux cgroup/fallback、macOS guardian adapter contract tests 通过", "三平台公共 CLI/schema/envelope parity 与内部自动选择/按需诊断测试通过", "并发状态和损坏恢复测试通过", "状态与响应不含秘密"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-04",
+      "title": "进程生命周期、探针、日志与 CLI",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-08", "REQ-09"],
+      "acceptance_ids": ["AC-10", "AC-11"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-03", "VAL-04", "VAL-05", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/process-manager/**", "evals/process-manager/**", "examples/process-manager/**", ".github/workflows/process-manager-platforms.yml"],
+      "forbidden_changes": ["自动重启循环", "自由 shell command", "无界日志/readiness/history", "秘密 argv 持久化", "旧 service schema 兼容解析", "多平台公共入口/schema 分叉", "要求调用方先运行 doctor 或选择 backend"],
+      "entry_conditions": ["STG-03 完成", "platform supervisor 与 runtime registry 可用", "所有生命周期测试有 finally、run capability 和 owner-empty 校验"],
+      "exit_conditions": ["当前平台 graceful-force owner 回收通过", "增量 readiness、轮转日志、退出码和 restart 语义通过", "三平台 workflow 已定义并可运行", "CLI help/schema/envelope/error parity、自动 backend 选择与按需 doctor 通过", "eval/references/agent metadata 与实现一致"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-05",
+      "title": "仓内消费者直接切换",
+      "depends_on": ["STG-02", "STG-04"],
+      "requirement_ids": ["REQ-10"],
+      "acceptance_ids": ["AC-12"],
+      "nonfunctional_ids": ["NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-05", "VAL-06", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "skills/complex-coding-planner/**", "skills/complex-coding-executor/**", "evals/complex-coding-planner/**", "evals/complex-coding-executor/**", "README.md", "examples/process-manager/**", ".gitignore", ".harness/environment.md", "CHANGELOG.md"],
+      "forbidden_changes": ["历史 task bundle 内容", "skill 目录重命名", "无关 skill 行为", "v1/v2 并行文档", "consumer OS/backend 条件分支", "每次任务强制 doctor"],
+      "entry_conditions": ["STG-02 与 STG-04 完成", "新 GitLab 与 process-manager 公共契约已冻结", "跨 skill 调用清单已重读"],
+      "exit_conditions": ["electron-ui-verifier 生成统一 service schema", "planner/executor 使用平台无关 process-manager 证据门禁且无 OS/backend 分支", "README/示例/ignore/eval/changelog 不再引用旧契约或平台专属公共接口"],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-06",
+      "title": "全量验证、代码审查与最终收口",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12"],
+      "allowed_changes": ["本 contract 已批准的所有目标文件", ".harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/artifacts/**", ".harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/tmp/**"],
+      "forbidden_changes": ["新增未批准能力面", "真实生产 GitLab 写入", "未授权提交", "跳过失败验证", "修改已批准 plan/contract/artifact"],
+      "entry_conditions": ["STG-05 完成", "所有 required validation 可运行", "worktree 变更仅位于批准范围"],
+      "exit_conditions": ["所有本地 required validation 和 development quality review 通过", "staged scope/tree 与审查对象一致", "VAL-11、VAL-12 未执行时明确记录残余风险", "无后台进程或临时秘密残留", "获得提交授权时使用 git commit -F 完成最终一次提交"],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "command": "python -X utf8 -B -m unittest discover -s skills/gitlab-pat-ops/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/gitlab-unit-integration.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "NFR-04", "NFR-06"],
+      "command": "python -X utf8 -B evals/gitlab-pat-ops/run_evals.py --work-dir .harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/tmp/evals/gitlab",
+      "evidence_path": "artifacts/validation/gitlab-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/process-manager-tests.txt"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "python -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace .harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/tmp/process-manager-smoke --output .harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/artifacts/validation/process-manager-native-smoke.json",
+      "evidence_path": "artifacts/validation/process-manager-native-smoke.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-10", "AC-11", "AC-12", "NFR-04", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B evals/process-manager/run_evals.py --work-dir .harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/tmp/evals/process-manager",
+      "evidence_path": "artifacts/validation/process-manager-evals.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-12", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B evals/process-manager/run_cross_skill_checks.py --work-dir .harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/tmp/cross-skill",
+      "evidence_path": "artifacts/validation/cross-skill-regression.json"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "NFR-01", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B evals/process-manager/run_static_checks.py",
+      "evidence_path": "artifacts/validation/static-schema-checks.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "other",
+      "required": true,
+      "covers": ["AC-06", "AC-11", "AC-12", "NFR-04", "NFR-06"],
+      "command": "使用 skill-creator 的 quick_validate.py 分别校验 skills/gitlab-pat-ops 与 skills/process-manager，并记录实际脚本路径和输出",
+      "evidence_path": "artifacts/validation/skill-validation.txt"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "按 ART-04 review checklist 执行安全、并发、架构、跨 skill、测试缺口与 git diff --check 复审",
+      "evidence_path": "artifacts/reviews/final-code-review.md"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "smoke",
+      "required": false,
+      "covers": ["AC-02", "AC-03"],
+      "command": "在 SKILL_GITLAB_BASE_URL/SKILL_GITLAB_PAT 可用时仅运行 doctor、项目搜索和只读详情 smoke，不执行写入",
+      "evidence_path": "artifacts/validation/gitlab-live-read-smoke.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "manual",
+      "required": false,
+      "covers": ["AC-04", "AC-05"],
+      "command": "仅在另行获得 external_write 授权且 SKILL_GITLAB_TEST_PROJECT 精确匹配 codex_test 时执行 preview 绑定后的可逆 write smoke，并立即核对结果",
+      "evidence_path": "artifacts/validation/gitlab-test-project-write-smoke.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "smoke",
+      "required": false,
+      "covers": ["AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "用户在本地最终提交并 push 后自行运行 .github/workflows/process-manager-platforms.yml，检查 windows-latest、macos-latest 以及 ubuntu-latest automatic fallback + scoped systemd-run --collect Delegate=yes strict cgroup smoke；保存 run/commit/job/unit-cleanup artifact 证据，执行器本次不触发远端 CI 或 elevated 操作",
+      "evidence_path": "artifacts/validation/process-manager-platform-matrix.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02", "ART-03"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "增加 GitLab delete、merge、approve、token/permission、CI mutation、repository mutation 或批量写能力",
+    "改变 GitLab preview 指纹、同源 token 边界、写重试或 SKILL_GITLAB_* 环境契约",
+    "改变 Windows/Linux/macOS 支持矩阵、内部自动 backend 选择规则、诊断边界、owner-death 语义或允许任意 PID fallback",
+    "改变 process-manager 统一公共 CLI/envelope、当前 service/config schema、Stage DAG、required validation、依赖或公共命令边界",
+    "需要超出临时 codex/process-manager-platform-ci ref 的 GitHub 外部写、真实 GitLab 写入、超出 scoped Ubuntu CI transient unit 的提权、自动持久系统配置、第三方 runtime 依赖、兼容旧版或新增后台服务",
+    "approved plan、contract 或 approval-included artifact 需要修改"
+  ],
+  "stop_conditions": [
+    "用户要求暂停或撤回批准",
+    "出现 reapproval trigger 或未批准的外部写入/提权/提交需求",
+    "无法证明 native owner/run capability、内部自动选择结果或测试清理边界",
+    "required validation 在修复尝试后仍失败",
+    "发现 token/secret 可能泄露、无关进程可能被终止或状态无法确定恢复"
+  ]
+}

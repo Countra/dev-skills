@@ -46,17 +46,18 @@
 
 位置：`skills/process-manager/`
 
-用途：通过本地常驻 Python manager 和 `pm_*` 脚本管理 Windows 长期后台进程，例如 dev server、web 服务、worker、watcher 和动态端口预览服务。
+用途：通过 workspace-scoped Python manager 和统一 `pm_*` 脚本，在 Windows、Linux、macOS 管理 dev server、Web 服务、worker、watcher 和动态端口预览等长期进程。
 
 核心约束：
 
 - 只管理长期后台进程，不管理测试、构建、lint、format 等 finite command。
-- 启动前先 `pm_health.py`，service config 先 `pm_validate.py`。
+- config 不存在时运行 `pm_init.py`；用 `pm_manager.py status|start|stop` 统一管理 manager，不判断 OS/backend。
+- service config 只允许 current `direct`/`script` launcher，启动前先 `pm_validate.py`。
 - agent 只调用 `pm_*` 脚本，不直接调用 manager API。
-- service config 的 `cwd`、可执行程序、脚本和路径类参数必须是绝对路径。
-- 顶层不写通用 `host`/`port`；端点放在 readiness 或启动参数里。
-- 默认隐藏窗口，stdout/stderr 写入 manager 自动生成的日志文件。
-- manager 默认端口是 `18080`；如果绑定失败，会最多向后切换 3 次并把最终端口写回 config。
+- `cwd`、executable/interpreter/script 和 `pathArgs` 必须是绝对路径；禁止 free-form shell。
+- readiness、日志、history 和请求均有硬预算；HTTP/TCP 只允许 loopback，manager 端口由 OS 分配。
+- stop/restart 必须检查 `cleanupVerified: true` 与 `stopResult.ownerEmpty: true`，绝不按任意 PID 清理。
+- 正常流程不先运行 doctor；只有统一操作失败且 capability/selection reason 不清楚时才诊断。
 
 ### gitlab-pat-ops
 
@@ -66,12 +67,11 @@
 
 核心约束：
 
-- 只读取 `SKILL_GITLAB_BASE_URL`、`SKILL_GITLAB_PAT` 和同前缀别名 `SKILL_GITLAB_TOKEN`。
+- 认证必填变量只使用 `SKILL_GITLAB_BASE_URL` 和 `SKILL_GITLAB_PAT`；可选 CA、HTTP opt-in 与测试项目边界也使用 `SKILL_GITLAB_*` 前缀，不读取通用或旧 token alias。
 - 默认不读取通用 `GITLAB_TOKEN`，避免和其它 GitLab 工具混用。
-- 不确定能力边界、scope 或禁止项时，可运行 `gl_capabilities.py` 查看当前维护的能力清单。
-- 先运行 `gl_doctor.py` 检查环境，再执行其它 GitLab 操作。
-- 只读能力覆盖项目搜索/详情、仓库 tree/file/raw、GitLab 搜索、label、milestone、成员、分支、issue 模板、issue、notes 和 MR。
-- 写操作覆盖项目创建、issue 创建、MR 创建、issue/MR 评论回复和 issue/MR close/reopen，默认 dry-run，真实请求必须 `--confirm`。
+- 只有不确定能力边界、scope、tier 或禁止项时才精确查询 `gl_capabilities.py`；配置、身份或权限不确定时才 doctor。
+- 只读能力覆盖 namespace/project、仓库、commit/branch/template、issue/MR、notes/discussions/events、diff/pipeline/job/approval 等可组合资源。
+- 写操作使用统一 preview/fingerprint/preflight guard，覆盖 project/issue/MR 创建、issue/MR metadata 与 close/reopen、note/discussion 回复和 MR thread resolve/reopen。
 - live 写入 smoke 只允许在 `codex_test` 测试仓库内执行；禁止删除、合并、approve、force、权限变更、token 管理或批量跨仓库写入。
 
 ### electron-ui-verifier
@@ -114,9 +114,14 @@ skills/
 ├── electron-ui-verifier/
 └── process-manager/
     ├── SKILL.md
+    ├── agents/
     ├── scripts/
+    ├── tests/
     ├── references/
-    │   └── workflow.md
+    │   ├── workflow.md
+    │   ├── service-schema.md
+    │   ├── platform-backends.md
+    │   └── security.md
     └── templates/
 examples/
 ├── complex-coding-harness/   # 历史示例目录

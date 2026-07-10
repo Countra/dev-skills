@@ -1,36 +1,34 @@
 #!/usr/bin/env python3
-"""裁剪 manager 进程历史记录。"""
+"""有界裁剪 inactive run 历史。"""
 
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
-from pm_common import PMError, default_config_path, fail, http_request, load_manager_config, print_json
+from process_manager.cli import add_common_args, make_client, output_remote, run_cli
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="裁剪 inactive process 历史记录")
-    parser.add_argument("--config", default=str(default_config_path()), help="manager config 路径")
-    parser.add_argument("--apply", action="store_true", help="实际执行裁剪；默认只做 dry-run")
-    parser.add_argument("--max-inactive", type=int, help="临时覆盖保留的 inactive 数量")
-    parser.add_argument("--keep-runs", action="store_true", help="只裁剪 processes.json，不删除对应 runDir")
-    args = parser.parse_args()
-    try:
-        if args.max_inactive is not None and args.max_inactive < 0:
-            raise PMError("--max-inactive 必须是非负整数")
-        payload: dict[str, object] = {
-            "dryRun": not args.apply,
-            "keepRuns": args.keep_runs,
-        }
-        if args.max_inactive is not None:
-            payload["maxInactive"] = args.max_inactive
-        config = load_manager_config(Path(args.config).resolve())
-        code, data = http_request(config, "POST", "/processes/prune", payload, timeout=20)
-        print_json(data)
-        return 0 if code < 400 and data.get("ok") else 1
-    except PMError as exc:
-        return fail(str(exc))
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="裁剪 inactive process 历史")
+    add_common_args(parser)
+    parser.add_argument("--apply", action="store_true", help="实际裁剪；默认 dry-run")
+    parser.add_argument("--max-inactive", type=int)
+    parser.add_argument("--keep-runs", action="store_true")
+    args = parser.parse_args(argv)
+
+    def execute() -> int:
+        status, value = make_client(args.config, timeout=20).request(
+            "POST",
+            "/processes/prune",
+            {
+                "dryRun": not args.apply,
+                "maxInactive": args.max_inactive,
+                "keepRuns": args.keep_runs,
+            },
+        )
+        return output_remote(status, value, pretty=args.pretty)
+
+    return run_cli("processes.prune", execute, pretty=args.pretty)
 
 
 if __name__ == "__main__":

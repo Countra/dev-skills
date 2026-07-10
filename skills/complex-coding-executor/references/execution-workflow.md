@@ -143,7 +143,11 @@ amendment 必须由用户重新批准：
 
 ## 长期进程
 
-存在 process-manager skill 时，dev server、Web/API 服务、worker、watcher 和模型服务必须由它管理。按 health -> config validate -> start -> ready/status -> logs -> stop/restart 取证。
+存在 process-manager skill 时，dev server、Web/API 服务、worker、watcher 和模型服务必须由它管理。先用统一 `pm_manager.py status` 检查 manager，仅在 `manager_offline` 时执行 `pm_manager.py start`；不得判断 OS/backend 或选择平台入口。
+
+按 manager authenticated identity -> service config validation -> start/processKey -> ready/status -> bounded logs -> stop/restart 的顺序取证。停止或替换 run 时必须看到 `cleanupVerified: true` 与 `stopResult.ownerEmpty: true`；manager 由本任务创建且不再需要时，还要通过统一 stop/shutdown 证明 bootstrap cleanup，计划明确保留时则记录保留原因。
+
+普通流程不先运行 `pm_doctor.py`。只有统一操作失败且 capability/selection reason 不清楚时才按需诊断；manager 无法建立安全 owner 且阶段必需长期进程时进入 blocked，不得退回手写后台启动。
 
 finite test、build、lint、format、migration 和一次性脚本直接运行。禁止 `Start-Process`、shell background、`nohup` 或自制 launcher 绕过 process-manager。manager 不可用且阶段必需长期进程时进入 blocked。
 

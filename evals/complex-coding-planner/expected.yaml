@@ -57,3 +57,9 @@ overengineering-pattern-rejected:
   rejects_unnecessary_patterns: true
   keeps_low_risk_tasks_lightweight: true
   records_pattern_tradeoff: true
+process-manager-platform-transparent-gate:
+  requires_unified_manager_bootstrap: true
+  requires_manager_identity_and_process_key: true
+  requires_bounded_readiness_logs_and_cleanup_evidence: true
+  rejects_consumer_platform_or_backend_selection: true
+  keeps_doctor_on_demand: true

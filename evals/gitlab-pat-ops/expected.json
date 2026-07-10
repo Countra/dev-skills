@@ -1,0 +1,57 @@
+{
+  "required_fixture_ids": [
+    "gitlab_pat_ops_capabilities",
+    "gitlab_pat_ops_doctor_missing_env",
+    "gitlab_pat_ops_project_search",
+    "gitlab_pat_ops_issue_context",
+    "gitlab_pat_ops_mr_review",
+    "gitlab_pat_ops_create_issue_template",
+    "gitlab_pat_ops_update_issue",
+    "gitlab_pat_ops_note_reply",
+    "gitlab_pat_ops_discussion_reply",
+    "gitlab_pat_ops_discussion_resolve",
+    "gitlab_pat_ops_raw_binary",
+    "gitlab_pat_ops_close_resource",
+    "gitlab_pat_ops_unknown_outcome",
+    "gitlab_pat_ops_reject_dangerous"
+  ],
+  "required_capability_ids": [
+    "namespaces.list",
+    "commits.diff",
+    "templates.get",
+    "issues.update",
+    "merge_requests.update",
+    "discussions.mr.reply",
+    "discussions.mr.resolve",
+    "merge_request_diffs.list",
+    "pipelines.jobs",
+    "jobs.get",
+    "merge_request_approvals.state",
+    "resource_events.issue.state.list"
+  ],
+  "required_scripts": [
+    "gl_namespaces.py",
+    "gl_commits.py",
+    "gl_templates.py",
+    "gl_discussions.py",
+    "gl_resource_events.py",
+    "gl_mr_diffs.py",
+    "gl_pipelines.py",
+    "gl_approvals.py"
+  ],
+  "required_behavior_terms": [
+    "SKILL_GITLAB_PAT",
+    "dry-run",
+    "confirm_fingerprint",
+    "gl_capabilities.py",
+    "outcome=unknown",
+    "不执行写操作"
+  ],
+  "forbidden_behavior_terms": [
+    "gl_issue_templates.py",
+    "update-description",
+    "--allow-empty-description",
+    "--as-json",
+    "SKILL_GITLAB_TOKEN"
+  ]
+}

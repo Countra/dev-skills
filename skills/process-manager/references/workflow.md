@@ -1,272 +1,144 @@
 # Process Manager Workflow
 
-## 适用范围
+## 目录
 
-此 skill 只管理 Windows 本地长期后台进程，例如前端 dev server、后端 web 服务、队列 worker、文件 watcher、模型服务和需要持续运行的调试服务。
+- 适用性判断
+- Manager 生命周期
+- Service 生命周期
+- Readiness 与日志
+- Restart、stop 与 prune
+- 失败处理
+- 交付证据
 
-不要用于以下 finite command：
+## 适用性判断
 
-- 单元测试、集成测试、lint、format、build。
-- 数据迁移、代码生成、一次性脚本。
-- 任何预期马上返回标准输出结果的命令。
+仅把不会自行及时返回的本地进程交给 process-manager，例如开发服务器、worker、watcher 和本地模型服务。有限命令直接运行；不要为了统一外观把测试或构建包装成 service。
 
-这些命令应按项目自己的验证流程直接运行。
-
-## Agent 操作顺序
-
-1. 读取本文件。
-2. 运行 `pm_health.py` 检查 manager 是否在线。
-3. 如果 manager 离线，停止并请求用户手动启动或批准执行 `start_manager.ps1`。
-4. 准备或检查 service JSON。
-5. 运行 `pm_validate.py --service <service-json>`。
-6. 运行 `pm_start.py --service <service-json>`。
-7. 运行 `pm_ready.py --service <name>` 或用 `pm_status.py` 查看状态。
-8. 需要日志时使用 `pm_logs.py`。
-9. 任务结束或需要清理时使用 `pm_stop.py`。
-
-除 `start_manager.ps1` 和 `stop_manager.ps1` 之外，不要手写后台启动命令。
-
-## Runtime 目录
-
-默认 runtime 根目录是目标 workspace 的 `.harness/process-manager/`：
+所有平台均使用以下 Python 入口。示例中的 `<config>`、`<service>` 和 `<processKey>` 必须替换为当前 workspace 的实际值：
 
 ```text
-.harness/process-manager/
-├── config.json
-├── token
-├── manager.pid
-├── processes.json
-├── services/
-├── runs/
-├── logs/
-└── tmp/
+python -X utf8 -B skills/process-manager/scripts/<script>.py ...
 ```
 
-`config.json`、`token`、`manager.pid`、`processes.json`、`services/`、`runs/`、`logs/` 和 `tmp/` 是运行产物，应默认加入 `.gitignore`。如果要共享 service 配置，请放到项目自己的模板目录，不要直接提交机器绝对路径。
+## Manager 生命周期
 
-## Manager 配置
-
-manager 配置描述控制面，不描述业务服务：
-
-- `host` 必须是 `127.0.0.1`。
-- `port` 是 manager API 初始端口，默认 `18080`。
-- `portRetry.enabled` 默认 `true`。
-- `portRetry.maxSwitches` 默认 `3`，表示初始端口失败后最多再尝试 3 个递增端口。
-- `history.maxInactive` 默认 `20`，表示全局最多保留 20 条 inactive 历史记录。
-- `history.deleteRunDirs` 默认 `true`，表示被裁剪的 inactive 记录会同步删除对应精确 runDir。
-- `workspaceRoot` 必须是绝对路径。
-- `stateRoot` 必须在 workspaceRoot 内。
-- `tokenFile` 必须在 stateRoot 内。
-
-如果绑定端口失败，manager 会按 `port`、`port + 1`、`port + 2`、`port + 3` 顺序尝试。成功后会把最终端口写回 `config.json`，后续 `pm_*` 脚本读取同一个配置即可连接真实端口。绑定失败通常来自 Windows excluded port range、端口占用或安全软件拦截。
-
-## Service 配置
-
-service 配置描述长期后台进程。顶层不要写通用 `host` 或 `port`。
-
-必填字段：
-
-- `name`: 简短服务名，只允许字母、数字、点、下划线和短横线。
-- `kind`: 使用 `long-running`。
-- `cwd`: 绝对路径。
-- `launcher`: 启动器配置。
-
-可选字段：
-
-- `env`: 字符串到字符串的环境变量映射。
-- `window`: 只能省略或写 `hidden`。
-- `readiness`: 可用性判断。
-
-## 启动器
-
-`direct`：
-
-```json
-{
-  "type": "direct",
-  "argv": ["C:/Tools/Python/python.exe", "D:/Project/app.py"]
-}
-```
-
-规则：
-
-- `argv[0]` 必须是绝对路径。
-- 不解析 PATH。
-- 不允许 `shell: true`。
-
-`cmd-file`：
-
-```json
-{
-  "type": "cmd-file",
-  "script": "D:/Project/scripts/start.cmd",
-  "args": ["--flag"]
-}
-```
-
-规则：
-
-- `script` 必须是绝对 `.cmd` 或 `.bat` 文件。
-- manager 内部转换为 `cmd.exe /d /s /c <script> <args...>`。
-- 不允许自由 command string。
-
-`powershell-file`：
-
-```json
-{
-  "type": "powershell-file",
-  "script": "D:/Project/scripts/start.ps1",
-  "args": ["--flag"]
-}
-```
-
-规则：
-
-- `script` 必须是绝对 `.ps1` 文件。
-- manager 内部转换为 `powershell.exe -NoProfile -ExecutionPolicy Bypass -File <script> <args...>`。
-- 不允许 `-Command`。
-
-## 绝对路径规则
-
-以下位置必须使用绝对路径：
-
-- `cwd`
-- `launcher.argv[0]`
-- `launcher.script`
-- 代表文件或目录的参数，例如 `--config D:/Project/config.json`
-
-如果参数只是普通字符串、端口号、host 值或布尔开关，不要求绝对路径。
-
-## Readiness
-
-`readiness` 表示进程启动后如何判断可用：
-
-- `http`: URL 返回成功响应后 ready。
-- `tcp`: host/port 能连接后 ready。
-- `log`: stdout/stderr 出现 pattern 或正则后 ready。
-- `process`: 进程存活指定秒数后 ready。
-
-没有 readiness 时，manager 只能报告 process running，不能声明业务 ready。
-
-动态端口服务应优先使用 `log` readiness，并通过 `extract` 提取 URL 或端口。提取结果写入进程详情的 `observed`。
-
-## 窗口和日志
-
-业务进程默认隐藏窗口运行：
-
-- `window` 只能省略或写 `hidden`。
-- stdout 写入自动生成的 `stdout.log`。
-- stderr 写入自动生成的 `stderr.log`。
-- manager 返回 runDir、stdout、stderr、pidFile 和 processKey。
-
-不要启动可见 cmd 或 PowerShell 窗口。
-
-## 进程历史和清理
-
-`processes.json` 不是无限历史库。manager 默认保留：
-
-- 所有 `running`。
-- 所有 `stop_timeout`。
-- 最近 `history.maxInactive` 条 inactive 记录，默认 20 条。
-
-inactive 包括 `stopped`、`exited`、`not_running` 和其他确定不再运行的终态。`running` 和 `stop_timeout` 永远不被自动裁剪。
-
-被裁剪的 inactive 记录会默认同步删除对应精确 runDir：
+1. 确认 workspace 使用绝对路径。
+2. 仅在 config 不存在时初始化：
 
 ```text
-.harness/process-manager/runs/<service>/<processId>/
+pm_init.py --workspace <workspace> --pretty
 ```
 
-删除前必须校验路径位于 `.harness/process-manager/runs/` 下，且必须精确到 `<service>/<processId>` 两级目录。不能删除 `runs/`、`runs/<service>/`、workspace 外部目录或任意未知路径。
+3. 查看 manager 状态：
 
-`pm_list.py` 默认只输出当前态：
-
-```json
-{
-  "ok": true,
-  "active": {},
-  "running": {},
-  "pruned": {}
-}
+```text
+pm_manager.py status --config <config> --pretty
 ```
 
-需要保留后的历史记录时显式使用：
+4. 只有返回 `manager_offline` 时才启动：
 
-```powershell
-python skills/process-manager/scripts/pm_list.py --history
+```text
+pm_manager.py start --config <config> --pretty
 ```
 
-手动检查裁剪结果时使用 dry-run：
+`pm_manager.py` 内部自动处理 workspace 锁、动态 loopback 端口和当前平台 bootstrap。不要在调用方检测 Windows/Linux/macOS，也不要传递 backend、systemd、launchd 或 Job Object 选项。
 
-```powershell
-python skills/process-manager/scripts/pm_prune.py --max-inactive 20
+manager 启动成功必须返回经过认证的 identity/health 结果。旧 `manager.json`、损坏 identity 或 endpoint identity 不一致时应失败关闭；不要依据 PID 猜测 manager 是否有效。
+
+## Service 生命周期
+
+1. 选择 `direct` 或 `script` 模板。
+2. 让 target 保持前台运行，并配置明确的 `cwd`、environment、stop、readiness 和 logs。
+3. 校验：
+
+```text
+pm_validate.py --config <config> --service <service> --pretty
 ```
 
-确认后实际裁剪：
+4. 启动：
 
-```powershell
-python skills/process-manager/scripts/pm_prune.py --apply --max-inactive 20
+```text
+pm_start.py --config <config> --service <service> --pretty
 ```
 
-如果只想裁剪 `processes.json`，不删除 runDir：
+保存响应中的 `processKey`。后续操作优先使用它，避免 service 名称在 restart 后指向新 run 时混淆证据。
 
-```powershell
-python skills/process-manager/scripts/pm_prune.py --apply --keep-runs
+同一 service 只能有一个 active run。配置冲突、manager 正在关闭、owner 无法建立或 target handshake 失败时，start 必须失败并清理已创建的 owner；不要绕过后重试为手写后台命令。
+
+## Readiness 与日志
+
+service 配置 readiness 后执行：
+
+```text
+pm_ready.py --config <config> --process-key <processKey> --pretty
 ```
 
-重要日志证据如果需要长期保留，应在裁剪前摘录到任务记录或复制到任务 artifacts。不要把旧 `runs/<service>/<processId>` 目录当作永久证据来源。
+- `process`：要求进程连续稳定存活指定秒数，只证明进程状态。
+- `tcp`：只连接 loopback host 与固定端口。
+- `http`：只请求无凭据、无 fragment 的 loopback URL；redirect 不能越过 loopback。
+- `log`：增量扫描轮转日志，受 `scanBytes` 和 timeout 限制。动态端口用命名捕获组，并在 `extract` 中引用组名。
 
-## 生命周期
+日志读取示例：
 
-启动：
-
-```powershell
-python skills/process-manager/scripts/pm_start.py --service .harness/process-manager/services/frontend.json
+```text
+pm_logs.py --config <config> --process-key <processKey> --stream stdout --tail 120 --max-bytes 32768 --pretty
 ```
 
-等待：
+`tail` 与 `max-bytes` 都有上限。读取按备份到当前文件的顺序返回，并通过 run identity 绑定真实路径；不要直接遍历 runtime 中任意日志文件。
 
-```powershell
-python skills/process-manager/scripts/pm_ready.py --service frontend
+## Restart、stop 与 prune
+
+restart 必须先证明旧 owner 已空，再启动 replacement：
+
+```text
+pm_restart.py --config <config> --service <service> --timeout 30 --pretty
 ```
 
-状态：
+检查 `previous.cleanupVerified`、`previous.stopResult.ownerEmpty`、新旧 `processKey` 不同，并在指定 timeout 时检查新 run readiness。
 
-```powershell
-python skills/process-manager/scripts/pm_status.py --service frontend
+stop 固定表达 graceful-then-force 意图：
+
+```text
+pm_stop.py --config <config> --process-key <processKey> --pretty
 ```
 
-日志：
+`gracefulSignaled` 表示已向内部 owner 请求优雅停止；`forceRequired` 表示 grace 窗口结束时 owner 仍非空；最终必须看到 `ownerEmpty: true` 与 `cleanupVerified: true`。任何 identity mismatch 或 cleanup 未验证都属于失败，不能报告成功。
 
-```powershell
-python skills/process-manager/scripts/pm_logs.py --service frontend --stream stdout --tail 80
+先 dry-run prune：
+
+```text
+pm_prune.py --config <config> --max-inactive 20 --pretty
 ```
 
-停止：
+确认候选后才执行：
 
-```powershell
-python skills/process-manager/scripts/pm_stop.py --service frontend
+```text
+pm_prune.py --config <config> --max-inactive 20 --apply --pretty
 ```
 
-列出当前运行态：
+prune 不触碰 active run；删除完整 run directory 前先做事务化 quarantine。保留 run 文件时使用 `--keep-runs`，避免重建时复活已修剪记录。
 
-```powershell
-python skills/process-manager/scripts/pm_list.py
-```
+## 失败处理
 
-列出保留后的历史：
+- `manager_offline`：运行统一 `pm_manager.py start`，不要选择平台 launcher。
+- `validation_error`：修正当前封闭 schema，不添加旧字段或兼容 fallback。
+- `readiness_timeout`：先用 bounded logs/status 判断是 target 未就绪、探针配置错误还是服务提前退出。
+- `probe_limit_exceeded`：缩小目标日志噪声或合理调整 `scanBytes`，不要改成无界扫描。
+- `identity_mismatch`、`runtime_rebuild_required`：停止猜测，不按 PID 清理；检查是否存在旧/损坏 runtime，并按明确重建流程处理。
+- `supervisor_unavailable`、未知 cleanup：运行 `pm_doctor.py` 获取脱敏的内部选择原因；只有此时才读取平台 backend 细节。
 
-```powershell
-python skills/process-manager/scripts/pm_list.py --history
-```
+不要自动循环 restart。是否重启由上层任务根据失败原因明确决定，每次 restart 都必须重新验证旧 owner 与新 readiness。
 
-## 故障处理
+## 交付证据
 
-- manager 离线：不要尝试手写后台命令，先请求用户批准启动 manager。
-- manager 启动时报 `WinError 10013` 或 `WinError 10048`：优先检查 `config.json` 中的 `port` 和 `portRetry`；如果自动切换仍失败，手动指定一个不在 Windows excluded port range 内的端口后重启。
-- token 不匹配：运行 `pm_doctor.py`，不要打印 token 值。
-- 端口占用：如果占用者不是当前 manager 管理的 processKey，不要自动 kill。
-- readiness 超时：查看 stdout/stderr 日志，必要时调整 service config 后重新 validate。
-- 进程已退出：查看 `process.json`、stdout 和 stderr。
-- 历史记录过多：运行 `pm_list.py` 触发自动裁剪，或用 `pm_prune.py` 先 dry-run 再 `--apply`。
-- 状态文件损坏：备份损坏文件后重新 `pm_init.py`，不要覆盖用户服务配置。
+长期进程相关任务至少记录：
+
+- manager identity 与 authenticated health 成功；
+- service validation 成功；
+- `processKey` 与 readiness 结果；
+- 读取日志时使用的 tail/maxBytes 边界；
+- stop/restart 的 graceful/force 字段；
+- `ownerEmpty: true` 与 `cleanupVerified: true`；
+- manager shutdown 时全部 owned run 已清空，或说明 manager 按计划继续服务当前 workspace。
+
+普通交付不需要暴露 backend。只有故障诊断或平台原生验证证据才包含脱敏的 `platform`、`backend`、`capability` 与 `selectionReason`。

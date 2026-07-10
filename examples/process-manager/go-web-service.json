@@ -1,20 +1,28 @@
 {
   "name": "go-web",
   "kind": "long-running",
-  "cwd": "D:/ABSOLUTE/PATH/TO/GO/PROJECT",
+  "cwd": "/ABSOLUTE/PATH/TO/GO/PROJECT",
   "launcher": {
     "type": "direct",
-    "argv": [
-      "C:/ABSOLUTE/PATH/TO/go.exe",
-      "run",
-      "D:/ABSOLUTE/PATH/TO/GO/PROJECT/main.go",
-      "8099"
-    ]
+    "executable": "/ABSOLUTE/PATH/TO/GO",
+    "args": ["run"],
+    "pathArgs": ["/ABSOLUTE/PATH/TO/GO/PROJECT/main.go"]
   },
-  "window": "hidden",
+  "environment": {
+    "inherit": ["PATH", "HOME"],
+    "set": {"PORT": "8099"},
+    "fromEnv": []
+  },
+  "stop": {
+    "graceSeconds": 8
+  },
   "readiness": {
     "type": "http",
     "url": "http://127.0.0.1:8099/health",
     "timeoutSeconds": 30
+  },
+  "logs": {
+    "maxBytes": 10485760,
+    "backups": 3
   }
 }

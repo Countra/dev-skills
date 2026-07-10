@@ -6,7 +6,19 @@ from __future__ import annotations
 import argparse
 from typing import Any, Iterable
 
-from gitlab_common import add_common_args, add_pagination_args, make_client, output_result, quote_id, request_list, run_cli
+from gitlab_ops import (
+    GitLabSkillError,
+    add_common_args,
+    add_confirmation_arg,
+    add_pagination_args,
+    execute_guarded_write,
+    make_client,
+    output_client_result,
+    preflight_snapshot,
+    quote_id,
+    request_list,
+    run_cli,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--description")
     create_parser.add_argument("--visibility", choices=["private", "internal", "public"])
     create_parser.add_argument("--initialize-with-readme", action="store_true")
-    create_parser.add_argument("--confirm", action="store_true", help="确认真实发送创建请求")
+    add_confirmation_arg(create_parser)
     return parser
 
 
@@ -53,8 +65,20 @@ def create_body(args: argparse.Namespace) -> dict[str, Any]:
     }
     body = {key: value for key, value in body.items() if value is not None}
     if not body.get("name") and not body.get("path"):
-        raise ValueError("create 需要 --name 或 --path")
+        raise GitLabSkillError("create 需要 --name 或 --path")
     return body
+
+
+def namespace_snapshot(client: Any, namespace_id: int | None) -> dict[str, Any]:
+    if namespace_id is not None:
+        value = client.request("GET", f"/namespaces/{quote_id(namespace_id)}")
+        snapshot = preflight_snapshot(value, ("id", "full_path", "kind"))
+        snapshot["source"] = "namespace"
+        return snapshot
+    value = client.request("GET", "/user")
+    snapshot = preflight_snapshot(value, ("id", "username", "name"))
+    snapshot["source"] = "current_user"
+    return snapshot
 
 
 def main(argv: Iterable[str] | None = None) -> int:
@@ -64,20 +88,30 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     if args.command == "list":
         params = {"membership": args.membership or None, "owned": args.owned or None, "search": args.search}
-        output_result(request_list(client, "/projects", args, params=params), pretty=args.pretty)
+        output_client_result(client, request_list(client, "/projects", args, params=params), pretty=args.pretty, operation="projects.list")
         return 0
     if args.command == "search":
-        output_result(request_list(client, "/projects", args, params={"search": args.query}), pretty=args.pretty)
+        output_client_result(client, request_list(client, "/projects", args, params={"search": args.query}), pretty=args.pretty, operation="projects.search")
         return 0
     if args.command == "get":
-        output_result(client.request("GET", f"/projects/{quote_id(args.project)}"), pretty=args.pretty)
+        output_client_result(client, client.request("GET", f"/projects/{quote_id(args.project)}"), pretty=args.pretty, operation="projects.get")
         return 0
     if args.command == "create":
         body = create_body(args)
-        if not args.confirm:
-            output_result(client.preview("POST", "/projects", None, body), pretty=args.pretty)
-            return 0
-        output_result(client.request("POST", "/projects", json_body=body), pretty=args.pretty)
+        preflight = namespace_snapshot(client, args.namespace_id)
+        result = execute_guarded_write(
+            client,
+            operation="projects.create",
+            method="POST",
+            path="/projects",
+            params=None,
+            json_body=body,
+            confirm=args.confirm,
+            target={"namespace_id": preflight.get("id"), "path": body.get("path") or body.get("name")},
+            preflight=preflight,
+            reread_preflight=lambda: namespace_snapshot(client, args.namespace_id),
+        )
+        output_client_result(client, result, pretty=args.pretty, operation="projects.create")
         return 0
     parser.error("unknown command")
     return 2

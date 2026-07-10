@@ -42,25 +42,27 @@ def service_config(workspace_root: Path, python_path: Path, config_file: Path, p
         "kind": "long-running",
         "cwd": str(workspace_root),
         "launcher": {
-            "type": "direct",
-            "argv": [
-                str(python_path),
-                str(server_script),
-                "--config",
-                str(config_file),
-            ],
+            "type": "script",
+            "interpreter": str(python_path),
+            "script": str(server_script),
+            "args": ["--config"],
+            "pathArgs": [str(config_file)],
         },
-        "window": "hidden",
+        "environment": {
+            "inherit": ["PATH", "HOME", "USERPROFILE", "SystemRoot", "WINDIR", "TEMP", "TMP", "LANG"],
+            "set": {"PYTHONUNBUFFERED": "1"},
+            "fromEnv": [],
+        },
+        "stop": {"graceSeconds": 8},
         "readiness": {
             "type": "log",
-            "pattern": "EV_READY",
-            "extract": {
-                "urls": [
-                    "EV_READY\\s+(http://127\\.0\\.0\\.1:\\d+/health)"
-                ]
-            },
+            "stream": "stdout",
+            "pattern": "EV_READY\\s+(?P<url>http://127\\.0\\.0\\.1:\\d+/health)",
+            "extract": {"urls": ["url"]},
+            "scanBytes": 262144,
             "timeoutSeconds": 30,
         },
+        "logs": {"maxBytes": 10485760, "backups": 3},
     }
 
 

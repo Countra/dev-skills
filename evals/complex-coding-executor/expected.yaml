@@ -13,6 +13,9 @@ validation-failure-loop:
 process-manager-required-dev-server:
   requires_process_manager: true
   rejects_shell_background_start: true
+  uses_unified_manager_bootstrap: true
+  requires_manager_identity_process_key_and_owner_cleanup: true
+  rejects_consumer_platform_or_backend_selection: true
 git-commands-serial-same-repo:
   serializes_git_commands: true
 commit-message-file-required:
@@ -58,3 +61,7 @@ final-missing-development-quality-evidence-blocked:
   blocks_final_delivery: true
   requires_standards_index_reference: true
   requires_development_quality_evidence: true
+process-manager-doctor-on-demand:
+  runs_doctor_only_after_unclear_failure: true
+  rejects_platform_specific_launcher_fallback: true
+  rejects_manual_background_process: true
