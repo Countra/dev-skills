@@ -42,6 +42,24 @@ class PlatformContractTests(unittest.TestCase):
         ):
             acl._verify_acl(Path("runtime"))  # noqa: SLF001
 
+    def test_windows_acl_accepts_local_administrator_alias_only_for_matching_rid(self) -> None:
+        acl = object.__new__(WindowsAcl)
+        sddl = "D:PAI(A;OICI;FA;;;LA)(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+        with mock.patch.object(acl, "_read_acl_sddl", return_value=sddl):
+            with mock.patch.object(
+                acl,
+                "_current_sid",
+                return_value="S-1-5-21-1-2-3-500",
+            ):
+                acl._verify_acl(Path("runtime"))  # noqa: SLF001
+            with mock.patch.object(
+                acl,
+                "_current_sid",
+                return_value="S-1-5-21-1-2-3-1001",
+            ):
+                with self.assertRaises(SupervisorError):
+                    acl._verify_acl(Path("runtime"))  # noqa: SLF001
+
     def test_manager_stop_fails_when_bootstrap_cleanup_is_unverified(self) -> None:
         from helpers import create_config, workspace_directory
 

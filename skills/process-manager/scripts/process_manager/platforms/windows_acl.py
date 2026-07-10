@@ -192,9 +192,28 @@ class WindowsAcl:
             return False
         return mask in {FILE_ALL_ACCESS, GENERIC_ALL}
 
+    @staticmethod
+    def _sid_identifiers(sid: str) -> set[str]:
+        identifiers = {sid}
+        aliases = {
+            "S-1-5-18": "SY",
+            "S-1-5-32-544": "BA",
+        }
+        alias = aliases.get(sid)
+        if alias:
+            identifiers.add(alias)
+        if sid.startswith("S-1-5-21-"):
+            rid = sid.rsplit("-", 1)[-1]
+            if rid == "500":
+                identifiers.add("LA")
+            elif rid == "501":
+                identifiers.add("LG")
+        return identifiers
+
     def _verify_acl(self, path: Path) -> None:
         sddl = self._read_acl_sddl(path)
-        allowed_sids = {self._current_sid(), "SY", "BA", "S-1-5-18", "S-1-5-32-544"}
+        current_identifiers = self._sid_identifiers(self._current_sid())
+        allowed_sids = current_identifiers | {"SY", "BA", "S-1-5-18", "S-1-5-32-544"}
         aces = [item.split(";") for item in re.findall(r"\(([^)]+)\)", sddl)]
         observed_sids = {item[-1] for item in aces if len(item) == 6}
         valid_aces = bool(aces) and all(
@@ -204,7 +223,7 @@ class WindowsAcl:
             and item[-1] in allowed_sids
             for item in aces
         )
-        if "D:P" not in sddl or not valid_aces or self._current_sid() not in observed_sids:
+        if "D:P" not in sddl or not valid_aces or not current_identifiers.intersection(observed_sids):
             raise SupervisorError(
                 f"Windows runtime ACL 不是受保护的当前用户 DACL: {path}; observed={sddl}"
             )

@@ -358,8 +358,13 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
         checks["managerCrash"] = {"ownerEmpty": crash_verified}
         if crash_error:
             failures.append(crash_error)
-        unrelated_survived = unrelated.poll() is None and adapter.identity_matches(unrelated_identity)
-        checks["unrelatedProcess"] = {"survivedManagedLifecycle": unrelated_survived}
+        unrelated_return_code = unrelated.poll()
+        unrelated_survived = unrelated_return_code is None
+        checks["unrelatedProcess"] = {
+            "survivedManagedLifecycle": unrelated_survived,
+            "returnCode": unrelated_return_code,
+            "identityStable": unrelated_survived and adapter.identity_matches(unrelated_identity),
+        }
         if not unrelated_survived:
             failures.append("managed lifecycle 波及 owner 外进程")
     except Exception as exc:  # noqa: BLE001
