@@ -96,7 +96,7 @@ class WindowsConsoleTests(unittest.TestCase):
         kernel32 = FakeKernel32(attached=True)
         with (
             mock.patch("process_manager.service_host.os.name", "nt"),
-            mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32),
+            mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()
             console.prepare()
@@ -108,7 +108,7 @@ class WindowsConsoleTests(unittest.TestCase):
         kernel32 = FakeKernel32(attached=False)
         with (
             mock.patch("process_manager.service_host.os.name", "nt"),
-            mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32),
+            mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()
             console.prepare()
