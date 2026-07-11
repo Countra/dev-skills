@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/pending.schema.json",
+  "title": "Sealable knowledge approval bundle",
+  "type": "object",
+  "required": ["schemaVersion", "pendingId", "runId", "status", "workflow", "evidence", "bundleFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "pendingId": {"type": "string", "format": "uuid"},
+    "runId": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["pending", "approved", "rejected"]},
+    "workflow": {"$ref": "workflow.schema.json"},
+    "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
+    "parameterSchema": {"type": "object"},
+    "report": {"type": "string", "minLength": 1},
+    "reportDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "risks": {"type": "array", "items": {"type": "object"}},
+    "bundleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": true
+}

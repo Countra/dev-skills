@@ -1,0 +1,201 @@
+"""Run UUID、journal、finalize 幂等和 crash recovery 测试。"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+sys.path.insert(0, str(SCRIPTS))
+
+from electron_verifier.actions import ActionExecution  # noqa: E402
+from electron_verifier.errors import VerifierError  # noqa: E402
+from electron_verifier.evidence import PendingArtifact  # noqa: E402
+from electron_verifier.runs import RunService  # noqa: E402
+
+
+TEST_ROOT = Path(os.environ.get("EV_TEST_ROOT", Path.cwd() / ".harness" / "electron-ui-verifier-test-tmp"))
+
+
+class FakeSessions:
+    def __init__(self) -> None:
+        self.driver = SimpleNamespace(live=lambda session_id: SimpleNamespace(page=object()))
+
+    async def status(self, value: str) -> dict:
+        return {
+            "ok": True,
+            "connected": True,
+            "session": {"sessionId": "session-1", "name": "demo", "status": "connected", "targetTitle": "Demo"},
+        }
+
+    def intent(self, value: str):
+        return SimpleNamespace(session_id="session-1")
+
+
+def service_config(root: Path):
+    return SimpleNamespace(
+        state_root=root,
+        runs_dir=root / "runs",
+        pending_dir=root / "pending",
+    )
+
+
+class RunTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        TEST_ROOT.mkdir(parents=True, exist_ok=True)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(TEST_ROOT, ignore_errors=True)
+
+    def test_twenty_actions_are_unique_and_finalize_is_idempotent(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo", "goal": "保存设置"}))
+            counter = 0
+
+            async def fake_execute(live, action):
+                nonlocal counter
+                counter += 1
+                return ActionExecution(
+                    result={"action": "click", "postconditions": [{"passed": True}]},
+                    artifacts=[PendingArtifact("application/json", f'{{"index":{counter}}}'.encode(), "event", "json")],
+                )
+
+            raw_action = {
+                "id": "same-label",
+                "type": "click",
+                "locator": {"role": "button", "accessibleName": "保存"},
+                "postconditions": [{"type": "visible", "locator": {"text": "已保存"}}],
+            }
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
+                for _ in range(20):
+                    result = asyncio.run(service.append_action(prepared["runId"], raw_action))
+                    self.assertTrue(result["ok"])
+            first = asyncio.run(service.finalize(prepared["runId"]))
+            second = asyncio.run(service.finalize(prepared["runId"]))
+            journal = service.load(prepared["runId"])
+            manifest = json.loads(
+                (root / "runs" / prepared["runId"] / "evidence-manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(20, len({step["stepId"] for step in journal["steps"]}))
+            self.assertEqual(20, len({item["artifactId"] for item in manifest["artifacts"]}))
+            self.assertEqual(first["report"], second["report"])
+            self.assertEqual(first["pending"], second["pending"])
+            self.assertEqual(1, len(list((root / "pending" / prepared["runId"]).glob("pending.json"))))
+
+    def test_recovery_marks_inflight_step_unknown_and_aborts(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo"}))
+            journal = service.load(prepared["runId"])
+            journal["state"] = "running"
+            journal["steps"].append({"stepId": "inflight", "status": "running", "action": {"type": "click"}})
+            service._save(journal)
+            result = asyncio.run(service.recover())
+            recovered = service.load(prepared["runId"])
+            self.assertEqual([prepared["runId"]], result["recovered"])
+            self.assertEqual("aborted", recovered["state"])
+            self.assertEqual("unknown", recovered["steps"][0]["status"])
+
+    def test_independent_diagnostic_failure_does_not_skip_next_diagnostic(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo"}))
+
+            async def fake_execute(live, action):
+                if action.action_type == "collectConsole":
+                    raise VerifierError("diagnostic_unavailable", "console unavailable")
+                return ActionExecution(result={"action": action.action_type, "eventCount": 0})
+
+            workflow = {
+                "goal": "diagnostics",
+                "steps": [
+                    {"type": "collectConsole", "options": {}, "continueOnFailure": True},
+                    {"type": "collectNetwork", "options": {}, "continueOnFailure": True},
+                ],
+            }
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
+                result = asyncio.run(service.execute_workflow(prepared["runId"], workflow, auto_finalize=False))
+            self.assertFalse(result["ok"])
+            self.assertEqual(["failed", "passed"], [step["status"] for step in result["steps"]])
+
+    def test_workflow_parameter_schema_is_adopted_without_persisting_binding_value(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
+            workflow = {
+                "appId": "demo",
+                "goal": "填写名称",
+                "parameterSchema": {"name": {"type": "string", "required": True}},
+                "steps": [
+                    {
+                        "type": "fill",
+                        "locator": {"label": "名称"},
+                        "value": "${name}",
+                        "postconditions": [{"type": "value", "locator": {"label": "名称"}, "expected": "${name}"}],
+                    }
+                ],
+            }
+
+            async def fake_execute(live, action):
+                self.assertEqual("private-value", action.value)
+                return ActionExecution(result={"action": "fill", "postconditions": [{"passed": True}]})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
+                result = asyncio.run(
+                    service.execute_workflow(prepared["runId"], workflow, auto_finalize=False, bindings={"name": "private-value"})
+                )
+            journal = service.load(prepared["runId"])
+            self.assertTrue(result["ok"])
+            self.assertEqual(["name"], journal["steps"][0]["boundParameters"])
+            self.assertIn("${name}", json.dumps(journal, ensure_ascii=False))
+            self.assertNotIn("private-value", json.dumps(journal, ensure_ascii=False))
+
+    def test_action_asset_parameter_schema_is_adopted_before_binding(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
+            action = {
+                "type": "fill",
+                "locator": {"label": "名称"},
+                "value": "${name}",
+                "postconditions": [{"type": "value", "locator": {"label": "名称"}, "expected": "${name}"}],
+            }
+
+            async def fake_execute(live, decoded):
+                self.assertEqual("private-value", decoded.value)
+                return ActionExecution(result={"action": "fill", "postconditions": [{"passed": True}]})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
+                result = asyncio.run(
+                    service.append_action(
+                        prepared["runId"],
+                        action,
+                        {"name": "private-value"},
+                        {"name": {"type": "string", "required": True}},
+                    )
+                )
+            journal = service.load(prepared["runId"])
+            self.assertTrue(result["ok"])
+            self.assertIn("name", journal["parameterSchema"])
+            self.assertNotIn("private-value", json.dumps(journal, ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    unittest.main()

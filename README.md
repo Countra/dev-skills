@@ -78,13 +78,15 @@
 
 位置：`skills/electron-ui-verifier/`
 
-用途：为 Electron 或浏览器类 UI 任务提供脚本化验证、证据沉淀和问题定位流程。
+用途：通过本机 Playwright CDP service 验证 Electron UI，执行 typed action/workflow，并生成可校验的 run、report、artifact 和待批准知识资产。
 
 核心约束：
 
-- 先读取 skill 规则和 references，再执行 UI 验证。
-- 验证证据应落到 `.harness` 任务 artifacts、logs 或计划文档中。
-- 不把截图、日志和 trace 作为口头结论替代，必须说明覆盖范围和未覆盖范围。
+- 只按任务需要读取 server、actions、workflow、knowledge 或 troubleshooting reference，不预加载全部文档。
+- 每轮先 prepare；有 appId/goal 时执行紧凑 hybrid retrieval，低置信结果明确 abstain，不补无关 recent assets。
+- Playwright 是唯一 driver；mutating action 必须有 postcondition，timeout/unknown outcome 不自动重放。
+- knowledge 使用 approved canonical JSON 和可重建 SQLite index；只有 exact fingerprint 批准后才持久化。
+- Electron GUI 不由 process-manager 托管；verifier service 使用统一 manager 生命周期并验证 owner-empty cleanup。
 
 ## Repository Layout
 
@@ -130,6 +132,7 @@ evals/
 ├── complex-coding-planner/
 ├── complex-coding-executor/
 ├── gitlab-pat-ops/
+├── electron-ui-verifier/
 └── process-manager/
 ```
 

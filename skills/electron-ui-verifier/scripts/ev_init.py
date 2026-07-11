@@ -23,6 +23,9 @@ from ev_common import (
     write_environment,
     write_json,
 )
+from electron_verifier.security import secure_mode
+from electron_verifier.errors import VerifierError
+from electron_verifier.knowledge_reset import KnowledgeReset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workspace", help="workspace 根目录绝对路径；未指定时使用当前目录")
     parser.add_argument("--python", dest="python_path", help="verifier server 使用的 Python 解释器绝对路径")
     parser.add_argument("--port", type=int, help="verifier server 初始端口，默认 18180")
+    parser.add_argument("--reset-knowledge", action="store_true", help="预览或执行 fingerprint-gated knowledge direct reset")
+    parser.add_argument("--confirm", help="与 reset preview 完全一致的 confirmation fingerprint")
     return parser
 
 
@@ -124,18 +129,36 @@ def main(argv: list[str] | None = None) -> int:
     try:
         workspace_root = discover_workspace_root(args.workspace)
         paths = paths_for_workspace(workspace_root)
+        reset = KnowledgeReset(paths.state_root)
+        if args.confirm and not args.reset_knowledge:
+            raise EVError("--confirm 只能与 --reset-knowledge 一起使用")
+        if args.reset_knowledge and not args.confirm:
+            print_json(
+                {
+                    "ok": False,
+                    "code": "knowledge_reset_confirmation_required",
+                    "error": "knowledge reset 需要再次传入完全一致的 --confirm fingerprint",
+                    "preview": reset.preview(),
+                }
+            )
+            return 2
         python_path = require_absolute_path(args.python_path, "--python", must_exist=True) if args.python_path else Path(sys.executable).resolve()
         if not python_path.exists():
             raise EVError(f"python does not exist: {python_path}")
         dependency_check = check_python_environment(python_path, workspace_root)
         port = normalize_port(args.port)
+        knowledge = reset.apply(args.confirm) if args.reset_knowledge else reset.ensure()
         ensure_runtime_dirs(paths)
         environment = write_environment(paths, python_path=python_path, port=port)
         ensure_token(paths)
+        secure_mode(paths.state_root, 0o700)
+        secure_mode(paths.token_file, 0o600)
         config = config_to_data(paths, environment)
+        config["runsDir"] = str(paths.state_root / "runs")
         write_json(paths.config_file, config)
         write_json(paths.server_file, {"status": "initialized", "host": "127.0.0.1", "port": port, "processManagerService": "electron-ui-verifier"})
-        write_json(paths.sessions_file, {"sessions": []})
+        if not paths.sessions_file.exists():
+            write_json(paths.sessions_file, {"schemaVersion": 1, "sessions": []})
         write_json(paths.service_file, service_config(workspace_root, python_path, paths.config_file, port))
         print_json(
             {
@@ -145,12 +168,18 @@ def main(argv: list[str] | None = None) -> int:
                 "service": str(paths.service_file),
                 "python": str(python_path),
                 "dependencyCheck": dependency_check,
+                "knowledge": knowledge,
                 "port": port,
             }
         )
         return 0
-    except EVError as exc:
-        print_json({"ok": False, "code": "init_failed", "error": str(exc)})
+    except (EVError, VerifierError) as exc:
+        code = exc.code if isinstance(exc, VerifierError) else "init_failed"
+        details = exc.details if isinstance(exc, VerifierError) else None
+        result = {"ok": False, "code": code, "error": str(exc)}
+        if details:
+            result["details"] = details
+        print_json(result)
         return 2
 
 

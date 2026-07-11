@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/workflow.schema.json",
+  "title": "Verifier workflow",
+  "type": "object",
+  "required": ["goal", "steps"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "goal": {"type": "string", "minLength": 1, "maxLength": 500},
+    "aliases": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
+    "appId": {"type": "string", "minLength": 1},
+    "parameterSchema": {"type": "object"},
+    "steps": {
+      "type": "array",
+      "items": {"$ref": "action.schema.json"},
+      "minItems": 1,
+      "maxItems": 200
+    },
+    "autoFinalize": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/action.schema.json",
+  "title": "Typed verifier action",
+  "type": "object",
+  "required": ["type"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "type": {
+      "enum": [
+        "click", "doubleClick", "fill", "select", "check", "uncheck",
+        "press", "keyChord", "hover", "scroll", "snapshot", "screenshot",
+        "waitText", "waitUrlContains", "evaluate", "extractText",
+        "extractTable", "collectConsole", "collectExceptions", "collectNetwork"
+      ]
+    },
+    "locator": {"$ref": "locator.schema.json"},
+    "value": {},
+    "options": {"type": "object"},
+    "postconditions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/assertion"},
+      "maxItems": 20
+    },
+    "continueOnFailure": {"type": "boolean"},
+    "detour": {"type": "boolean"}
+  },
+  "$defs": {
+    "assertion": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": ["visible", "hidden", "text", "value", "count", "urlContains", "titleContains", "screenshotQuality"]
+        },
+        "locator": {"$ref": "locator.schema.json"},
+        "expected": {},
+        "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 120000}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

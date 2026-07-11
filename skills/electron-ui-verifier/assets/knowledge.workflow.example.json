@@ -1,29 +1,35 @@
 {
-  "learn": {
-    "appId": "videoForensic",
-    "notes": "示例 workflow 执行后沉淀候选知识"
-  },
-  "readiness": [
-    {
-      "waitText": "历史记录",
-      "timeoutMs": 30000
-    }
+  "schemaVersion": 1,
+  "appId": "sample-app",
+  "goal": "更新显示名称",
+  "aliases": [
+    "修改名称",
+    "Change display name"
   ],
+  "parameterSchema": {
+    "display_name": {
+      "type": "string",
+      "required": true,
+      "description": "本轮使用的显示名称"
+    }
+  },
   "steps": [
     {
-      "id": "home-snapshot",
-      "snapshot": true
-    },
-    {
-      "id": "open-first-case",
-      "clickText": {
-        "text": "查看",
-        "index": 0
-      }
-    },
-    {
-      "id": "result-snapshot",
-      "snapshot": true
+      "id": "fill-name",
+      "type": "fill",
+      "locator": {
+        "label": "Display name"
+      },
+      "value": "${display_name}",
+      "postconditions": [
+        {
+          "type": "value",
+          "locator": {
+            "label": "Display name"
+          },
+          "expected": "${display_name}"
+        }
+      ]
     }
   ]
 }

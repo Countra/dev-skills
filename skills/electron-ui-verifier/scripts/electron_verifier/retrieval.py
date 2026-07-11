@@ -1,0 +1,355 @@
+"""可解释 hybrid retrieval、硬兼容过滤与状态安全组合。"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+from typing import Any
+
+from .canonical_store import CanonicalStore
+from .errors import VerifierError
+from .knowledge_index import KnowledgeIndex
+from .knowledge_models import bind_parameters, normalize_parameter_schema, placeholders
+from .text_normalization import all_ngrams, latin_tokens, normalize_text
+
+
+RRF_K = 60
+DEFAULT_MIN_SCORE = 0.62
+DEFAULT_MIN_MARGIN = 0.05
+RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
+VERSION_PART = re.compile(r"\d+")
+
+
+@dataclass(frozen=True)
+class RetrievalContext:
+    app_id: str
+    app_version: str | None = None
+    screen_digest: str | None = None
+    pre_state: str | None = None
+    max_risk: str = "low"
+
+    @classmethod
+    def decode(cls, value: Any) -> "RetrievalContext":
+        if not isinstance(value, dict):
+            raise VerifierError("invalid_retrieval_context", "retrieval context 必须是 object")
+        app_id = str(value.get("appId") or "").strip()
+        risk = str(value.get("maxRisk") or "low").lower()
+        if not app_id:
+            raise VerifierError("app_id_required", "knowledge query 需要 appId")
+        if len(app_id) > 200:
+            raise VerifierError("invalid_retrieval_context", "appId 超过 200 字符上限")
+        if risk not in RISK_ORDER:
+            raise VerifierError("invalid_risk_level", f"maxRisk 不受支持：{risk}")
+        return cls(
+            app_id=app_id,
+            app_version=_optional_text(value.get("appVersion")),
+            screen_digest=_optional_text(value.get("screenDigest")),
+            pre_state=_optional_text(value.get("preState")),
+            max_risk=risk,
+        )
+
+
+def _optional_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
+
+
+def _version(value: str) -> tuple[int, ...]:
+    parts = tuple(int(item) for item in VERSION_PART.findall(value))
+    if not parts:
+        raise VerifierError("invalid_app_version", f"appVersion 无法比较：{value}")
+    return parts
+
+
+def _compare_versions(left: str, right: str) -> int:
+    left_parts = _version(left)
+    right_parts = _version(right)
+    width = max(len(left_parts), len(right_parts))
+    padded_left = left_parts + (0,) * (width - len(left_parts))
+    padded_right = right_parts + (0,) * (width - len(right_parts))
+    return (padded_left > padded_right) - (padded_left < padded_right)
+
+
+def _set_similarity(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    intersection = len(left & right)
+    union = len(left | right)
+    return max(intersection / union, intersection / min(len(left), len(right)))
+
+
+def _lexical_similarity(query: str, values: list[str]) -> float:
+    normalized = normalize_text(query)
+    query_tokens = latin_tokens(normalized)
+    query_grams = all_ngrams([normalized])
+    best = 0.0
+    for value in values:
+        candidate = normalize_text(value)
+        if not candidate:
+            continue
+        if normalized == candidate:
+            return 1.0
+        token_score = _set_similarity(query_tokens, latin_tokens(candidate))
+        gram_score = _set_similarity(query_grams, all_ngrams([candidate]))
+        sequence_score = SequenceMatcher(None, normalized, candidate, autojunk=False).ratio()
+        containment = min(len(normalized), len(candidate)) / max(len(normalized), len(candidate)) if normalized in candidate or candidate in normalized else 0.0
+        best = max(best, 0.35 * token_score + 0.35 * gram_score + 0.20 * sequence_score + 0.10 * containment)
+    return min(best, 1.0)
+
+
+def _row_payload(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        value = json.loads(str(row["payload_json"]))
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise VerifierError("knowledge_index_invalid", "derived payload JSON 无效", status=500) from exc
+    if not isinstance(value, dict):
+        raise VerifierError("knowledge_index_invalid", "derived payload 必须是 object", status=500)
+    return value
+
+
+def _aliases(row: dict[str, Any]) -> list[str]:
+    try:
+        value = json.loads(str(row["aliases_json"]))
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise VerifierError("knowledge_index_invalid", "derived aliases JSON 无效", status=500) from exc
+    return [str(item) for item in value] if isinstance(value, list) else []
+
+
+class HybridRetriever:
+    """融合 exact、alias、FTS 与 ngram；不使用 recent filler。"""
+
+    def __init__(self, store: CanonicalStore) -> None:
+        self.store = store
+        self.index = KnowledgeIndex(store.paths["index"])
+
+    def close(self) -> None:
+        self.index.close()
+
+    def __enter__(self) -> "HybridRetriever":
+        return self
+
+    def __exit__(self, exc_type, exc, traceback) -> None:  # noqa: ANN001
+        self.close()
+
+    def _compatibility_reasons(self, row: dict[str, Any], context: RetrievalContext) -> list[str]:
+        reasons: list[str] = []
+        minimum = _optional_text(row.get("app_version_min"))
+        maximum = _optional_text(row.get("app_version_max"))
+        if minimum or maximum:
+            if context.app_version is None:
+                reasons.append("app_version_required")
+            else:
+                if minimum and _compare_versions(context.app_version, minimum) < 0:
+                    reasons.append("app_version_below_minimum")
+                if maximum and _compare_versions(context.app_version, maximum) > 0:
+                    reasons.append("app_version_above_maximum")
+        screen = _optional_text(row.get("screen_digest"))
+        if screen and context.screen_digest != screen:
+            reasons.append("screen_digest_mismatch" if context.screen_digest else "screen_digest_required")
+        state = _optional_text(row.get("pre_state"))
+        if state and context.pre_state != state:
+            reasons.append("pre_state_mismatch" if context.pre_state else "pre_state_required")
+        risk = str(row.get("risk_level") or "low").lower()
+        if risk not in RISK_ORDER or RISK_ORDER[risk] > RISK_ORDER[context.max_risk]:
+            reasons.append("risk_not_allowed")
+        return reasons
+
+    def get_asset(self, asset_id: str) -> dict[str, Any]:
+        return {"ok": True, "asset": self.store.get_asset(asset_id).to_dict()}
+
+    def list_assets(self, app_id: str | None, kind: str | None, limit: int = 50) -> dict[str, Any]:
+        if kind not in {None, "action", "workflow"}:
+            raise VerifierError("invalid_asset_kind", f"asset kind 不受支持：{kind}")
+        if not 1 <= int(limit) <= 200:
+            raise VerifierError("invalid_asset_limit", "asset list limit 必须在 1..200")
+        rows = self.index.list(_optional_text(app_id), kind, limit)
+        assets = [
+            {
+                "assetId": row["asset_id"],
+                "kind": row["kind"],
+                "appId": row["app_id"],
+                "goal": row["goal"],
+                "aliases": _aliases(row),
+                "risk": row.get("risk_level") or "low",
+                "preState": row.get("pre_state"),
+                "postState": row.get("post_state"),
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ]
+        return {"ok": True, "count": len(assets), "assets": assets}
+
+    def stats(self) -> dict[str, Any]:
+        return {"ok": True, **self.index.stats()}
+
+    def search(
+        self,
+        query: str,
+        context_value: Any,
+        *,
+        kind: str | None = None,
+        limit: int = 3,
+        min_score: float = DEFAULT_MIN_SCORE,
+        min_margin: float = DEFAULT_MIN_MARGIN,
+        explain: bool = False,
+    ) -> dict[str, Any]:
+        context = RetrievalContext.decode(context_value)
+        goal = query.strip()
+        if not goal:
+            raise VerifierError("knowledge_query_required", "knowledge query 不能为空")
+        if len(goal) > 500:
+            raise VerifierError("knowledge_query_too_long", "knowledge query 超过 500 字符上限")
+        if kind not in {None, "action", "workflow"}:
+            raise VerifierError("invalid_asset_kind", f"asset kind 不受支持：{kind}")
+        if not 1 <= int(limit) <= 10:
+            raise VerifierError("invalid_retrieval_limit", "retrieval limit 必须在 1..10")
+        if not 0.0 <= float(min_score) <= 1.0 or not 0.0 <= float(min_margin) <= 1.0:
+            raise VerifierError("invalid_retrieval_threshold", "retrieval threshold 必须在 0..1")
+        normalized = normalize_text(goal)
+        channels: dict[str, list[str]] = {}
+        exact = self.index.exact(context.app_id, normalized)
+        channels["exactGoal"] = exact["goal"]
+        channels["exactAlias"] = exact["alias"]
+        channels["fts"] = self.index.fts(context.app_id, goal)
+        ngram_rows = self.index.ngram(context.app_id, all_ngrams([goal]))
+        channels["ngram"] = [asset_id for asset_id, _ in ngram_rows]
+        candidate_ids = {asset_id for values in channels.values() for asset_id in values}
+        rows = self.index.rows(candidate_ids)
+        channel_weights = {"exactGoal": 1.0, "exactAlias": 0.95, "fts": 0.75, "ngram": 0.65}
+        ranks = {
+            name: {asset_id: rank for rank, asset_id in enumerate(values, start=1)}
+            for name, values in channels.items()
+        }
+        accepted: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
+        for asset_id in sorted(candidate_ids):
+            row = rows.get(asset_id)
+            if row is None:
+                continue
+            reasons = self._compatibility_reasons(row, context)
+            if kind and row.get("kind") != kind:
+                reasons.append("kind_mismatch")
+            matched = {name: rank_map[asset_id] for name, rank_map in ranks.items() if asset_id in rank_map}
+            if reasons:
+                rejected.append({"assetId": asset_id, "reasons": reasons, "channels": matched})
+                continue
+            aliases = _aliases(row)
+            lexical = _lexical_similarity(goal, [str(row["goal"]), *aliases])
+            rrf_raw = sum(channel_weights[name] / (RRF_K + rank) for name, rank in matched.items())
+            rrf_max = sum(channel_weights[name] / (RRF_K + 1) for name in matched) or 1.0
+            rrf = min(rrf_raw / rrf_max, 1.0)
+            exact_score = 1.0 if "exactGoal" in matched else 0.98 if "exactAlias" in matched else 0.0
+            successes = max(0, int(row.get("success_count") or 0))
+            failures = max(0, int(row.get("failure_count") or 0))
+            reliability = (successes + 1) / (successes + failures + 2)
+            score = exact_score or min(1.0, 0.66 * lexical + 0.24 * rrf + 0.10 * reliability)
+            payload = _row_payload(row)
+            parameter_schema = normalize_parameter_schema(payload.get("parameterSchema"))
+            required_params = sorted(placeholders(payload.get("action") or payload.get("workflow") or {}))
+            candidate: dict[str, Any] = {
+                "assetId": asset_id,
+                "kind": row["kind"],
+                "appId": row["app_id"],
+                "goal": row["goal"],
+                "score": round(score, 6),
+                "risk": row.get("risk_level") or "low",
+                "preState": row.get("pre_state"),
+                "postState": row.get("post_state"),
+                "requiredParams": required_params,
+                "executable": not (set(required_params) - set(parameter_schema)),
+            }
+            if explain:
+                candidate["explain"] = {
+                    "channels": matched,
+                    "lexical": round(lexical, 6),
+                    "rrf": round(rrf, 6),
+                    "reliability": round(reliability, 6),
+                }
+            accepted.append(candidate)
+        accepted.sort(key=lambda item: (-float(item["score"]), str(item["assetId"])))
+        selected = accepted[: int(limit)]
+        top = float(selected[0]["score"]) if selected else 0.0
+        second = float(selected[1]["score"]) if len(selected) > 1 else 0.0
+        reason = None
+        if not selected:
+            reason = "no_compatible_candidate" if rejected else "no_lexical_candidate"
+        elif top < min_score:
+            reason = "score_below_threshold"
+        elif len(selected) > 1 and top - second < min_margin:
+            reason = "ambiguous_margin"
+        result: dict[str, Any] = {
+            "ok": True,
+            "decision": "abstain" if reason else "reuse",
+            "query": {"appId": context.app_id, "goal": goal},
+            "candidates": selected,
+            "thresholds": {"minScore": min_score, "minMargin": min_margin},
+        }
+        if reason:
+            result["abstain"] = {"reason": reason, "topScore": round(top, 6), "margin": round(top - second, 6)}
+        if explain:
+            result["explain"] = {
+                "channelCandidateCounts": {name: len(values) for name, values in channels.items()},
+                "rejected": rejected[:50],
+            }
+        return result
+
+    def compose(self, payload: Any) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise VerifierError("invalid_composition", "composition payload 必须是 object")
+        context = RetrievalContext.decode(payload)
+        if context.pre_state is None:
+            raise VerifierError("composition_pre_state_required", "composition 需要当前 preState", status=409)
+        subgoals = payload.get("subgoals")
+        if not isinstance(subgoals, list) or not subgoals or len(subgoals) > 20:
+            raise VerifierError("invalid_composition", "subgoals 必须包含 1..20 个目标")
+        bindings = payload.get("bindings") if isinstance(payload.get("bindings"), dict) else {}
+        selected = []
+        previous_state = context.pre_state
+        merged_schema: dict[str, dict[str, Any]] = {}
+        steps: list[dict[str, Any]] = []
+        for position, raw_goal in enumerate(subgoals):
+            goal = str(raw_goal).strip()
+            local_context = dict(payload)
+            local_context["preState"] = previous_state
+            result = self.search(goal, local_context, kind="action", limit=3, explain=True)
+            if result["decision"] != "reuse":
+                raise VerifierError(
+                    "composition_candidate_missing",
+                    f"子目标无法安全复用：{goal}",
+                    status=409,
+                    details={"position": position, "retrieval": result},
+                )
+            candidate = result["candidates"][0]
+            if not candidate.get("preState") or not candidate.get("postState"):
+                raise VerifierError("state_contract_required", f"action asset 缺少状态边：{candidate['assetId']}", status=409)
+            if previous_state is not None and candidate["preState"] != previous_state:
+                raise VerifierError("state_transition_mismatch", f"action asset 状态无法衔接：{candidate['assetId']}", status=409)
+            asset = self.store.get_asset(str(candidate["assetId"]))
+            action = asset.payload.get("action")
+            if not isinstance(action, dict):
+                raise VerifierError("asset_not_executable", f"action asset 缺少 payload.action：{asset.asset_id}", status=409)
+            schema = normalize_parameter_schema(asset.payload.get("parameterSchema"))
+            for name, definition in schema.items():
+                if name in merged_schema and merged_schema[name] != definition:
+                    raise VerifierError("parameter_schema_conflict", f"组合参数 schema 冲突：{name}", status=409)
+                merged_schema[name] = definition
+            bind_parameters(action, bindings, schema)
+            steps.append(action)
+            selected.append(candidate["assetId"])
+            previous_state = str(candidate["postState"])
+        return {
+            "ok": True,
+            "decision": "compose",
+            "assetIds": selected,
+            "requiredParams": sorted(placeholders(steps)),
+            "workflow": {
+                "schemaVersion": 1,
+                "appId": context.app_id,
+                "goal": str(payload.get("goal") or " / ".join(str(item) for item in subgoals))[:500],
+                "parameterSchema": merged_schema,
+                "steps": steps,
+            },
+            "postState": previous_state,
+        }
