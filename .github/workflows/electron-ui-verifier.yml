@@ -21,7 +21,6 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     env:
       PYTHONDONTWRITEBYTECODE: "1"
-      EV_TEST_ROOT: ${{ runner.temp }}/electron-verifier-unit
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,6 +37,8 @@ jobs:
         if: runner.os != 'Linux'
         run: python -m playwright install chromium
       - name: Unit and component tests
+        env:
+          EV_TEST_ROOT: ${{ runner.temp }}/electron-verifier-unit
         run: python -u -X utf8 -B -m unittest discover -s skills/electron-ui-verifier/tests -p "test_*.py" -v
       - name: Static contract
         run: python -u -X utf8 -B evals/electron-ui-verifier/run_static_checks.py
