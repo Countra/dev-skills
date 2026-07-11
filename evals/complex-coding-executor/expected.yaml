@@ -1,6 +1,6 @@
 unapproved-plan-blocked:
   blocks_execution: true
-  asks_for_planner_approval: true
+  requires_valid_attestation: true
 open-decision-blocked:
   blocks_execution: true
   requires_decision_resolution: true
@@ -13,6 +13,9 @@ validation-failure-loop:
 process-manager-required-dev-server:
   requires_process_manager: true
   rejects_shell_background_start: true
+  uses_unified_manager_bootstrap: true
+  requires_manager_identity_process_key_and_owner_cleanup: true
+  rejects_consumer_platform_or_backend_selection: true
 git-commands-serial-same-repo:
   serializes_git_commands: true
 commit-message-file-required:
@@ -24,14 +27,14 @@ resolver-path-escape-blocked:
 harness-disabled-optout:
   skips_active_task_consumption: true
   does_not_update_harness_state: true
-status-summary-reports-state:
-  reports_current_stage: true
+status-summary-replays-state:
+  reports_current_stage_id: true
   reports_remaining_count: true
-  reports_ledger_and_attestation_status: true
-loop-tick-continues-unfinished-stage:
-  requires_loop_tick: true
+  reports_snapshot_drift: true
+transition-check-continues-unfinished-stage:
+  requires_transition_check: true
   continues_next_stage: true
-  blocks_final_delivery_with_remaining_stages: true
+  blocks_final_delivery_with_remaining_stage_ids: true
 final-without-ledger-evidence-blocked:
   blocks_final_delivery: true
   requires_stage_completed_ledger_evidence: true
@@ -40,7 +43,7 @@ repeated-failure-requires-new-strategy:
   requires_new_strategy_before_third_retry: true
 topic-handoff-long-subtopic:
   writes_topic_handoff: true
-  indexes_handoff_in_progress: true
+  indexes_handoff_as_artifact: true
 research-drift-enters-amendment:
   requires_research_drift_gate: true
   records_source_and_impact: true
@@ -58,3 +61,7 @@ final-missing-development-quality-evidence-blocked:
   blocks_final_delivery: true
   requires_standards_index_reference: true
   requires_development_quality_evidence: true
+process-manager-doctor-on-demand:
+  runs_doctor_only_after_unclear_failure: true
+  rejects_platform_specific_launcher_fallback: true
+  rejects_manual_background_process: true

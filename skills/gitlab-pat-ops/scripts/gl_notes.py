@@ -6,7 +6,20 @@ from __future__ import annotations
 import argparse
 from typing import Any, Iterable
 
-from gitlab_common import add_body_args, add_common_args, add_pagination_args, make_client, output_result, quote_id, read_body_from_args, request_list, run_cli
+from gitlab_ops import (
+    add_body_args,
+    add_common_args,
+    add_confirmation_arg,
+    add_pagination_args,
+    execute_guarded_write,
+    make_client,
+    output_client_result,
+    read_body_from_args,
+    request_list,
+    resource_path,
+    resource_snapshot,
+    run_cli,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,13 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--iid", required=True)
         add_body_args(sub)
         sub.add_argument("--internal", action="store_true")
-        sub.add_argument("--confirm", action="store_true", help="确认真实发送回复")
+        add_confirmation_arg(sub)
     return parser
 
 
 def note_path(kind: str, project: str, iid: str) -> str:
-    resource = "issues" if kind == "issue" else "merge_requests"
-    return f"/projects/{quote_id(project)}/{resource}/{quote_id(iid)}/notes"
+    return f"{resource_path(kind, project, iid)}/notes"
 
 
 def compact_notes(notes: Any) -> Any:
@@ -68,7 +80,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         kind = "issue" if args.command.startswith("issue") else "mr"
         params = {"activity_filter": "only_comments" if args.only_comments else None}
         notes = request_list(client, note_path(kind, args.project, args.iid), args, params=params)
-        output_result(compact_notes(notes) if args.compact else notes, pretty=args.pretty)
+        output_client_result(
+            client,
+            compact_notes(notes) if args.compact else notes,
+            pretty=args.pretty,
+            operation=f"notes.{kind}.list",
+        )
         return 0
     if args.command in {"issue-reply", "mr-reply"}:
         kind = "issue" if args.command.startswith("issue") else "mr"
@@ -76,12 +93,21 @@ def main(argv: Iterable[str] | None = None) -> int:
         payload = {"body": body, "internal": args.internal or None}
         payload = {key: value for key, value in payload.items() if value is not None}
         path = note_path(kind, args.project, args.iid)
-        if not args.confirm:
-            preview = client.preview("POST", path, None, payload)
-            preview["body_source"] = source
-            output_result(preview, pretty=args.pretty)
-            return 0
-        output_result(client.request("POST", path, json_body=payload), pretty=args.pretty)
+        preflight = resource_snapshot(client, kind, args.project, args.iid)
+        result = execute_guarded_write(
+            client,
+            operation=f"notes.{kind}.create",
+            method="POST",
+            path=path,
+            params=None,
+            json_body=payload,
+            confirm=args.confirm,
+            target={"project": args.project, "iid": str(args.iid), "resource": kind},
+            preflight=preflight,
+            reread_preflight=lambda: resource_snapshot(client, kind, args.project, args.iid),
+        )
+        result["body_source"] = source
+        output_client_result(client, result, pretty=args.pretty, operation=f"notes.{kind}.create")
         return 0
     parser.error("unknown command")
     return 2

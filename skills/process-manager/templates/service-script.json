@@ -1,0 +1,31 @@
+{
+  "name": "worker",
+  "kind": "long-running",
+  "cwd": "/ABSOLUTE/PATH/TO/PROJECT",
+  "launcher": {
+    "type": "script",
+    "interpreter": "/ABSOLUTE/PATH/TO/INTERPRETER",
+    "script": "/ABSOLUTE/PATH/TO/SCRIPT",
+    "args": [],
+    "pathArgs": []
+  },
+  "environment": {
+    "inherit": [
+      "PATH"
+    ],
+    "set": {},
+    "fromEnv": []
+  },
+  "stop": {
+    "graceSeconds": 8
+  },
+  "readiness": {
+    "type": "process",
+    "stableSeconds": 1,
+    "timeoutSeconds": 30
+  },
+  "logs": {
+    "maxBytes": 10485760,
+    "backups": 3
+  }
+}

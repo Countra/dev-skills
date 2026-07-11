@@ -1,0 +1,121 @@
+name: Process Manager Platform Lifecycle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: process-manager-platforms-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  platform-lifecycle:
+    name: ${{ matrix.os }} public contract and lifecycle
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run process-manager unit and component tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_*.py
+
+      - name: Run executable eval
+        run: python -u -X utf8 -B evals/process-manager/run_evals.py --work-dir .ci-artifacts/evals
+
+      - name: Run static and schema checks
+        run: python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .ci-artifacts/static-schema-checks.json
+
+      - name: Run native lifecycle smoke
+        run: python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace "${{ runner.temp }}/dev-skills-process-manager-${{ github.run_id }}-${{ github.run_attempt }}" --output .ci-artifacts/native-smoke.json --require-native-permissions
+
+      - name: Upload platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-process-manager-evidence
+          path: |
+            .ci-artifacts/native-smoke.json
+            .ci-artifacts/static-schema-checks.json
+            .ci-artifacts/evals/process-manager-evals.json
+          if-no-files-found: error
+          retention-days: 14
+
+  delegated-cgroup:
+    name: ubuntu-latest delegated cgroup lifecycle
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run lifecycle in transient delegated unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .ci-artifacts/delegated
+          unit="dev-skills-pm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python_path="$(command -v python)"
+          sudo systemd-run \
+            --unit="${unit}" \
+            --collect \
+            --wait \
+            --pipe \
+            --property=Delegate=yes \
+            --property=Type=exec \
+            --working-directory="${GITHUB_WORKSPACE}" \
+            "${python_path}" -u -X utf8 -B \
+            skills/process-manager/tests/run_platform_smoke.py \
+            --workspace .ci-artifacts/delegated/runtime \
+            --output .ci-artifacts/delegated/native-smoke.json
+          if sudo systemctl is-active --quiet "${unit}"; then
+            echo "transient delegated unit remains active" >&2
+            exit 1
+          fi
+          UNIT_NAME="${unit}" python -X utf8 -B - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          evidence = json.loads(Path(".ci-artifacts/delegated/native-smoke.json").read_text(encoding="utf-8"))
+          assert evidence["ok"] is True, evidence["failures"]
+          assert evidence["diagnostics"]["backend"] == "cgroup-v2", evidence["diagnostics"]
+          Path(".ci-artifacts/delegated/unit.json").write_text(
+              json.dumps({"unit": os.environ["UNIT_NAME"], "cleanupVerified": True}, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload delegated cgroup evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-delegated-cgroup-evidence
+          path: |
+            .ci-artifacts/delegated/native-smoke.json
+            .ci-artifacts/delegated/unit.json
+          if-no-files-found: error
+          retention-days: 14

@@ -1,0 +1,187 @@
+# Task Contract
+
+本文件是 `complex-coding-planner` 与 `complex-coding-executor` 的唯一任务契约定义。两端可以拥有各自职责内的校验代码，但字段、状态、事件和错误语义必须以本文件及联合 fixtures 为准。
+
+## 目录
+
+1. [设计目标](#设计目标)
+2. [任务制品](#任务制品)
+3. [所有权](#所有权)
+4. [Plan Contract](#plan-contract)
+5. [Stage Contract](#stage-contract)
+6. [规划画像](#规划画像)
+7. [批准与证明](#批准与证明)
+8. [运行状态](#运行状态)
+9. [Ledger 事件](#ledger-事件)
+10. [校验模式](#校验模式)
+11. [修订](#修订)
+
+## 设计目标
+
+- 只定义一套当前契约，不设置契约版本字段或多协议兼容模式。
+- `execution-plan.md` 面向人类审批，`plan-contract.json` 面向确定性校验。
+- 批准意图与执行进度分离，任何可变运行数据都不进入批准哈希集合。
+- planner 是批准意图的 producer；executor 是运行状态和证据的唯一 writer。
+- 历史任务不迁移。缺少当前必需文件或字段时返回结构错误，不返回版本错误。
+
+## 任务制品
+
+```text
+task-dir/
+  execution-plan.md
+  plan-contract.json
+  attestation.json
+  run-state.json
+  ledger.jsonl
+  pending-decisions.md        # 仅有阻塞决策时创建
+  artifacts/
+```
+
+必需关系：
+
+- planner approval checker 需要 `execution-plan.md` 与 `plan-contract.json`。
+- executor 首次启动需要批准后的 `attestation.json`。
+- executor 启动后维护 `run-state.json` 与 `ledger.jsonl`。
+- `active-task.json` 只定位任务，不复制 lifecycle、stage、remaining 或 next action。
+- active pointer 是封闭对象，只含 `task_id`、workspace 相对 `task_dir`、task-dir 相对 `run_state_path` 和 RFC3339 `updated_at`；路径不得包含 `..`。
+- 任务 completed/aborted 且无需恢复时删除 `active-task.json`；“无活动任务”用文件不存在表达，不写 `null` 根对象。
+
+## 所有权
+
+| 制品 | 创建者 | 批准后 writer | 权威内容 |
+| --- | --- | --- | --- |
+| `execution-plan.md` | planner | none | 目标、证据、决策、阶段理由和验收解释 |
+| `plan-contract.json` | planner | none | ID、Stage DAG、验证、artifact 和授权策略 |
+| approved artifacts | planner | none | research、standards、architecture、traceability、critique |
+| `attestation.json` | approval gate | amendment gate | 批准摘要、授权和不可变哈希集合 |
+| `run-state.json` | executor | executor | 当前 lifecycle、stage、stop、next 和 event 游标 |
+| `ledger.jsonl` | executor | append-only executor | 事件、attempt、验证、review、Git 和证据引用 |
+| `active-task.json` | lifecycle operation | pointer operation | task ID、目录和 run-state 路径 |
+
+批准后如需修改前三类制品，必须进入 amendment，不允许以“状态同步”为由直接改写。
+
+## Plan Contract
+
+`plan-contract.json` 根对象只允许以下字段：
+
+- `task_id`：稳定任务 ID。
+- `plan_revision`：从 1 开始的批准意图修订号。
+- `lifecycle_route`：`managed`。
+- `plan_profile`：`lite`、`standard` 或 `full`。
+- `goal`：包含 `id` 与可验证的 `summary`。
+- `requirements`：`REQ-*` 对象数组。
+- `acceptance_criteria`：`AC-*` 对象数组，并引用 requirements。
+- `nonfunctional_requirements`：`NFR-*` 对象数组。
+- `artifacts`：批准 artifact 索引。
+- `stages`：Stage Contract 数组和 DAG。
+- `validations`：`VAL-*` 定义及覆盖关系。
+- `research`：研究模式、未解决事实和证据索引。
+- `approval_policy`：实施、提交、外部写入和提权授权要求。
+- `reapproval_triggers`：实质变更触发条件。
+- `stop_conditions`：executor 可以停止的显式条件。
+
+根对象和受控嵌套对象拒绝未知字段。错误诊断必须给出 JSON path 和修复方向。
+
+每个 artifact 包含 `id`、`kind`、task-dir 内相对 `path`、`required` 和 `approval_included`。approval 时 required 或 approval-included 文件必须存在且非空；required planning artifact 必须进入 attestation 哈希集合。
+
+每个 validation 包含 `id`、`kind`、`required`、`covers`、`command` 和 `evidence_path`。`command` 可以是确定性 CLI，也可以是具名工具流程，但不能伪造尚未执行的结果。
+
+Stage 的 `validation_ids` 可以包含 required 与 optional validation；只有 `required = true` 的项目阻断 stage completion。optional 项如实际执行仍应记录真实结果，不得把未执行项伪造成 passed。
+
+ID 必须满足：
+
+- goal 使用 `GOAL-01`。
+- requirement、acceptance、nonfunctional、stage、validation 和 artifact 分别使用 `REQ-*`、`AC-*`、`NFR-*`、`STG-*`、`VAL-*`、`ART-*`。
+- 同类 ID 唯一且引用存在。
+- 每个 must requirement 至少被一个 AC 和 stage 覆盖。
+- 每个 AC/NFR 至少被一个 required validation 覆盖。
+- 每个 AC/NFR 必须归属至少一个 stage，每个 required validation 必须由至少一个 stage 执行。
+
+## Stage Contract
+
+每个 stage 必须包含：
+
+- `id`、`title`、`depends_on`。
+- `requirement_ids`、`acceptance_ids`、`nonfunctional_ids`、`validation_ids`。
+- `allowed_changes`、`forbidden_changes`。
+- `entry_conditions`、`exit_conditions`。
+- `risk`：`low`、`medium` 或 `high`。
+- `commit_expectation`：`none`、`stage` 或 `final`。
+
+Stage DAG 必须无环，依赖只能指向已定义 stage。executor 只能启动依赖均完成的 stage，不能从 Markdown 标题推断依赖或验证。
+
+plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allowed/forbidden changes 和 title；checker 不接受只在全局章节出现、但未挂到对应 stage 的引用。
+
+## 规划画像
+
+| Profile | 适用条件 | 必需内容 |
+| --- | --- | --- |
+| `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、1-3 stages、确定性验证 |
+| `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、traceability、2-5 stages |
+| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、critique、完整追踪、3-7 stages、恢复与切换证据 |
+
+目标未稳定或存在高影响未知时先进入 `discovery-first`，只产出发现和阻塞决策；不得伪造 ready-for-approval contract。
+
+## 批准与证明
+
+`attestation.json` 由 approval gate 生成，包含：
+
+- `task_id`、`plan_revision`、`approved_at`、`approved_by`、`approval_summary`。
+- `authorizations`：implementation、commit、external_write、elevated_tool。
+- `immutable_files`：相对 task-dir 的路径、SHA-256 和字节数。
+
+哈希集合必须包含 plan、contract 和 `artifacts[].approval_included = true` 的文件；不得包含 attestation 自身、run-state、ledger 或执行证据。
+
+同一 `plan_revision` 的 attestation 不可覆盖。批准摘要或 implementation/commit/external_write/elevated_tool 授权发生变化时，必须归档当前 revision 并进入 amendment；新 revision 写入 attestation 前必须存在紧邻上一 revision 的有效归档。
+
+## 运行状态
+
+`run-state.json` 由 ledger reducer 唯一推导，包含 task/revision、lifecycle、current/completed/remaining stages、stop condition、next action、reapproval flag、last event seq、state revision 和更新时间。
+
+允许 lifecycle：`approved`、`in_progress`、`blocked`、`completed`、`aborted`。
+
+- snapshot 落后 ledger 时可通过 replay 修复。
+- snapshot 缺失时可从完整合法 ledger 重建。
+- snapshot 领先 ledger、事件断号、未知 stage 或非法转移必须 fail closed。
+- `completed` 和 `aborted` 是封闭终态，之后不得追加 note、heartbeat 或其它事件。
+- 写 snapshot 使用同目录临时文件和 atomic replace。
+
+## Ledger 事件
+
+每行是一个 JSON object，包含 `seq`、`event_id`、`occurred_at`、`task_id`、`plan_revision`、`stage_id`、`type`、`attempt`、`payload` 和 `evidence_refs`。
+
+最小事件集：
+
+- task：`execution_started`、`blocked`、`resumed`、`completed`、`aborted`。
+- stage：`stage_started`、`attempt_failed`、`validation_recorded`、`review_recorded`、`stage_completed`。
+- plan：`research_drift`、`amendment_requested`、`amendment_approved`。
+- operation：`commit_recorded`、`note`、`heartbeat`。
+
+关键 payload：passed validation 需要 `summary`；failed validation 需要 `reason`；passed review 需要 `summary` 与 `development_quality = passed`；failed review 需要 `finding`；`attempt_failed` 需要 `reason`、`impact`、`next_strategy`；`research_drift` 需要 `reason`、`source`、`impact`；`resumed` 需要 `resolution`；`aborted` 需要 `reason`。
+
+`seq` 从 1 连续递增，`event_id` 唯一，stage attempt 单调递增。validation/review 的 result 只能是 `passed` 或 `failed`；失败会撤销该 attempt 已记录的相关通过证据。大日志保存为 artifact，ledger 只保存摘要和 task-dir 内真实文件的相对引用。未授权的 `commit_recorded` 必须在 append 前拒绝；已授权事件必须在 `completed` 前记录 repository 和 7-64 位十六进制 commit hash。`stage` expectation 逐 stage 记录对应 `stage_id`，`final` expectation 在所有 stage 完成后记录无 stage_id 的事件。
+
+ledger 以 plan revision 为作用域。amendment 前把当前 immutable set、attestation、ledger 和 run-state 归档到 `artifacts/amendments/revision-N/`；新 revision 使用新的当前 ledger，其首条 `amendment_approved` 事件记录前一 archive、ledger SHA-256 和经重新批准可继承的 completed stages。归档 ledger 永不回写。
+
+## 校验模式
+
+- planner `draft`：允许未完成研究和开放决策，但报告所有结构问题。
+- planner `approval`：要求引用闭环、无 blocker、profile artifacts 完整、授权策略和 amendment triggers 明确。
+- executor `preflight`：验证 pointer、contract、attestation、批准授权和 ledger/snapshot 一致性。
+- executor `status`：只读输出 snapshot 与 replay 摘要。
+- executor `transition`：验证阶段完成证据和下一 stage 可进入。
+- executor `reconcile`：只修复可由合法 ledger 唯一推导的 snapshot drift。
+- executor `final`：要求所有 stage/validation/review/authorization 闭环且 active pointer 已收口。
+
+稳定错误类别包括 `TASK_POINTER_*`、`TASK_CONTRACT_*`、`TASK_ARTIFACT_*`、`ATTESTATION_*`、`RUN_STATE_*` 和 `LEDGER_*`。不存在版本错误或 fallback。
+
+## 修订
+
+实质变更先写 amendment request 并停止执行。用户批准后：
+
+1. 将上一 revision 的 plan、contract、attestation、ledger 和 run-state 归档到 `artifacts/amendments/revision-N/`。
+2. 生成递增的 `plan_revision` 与新批准集合。
+3. 重跑 planner approval checker 和 traceability。
+4. 生成新 attestation，轮换当前 ledger/run-state，并以 `amendment_approved` 连接前一 ledger hash。
+5. carried completed stage 必须已在上一 revision ledger 中完成，且 stage 本体及其 REQ/AC/NFR/VAL 定义与归档 contract 语义相同；否则必须重跑。
+6. executor 仅在 `reapproval_required = false` 后继续。

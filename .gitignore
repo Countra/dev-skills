@@ -4,14 +4,18 @@
 .harness/tasks/**/tmp/
 .harness/tasks/**/scratch/
 .harness/tasks/**/ledger*.jsonl
+.harness/tasks/**/run-state*.json
 .harness/tasks/**/attestation*.json*
 .harness/tasks/**/status*.json
 .harness/sessions/
 .harness/electron-ui-verifier/
 .harness/process-manager/config.json
 .harness/process-manager/token
-.harness/process-manager/manager.pid
+.harness/process-manager/manager.json
+.harness/process-manager/manager.lock
+.harness/process-manager/manager-launchd.plist
 .harness/process-manager/processes.json
+.harness/process-manager/processes.json.bak
 .harness/process-manager/services/
 .harness/process-manager/runs/
 .harness/process-manager/logs/
@@ -30,6 +34,7 @@ release/
 # Python 缓存和测试缓存
 __pycache__/
 *.py[cod]
+.harness/test-tmp/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/

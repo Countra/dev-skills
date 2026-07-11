@@ -1,0 +1,4 @@
+interface:
+  display_name: "Process Manager"
+  short_description: "跨平台管理本地长期进程、就绪探针、日志与完整进程树"
+  default_prompt: "Use $process-manager to start this long-running local service, verify readiness, and preserve owner cleanup evidence."

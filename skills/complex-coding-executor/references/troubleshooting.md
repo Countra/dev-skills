@@ -1,105 +1,77 @@
 # Complex Coding Executor Troubleshooting
 
-本文件用于定位 `.harness` managed 任务执行阶段的常见流程故障。先定位事实，再决定继续、修正状态、请求用户确认或进入 `Plan Amendment Gate`。
+先保留原始错误码、命令和 task-dir，再判断是修复 snapshot、补批准、进入 amendment，还是停止等待用户。不要用修改计划文字来掩盖结构错误。
 
-## wrong task dir
+## Task Pointer 与路径
 
-症状：
+症状：`TASK_POINTER_*`、`TASK_DIR_MISSING` 或 `TASK_PATH_OUTSIDE_WORKSPACE`。
 
-- `harness_task_resolver.py` 找不到 `execution-plan.md`。
-- active-task 指向不存在的目录。
-- task_dir 解析后不在 workspace 内。
+1. 运行 `harness_task_resolver.py --workspace . --format json`。
+2. active pointer 只能包含 `task_id`、`task_dir`、`run_state_path`、`updated_at`。
+3. `task_dir` 和 `run_state_path` 必须解析在 workspace/task-dir 内；不要猜测或自动改指其他任务。
+4. 显式 `--task-dir` 不依赖 stale active pointer，适合 final 或定点诊断。
+5. 已完成任务应删除指向它的 active pointer；pointer 不保存 lifecycle、current stage 或 remaining stages。
 
-处理：
+## Contract 结构失败
 
-1. 读取 `.harness/active-task.json`。
-2. 确认 `task_dir` 是否为空、拼写错误或包含不安全路径片段。
-3. 运行 `harness_task_resolver.py --workspace .`。
-4. 如果当前对话明确属于另一个任务，先让 planner 或用户确认 active task 切换。
-5. 不要凭猜测创建新 task_dir 覆盖旧状态。
+症状：`TASK_CONTRACT_*`、`TASK_PLAN_*` 或 `TASK_ARTIFACT_*`。
 
-## stale active-task
+1. 用 planner 运行 `harness_plan_check.py --task-dir <dir> --mode approval --format json`。
+2. 检查封闭字段、稳定 ID、引用、Stage DAG、must coverage、scope、profile artifact 和 open decision。
+3. 缺少当前 `plan-contract.json` 是普通结构错误；不存在旧格式恢复或 Markdown parser fallback。
+4. 未批准时由 planner 修复；批准后任何实质修复都必须进入 Plan Amendment Gate。
 
-症状：
+## Attestation
 
-- active-task 显示 completed，但用户要求继续执行。
-- active-task 当前阶段与 `Execution Contract` 不一致。
-- remaining stages 与计划正文冲突。
+症状：`ATTESTATION_MISSING`、`ATTESTATION_HASH_MISMATCH` 或授权拒绝。
 
-处理：
+1. 未批准 bundle 不能执行。用户批准后运行 `harness_attest_plan.py --mode write --approved-by <actor> --approval-summary <summary>`。
+2. `--mode check` 会重算 plan、contract 和 approval-included artifacts 的哈希与大小。
+3. 同一 revision 的 attestation 不可覆盖，也不得因正常执行进度重写；run-state、ledger 和执行证据不属于批准哈希集合。
+4. immutable 文件变化时停止，归档旧 revision，生成递增 contract 和新 attestation，再激活 amendment。
+5. commit、external write、elevated tool 各自独立授权；未授权时不得执行或伪造对应 evidence。
 
-1. 以 `execution-plan.md` 为唯一主契约。
-2. 读取 `Execution Contract`、`Execution Control`、`Implementation Progress` 和 `Resume Summary`。
-3. 若只是摘要漂移，按计划主契约修正 active-task。
-4. 若阶段边界、批准范围或验证策略发生变化，进入 `Plan Amendment Gate`。
+## Ledger 与 Snapshot
 
-## missing ledger
+症状：`LEDGER_*`、`RUN_STATE_DRIFT`、snapshot 缺失或损坏。
 
-症状：
+1. 运行 `harness_ledger_summary.py --task-dir <dir> --format json`，以完整 ledger replay 为事实来源。
+2. ledger 合法且 snapshot 缺失/滞后时，运行 `harness_exec_check.py --mode reconcile --task-dir <dir>`。
+3. snapshot 领先 ledger、ledger 断号/非法 JSON、未知 stage 或非法 transition 必须 fail closed，不能自动猜测。
+4. ledger append 已 fsync 后 snapshot 写失败时，保留 ledger；修复写权限后 reconcile。
+5. evidence ref 必须是 task-dir 内真实文件；大日志写 artifact，ledger 只保存摘要和相对引用。
 
-- status 显示 `ledger_exists = false`。
-- final gate 缺少 stage_completed 证据。
+## Stage 与验证
 
-处理：
+症状：`RUN_STATE_STAGE_*`、`RUN_STATE_VALIDATION_*` 或 `RUN_STATE_REVIEW_*`。
 
-1. 如果任务尚未进入实施阶段，可以接受 ledger 不存在。
-2. 阶段开始后，用 `harness_ledger_append.py --event stage_started` 写入首条事件。
-3. 阶段完成、验证失败、review finding、blocked 和 heartbeat 都应追加事件。
-4. final 前用 `harness_ledger_summary.py` 生成摘要，并写入 `Ledger Evidence`。
+1. `stage_started` 的 attempt 必须逐次递增，依赖 stage 必须完成。
+2. `validation_recorded` 只能引用该 stage 声明的 VAL，result 只能是 `passed` 或 `failed`。
+3. passed validation 必须有摘要；passed review 必须有摘要和 `development_quality=passed`。
+4. validation/review failure 会撤销旧通过证据；修复后必须重跑相关验证与 review。
+5. required VAL 和 review 未全部通过时不能追加 `stage_completed`。
+6. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
 
-## attestation mismatch
+## Block、Research Drift 与 Amendment
 
-症状：
+1. 普通可恢复阻塞写 `blocked`，解决后写 `resumed`。
+2. scope、DAG、required validation、风险、依赖或授权变化写 `research_drift`/`amendment_requested`，设置 reapproval 后停止。
+3. `harness_attest_plan.py --mode archive` 归档当前 immutable set、attestation、ledger 和可用 run-state。
+4. planner 生成递增 revision 并重新批准后，用 `--mode write` 写新 attestation。
+5. `--mode activate-amendment --archive-dir <dir> [--carry-stage STG-XX]` 轮换运行文件，并以首条事件连接上一 ledger hash；只继承上一 ledger 已完成且契约语义未变的 stage。
 
-- `harness_attest_plan.py --check` 失败。
-- preflight 报 plan hash 不匹配。
+## Final 与提交
 
-处理：
+1. 最后一个 stage 完成后先确认无 current/remaining stage、required VAL 与 review 完整，但此时尚不追加 `completed`。
+2. contract 预期提交且 attestation 已授权时，完成 pre-commit 门禁、实际提交并写 `commit_recorded`；未授权 commit event 会被拒绝。
+3. commit expectation 闭环后追加 `completed` 并关闭 active pointer，再运行 final；final 要求 lifecycle completed 且 pointer 已关闭。
+4. 提交前完成 code review、`git diff --check` 和范围检查；同仓库 Git 命令串行。
+5. 使用 `git commit -F <message-file>`，不要用多个 `-m` 拼接正文。
 
-1. 先检查最近是否按批准范围更新了计划证据、进度或 Resume Packet。
-2. 如果是预期更新，重新运行 attestation 并记录原因。
-3. 如果修改影响 approved scope、stage、验证、风险、工具或提交策略，进入 `Plan Amendment Gate`。
-4. 如果无法解释差异，停止执行并请求用户确认。
+## Windows 与沙箱
 
-## HARNESS_DISABLED
-
-症状：
-
-- 环境变量 `HARNESS_DISABLED=1`。
-- executor check 输出 skipped。
-
-处理：
-
-1. 不消费历史 active task。
-2. 只执行用户当前 direct 请求或 advisory 检查。
-3. 不更新 `.harness/active-task.json`、ledger 或 plan 状态。
-4. 如用户希望恢复 managed 执行，请移除该变量后重新运行 preflight。
-
-## Windows path and shell
-
-症状：
-
-- 路径大小写、盘符或反斜杠导致 resolver 失败。
-- `py_compile` 写 `__pycache__` 遇到权限问题。
-- PowerShell profile 输出与命令结果混杂。
-
-处理：
-
-1. resolver 使用 `Path.resolve()` 后的规范路径判断 containment。
-2. 语法检查可用 `ast.parse` 替代会写缓存的 `py_compile`。
-3. 重要结果以脚本退出码和明确 `PASS` / `FAIL` 为准。
-4. 不用 shell 拼接、通配符删除或跨 shell 删除文件。
-
-## hook advisory mode
-
-症状：
-
-- hook 没有强制阻断未完成任务。
-- hook 只输出提醒或 system message。
-
-处理：
-
-1. 当前项目默认以 CLI gate 为准，hook 只是可选薄适配。
-2. 先运行 `harness_exec_check.py --mode transition` 或 `--mode final`。
-3. 只有显式 gated mode 且保护条件满足时，才考虑 hook 阻断。
-4. hook 行为变化必须单独规划和验证。
+- 用 `Path.resolve()` 后的规范路径判断 containment。
+- 避免会写 `__pycache__` 的语法检查；可用 `python -B`、AST parse 或隔离测试目录。
+- Windows 本地代码页可能影响子进程 JSON；公共 runner/checker 显式使用 UTF-8 模式。
+- 重要结果以退出码和 `PASS`/`FAIL [CODE]` 为准；PowerShell profile 噪声不是脚本输出的一部分。
+- `HARNESS_DISABLED=1` 时不消费 active task，也不写 pointer、attestation、ledger 或 state。

@@ -1,0 +1,54 @@
+{
+  "required_fixture_ids": [
+    "finite-command-direct",
+    "manager-bootstrap",
+    "start-and-ready",
+    "dynamic-port-log",
+    "bounded-logs",
+    "restart-owner-handoff",
+    "stop-owner-cleanup",
+    "prune-dry-run",
+    "secret-from-env",
+    "doctor-on-demand",
+    "platform-transparent",
+    "foreground-contract"
+  ],
+  "required_behavior_terms": [
+    "pm_manager.py status",
+    "pm_manager.py start",
+    "pm_validate.py",
+    "pm_ready.py",
+    "cleanupVerified",
+    "stopResult.ownerEmpty",
+    "environment.fromEnv",
+    "正常任务不先运行 doctor",
+    "不判断 OS",
+    "contract_violation"
+  ],
+  "forbidden_behavior_terms": [
+    "start_manager.ps1",
+    "manager.pid",
+    "portRetry",
+    "cmd-file",
+    "powershell-file",
+    "先运行 pm_doctor.py"
+  ],
+  "required_scripts": [
+    "pm_manager.py",
+    "pm_init.py",
+    "pm_health.py",
+    "pm_validate.py",
+    "pm_start.py",
+    "pm_ready.py",
+    "pm_status.py",
+    "pm_logs.py",
+    "pm_list.py",
+    "pm_prune.py",
+    "pm_stop.py",
+    "pm_restart.py",
+    "pm_doctor.py",
+    "pm_shutdown.py"
+  ],
+  "required_template_launchers": ["direct", "script"],
+  "forbidden_public_options": ["--platform", "--backend", "--systemd", "--launchd", "--job-object"]
+}

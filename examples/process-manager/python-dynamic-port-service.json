@@ -1,22 +1,35 @@
 {
   "name": "python-dynamic",
   "kind": "long-running",
-  "cwd": "D:/ABSOLUTE/PATH/TO/WORKSPACE",
+  "cwd": "/ABSOLUTE/PATH/TO/WORKSPACE",
   "launcher": {
-    "type": "direct",
-    "argv": [
-      "C:/ABSOLUTE/PATH/TO/python.exe",
-      "D:/ABSOLUTE/PATH/TO/WORKSPACE/python_dynamic.py"
-    ]
+    "type": "script",
+    "interpreter": "/ABSOLUTE/PATH/TO/PYTHON",
+    "script": "/ABSOLUTE/PATH/TO/WORKSPACE/python_dynamic.py",
+    "args": [],
+    "pathArgs": []
   },
-  "window": "hidden",
+  "environment": {
+    "inherit": ["PATH", "HOME"],
+    "set": {},
+    "fromEnv": []
+  },
+  "stop": {
+    "graceSeconds": 8
+  },
   "readiness": {
     "type": "log",
-    "pattern": "Local:",
+    "stream": "stdout",
+    "pattern": "Local: (?P<url>http://127\\.0\\.0\\.1:(?P<port>\\d+))",
     "extract": {
-      "urls": ["http://[^\\s]+"],
-      "ports": ["(?<=:)\\d+"]
+      "urls": ["url"],
+      "ports": ["port"]
     },
-    "timeoutSeconds": 10
+    "scanBytes": 262144,
+    "timeoutSeconds": 30
+  },
+  "logs": {
+    "maxBytes": 10485760,
+    "backups": 3
   }
 }

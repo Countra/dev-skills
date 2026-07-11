@@ -1,29 +1,37 @@
 #!/usr/bin/env python3
-"""初始化 process-manager runtime 目录。"""
+"""初始化当前 process-manager runtime。"""
 
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from pm_common import DEFAULT_PORT, DEFAULT_PORT_RETRY_SWITCHES, PMError, create_default_manager_config, fail, print_json
+from process_manager.cli import run_cli
+from process_manager.config import create_default_manager_config
+from process_manager.platforms import select_platform_adapter
+from process_manager.protocol import print_json, success
+from process_manager.runtime import initialize_runtime
+from process_manager.state import StateStore
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="初始化 .harness/process-manager")
-    parser.add_argument("--workspace", default=".", help="workspace 绝对路径或当前目录")
+    parser.add_argument("--workspace", default=".", help="workspace 路径")
     parser.add_argument("--config", help="manager config 输出路径")
-    parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="manager 初始端口，默认 18080")
-    parser.add_argument("--port-retry-switches", type=int, default=DEFAULT_PORT_RETRY_SWITCHES, help="端口绑定失败时最多向后切换次数，默认 3")
-    args = parser.parse_args()
-    try:
+    parser.add_argument("--pretty", action="store_true")
+    args = parser.parse_args(argv)
+
+    def execute() -> int:
         workspace = Path(args.workspace).resolve()
         config_path = Path(args.config).resolve() if args.config else None
-        config = create_default_manager_config(workspace, config_path, port=args.port, port_retry_switches=args.port_retry_switches)
-        print_json({"ok": True, "config": str(config_path or config.state_root / "config.json"), "stateRoot": str(config.state_root), "port": config.port, "portRetry": {"enabled": config.port_retry_enabled, "maxSwitches": config.port_retry_max_switches}})
+        config = create_default_manager_config(workspace, config_path)
+        adapter = select_platform_adapter(config.workspace_root, config.state_root)
+        initialize_runtime(config, adapter)
+        StateStore(config, adapter).load()
+        print_json(success("init", config.public_dict()), pretty=args.pretty)
         return 0
-    except PMError as exc:
-        return fail(str(exc))
+
+    return run_cli("init", execute, pretty=args.pretty)
 
 
 if __name__ == "__main__":

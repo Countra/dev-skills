@@ -1,9 +1,12 @@
-{"id":"long-running-dev-server","prompt":"Use process-manager to start a local frontend dev server from an existing absolute service config and wait until it is ready.","expect":["run pm_health.py first","run pm_validate.py before pm_start.py","use pm_ready.py","do not call the API directly"]}
-{"id":"finite-command-rejection","prompt":"Run the unit tests for this Python project.","expect":["do not use process-manager","run the finite test command directly","do not create a service config"]}
-{"id":"reject-top-level-port","prompt":"Create a service config with top-level host and port for a worker.","expect":["reject top-level host/port","put endpoints in readiness only when needed","do not make process-manager web-only"]}
-{"id":"dynamic-port-log","prompt":"Start a preview server that chooses a random port and prints the URL to stdout.","expect":["use log readiness","extract observed urls or ports","inspect pm_logs.py or pm_status.py"]}
-{"id":"offline-manager","prompt":"Start a background worker when pm_health.py reports the manager is offline.","expect":["stop and ask for bootstrap approval","do not handwrite Start-Process","do not run the worker directly"]}
-{"id":"manager-port-retry","prompt":"Initialize and start process-manager on Windows when the default manager port is excluded or already occupied.","expect":["default port is 18080","retry the next ports up to maxSwitches","write the final successful port back to config.json","pm_health.py uses the persisted final port"]}
-{"id":"list-default-current-state","prompt":"List process-manager state after many old stopped processes exist.","expect":["pm_list.py defaults to active and running only","do not include full processes history unless --history is used","use --history when historical records are required"]}
-{"id":"prune-inactive-runs","prompt":"Clean process-manager history after more than 20 stopped or exited records accumulated.","expect":["keep all running records","keep all stop_timeout records","retain the latest maxInactive inactive records","delete only exact runs/<service>/<processId> directories for pruned inactive records"]}
-{"id":"prune-dry-run-first","prompt":"Show what process-manager would prune without changing state.","expect":["use pm_prune.py without --apply","dry-run does not delete runDir","use --apply only after confirmation"]}
+{"id":"finite-command-direct","prompt":"运行这个 Python 项目的单元测试。","expected":["有限命令直接执行并等待返回","不创建 service config","不使用 process-manager"]}
+{"id":"manager-bootstrap","prompt":"为当前 workspace 启动一个长期运行 worker，manager 尚未初始化。","expected":["仅在 config 不存在时运行 pm_init.py","运行 pm_manager.py status","manager_offline 时运行 pm_manager.py start","不判断 OS 或选择 backend"]}
+{"id":"start-and-ready","prompt":"从已有 service config 启动本地开发服务器并等待可用。","expected":["先运行 pm_validate.py","使用 pm_start.py 保存 processKey","配置 readiness 时运行 pm_ready.py","不用端口猜测成功"]}
+{"id":"dynamic-port-log","prompt":"服务由 OS 分配随机端口，并把 Local URL 输出到 stdout。","expected":["使用 log readiness","pattern 使用命名捕获组","extract 引用组名","scanBytes 与 timeout 有界"]}
+{"id":"bounded-logs","prompt":"查看服务最近日志以诊断启动失败。","expected":["使用 pm_logs.py","同时限制 tail 与 max-bytes","不直接遍历 runtime 日志"]}
+{"id":"restart-owner-handoff","prompt":"重启当前 worker 并确认新实例已就绪。","expected":["使用 pm_restart.py","旧 run cleanupVerified 为 true","旧 stopResult.ownerEmpty 为 true","新旧 processKey 不同"]}
+{"id":"stop-owner-cleanup","prompt":"停止开发服务器并证明完整进程树已退出。","expected":["使用 pm_stop.py","检查 graceful/force 结果","要求 cleanupVerified","要求 stopResult.ownerEmpty"]}
+{"id":"prune-dry-run","prompt":"把 inactive history 保留到最近 20 项。","expected":["先运行 pm_prune.py dry-run","确认候选后才使用 --apply","不修剪 active run"]}
+{"id":"secret-from-env","prompt":"worker 需要本机环境中的 WORKER_TOKEN。","expected":["只在 environment.fromEnv 写变量名","不把 secret 放入 set 或 args","日志脱敏只是纵深防御"]}
+{"id":"doctor-on-demand","prompt":"统一 manager 命令失败，错误信息不足以判断 supervisor 能力。","expected":["失败原因不清楚时才运行 pm_doctor.py","读取脱敏 selectionReason","正常任务不先运行 doctor"]}
+{"id":"platform-transparent","prompt":"让同一 service 在 Windows、Linux 和 macOS 上运行。","expected":["使用相同 direct 或 script schema","使用相同 pm_* 命令","不判断 OS","不传 --backend 或 --platform"]}
+{"id":"foreground-contract","prompt":"目标程序启动后自行 daemonize 并让父进程退出。","expected":["拒绝或报告 contract_violation","target 必须前台运行","只通过 owned run 收口","不按任意 PID kill"]}
