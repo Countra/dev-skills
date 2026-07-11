@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-11
+
+### Breaking: Electron UI Verifier 可靠性与知识召回升级
+
+- runtime 直接切换为单 owner Playwright CDP driver、严格 target/locator/actionability 和 prepare/run/finalize 事务，不保留 raw transport 或旧 runner fallback。
+- screenshot、ARIA、DOM 和脱敏诊断统一进入校验后 evidence manifest；mutating timeout 视为 unknown outcome，不自动重放。
+- knowledge 直接切换为 approved canonical JSON truth 与可重建 SQLite rollback-journal index，旧布局只允许 exact fingerprint direct reset，不读取、导入或转换。
+- 新增 exact/alias/BM25/Latin/CJK/RRF 混合召回、app/version/screen/state/risk 硬过滤、阈值 abstain、状态兼容 action 组合和内存参数绑定。
+- 重写 skill、references、typed assets 和公共 knowledge/asset CLI，主说明采用按需 progressive disclosure。
+- 验证覆盖单元/组件、正负例召回、308/10k 性能、fresh env、process-manager、知识 reset 和真实 packaged Electron 生命周期。
+- Commit: pending
+- Commit message: pending
+
 ## 2026-07-10
 
 ### Breaking: GitLab PAT Ops 与跨平台 process-manager 能力升级

@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--target-title-contains")
     parser.add_argument("--target-index", type=int)
     parser.add_argument("--target-type", default="page")
-    parser.add_argument("--allow-remote-cdp", action="store_true")
+    parser.add_argument("--allow-remote-cdp", action="store_true", help="仅在另行批准 remote CDP 后使用；默认会被安全策略拒绝")
     return parser
 
 

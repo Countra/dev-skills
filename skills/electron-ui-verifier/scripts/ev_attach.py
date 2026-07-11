@@ -11,13 +11,13 @@ from ev_common import EVError, add_common_args, fail, load_config, print_json, r
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="attach 到 Electron CDP target。")
     add_common_args(parser)
-    parser.add_argument("--name", required=True, help="稳定 session 名称，例如 videoForensic")
+    parser.add_argument("--name", required=True, help="稳定 session 名称")
     parser.add_argument("--cdp", required=True, help="CDP endpoint，例如 http://127.0.0.1:9223")
     parser.add_argument("--target-url-contains")
     parser.add_argument("--target-title-contains")
     parser.add_argument("--target-index", type=int)
     parser.add_argument("--target-type", default="page")
-    parser.add_argument("--allow-remote-cdp", action="store_true")
+    parser.add_argument("--allow-remote-cdp", action="store_true", help="仅在另行批准 remote CDP 后使用；默认会被安全策略拒绝")
     parser.add_argument("--no-reuse", action="store_true", help="强制重新 attach 同名 session")
     return parser
 

@@ -1,23 +1,25 @@
 {
-  "readiness": [
-    {
-      "waitText": "案件",
-      "timeoutMs": 30000
-    }
-  ],
+  "schemaVersion": 1,
+  "appId": "sample-app",
+  "goal": "等待应用就绪并采集视觉证据",
   "steps": [
     {
-      "id": "home-snapshot",
-      "snapshot": true
+      "id": "wait-ready",
+      "type": "waitText",
+      "value": "Ready",
+      "options": {
+        "timeoutMs": 30000
+      }
     },
     {
-      "id": "home-screenshot",
-      "screenshot": "home.png"
+      "id": "semantic-state",
+      "type": "snapshot"
     },
     {
-      "id": "visible-text",
-      "extractText": {
-        "name": "visibleText"
+      "id": "visual-state",
+      "type": "screenshot",
+      "options": {
+        "label": "ready-state"
       }
     }
   ]

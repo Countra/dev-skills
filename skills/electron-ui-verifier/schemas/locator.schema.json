@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/locator.schema.json",
+  "title": "Strict semantic locator",
+  "type": "object",
+  "properties": {
+    "role": {"type": "string", "minLength": 1},
+    "accessibleName": {"type": "string"},
+    "label": {"type": "string", "minLength": 1},
+    "placeholder": {"type": "string", "minLength": 1},
+    "text": {"type": "string", "minLength": 1},
+    "testId": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "css": {"type": "string", "minLength": 1},
+    "exact": {"type": "boolean", "default": true},
+    "nth": {"type": "integer", "minimum": 0}
+  },
+  "oneOf": [
+    {"required": ["role"]},
+    {"required": ["label"]},
+    {"required": ["placeholder"]},
+    {"required": ["text"]},
+    {"required": ["testId"]},
+    {"required": ["title"]},
+    {"required": ["css"]}
+  ],
+  "additionalProperties": false
+}

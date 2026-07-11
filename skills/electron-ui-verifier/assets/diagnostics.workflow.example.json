@@ -1,60 +1,35 @@
 {
-  "readiness": [
-    {
-      "waitText": "案件",
-      "timeoutMs": 30000
-    }
-  ],
+  "schemaVersion": 1,
+  "appId": "sample-app",
+  "goal": "采集页面诊断摘要",
   "steps": [
     {
-      "id": "start-marker",
-      "evaluate": {
-        "allow": true,
-        "name": "title",
-        "expression": "document.title",
-        "saveAs": "page.title"
-      }
+      "id": "page-title",
+      "type": "evaluate",
+      "value": "documentTitle"
     },
     {
-      "id": "console-after-ready",
-      "collectConsole": {
-        "levels": [
-          "log",
-          "warning",
-          "error"
-        ],
+      "id": "console-events",
+      "type": "collectConsole",
+      "options": {
         "maxEvents": 200
-      }
-    },
-    {
-      "id": "exceptions-after-ready",
-      "collectExceptions": {
-        "failOnException": false,
-        "maxEvents": 100
-      }
-    },
-    {
-      "id": "network-after-ready",
-      "collectNetwork": {
-        "maxEvents": 300
-      }
-    },
-    {
-      "id": "dom-full",
-      "domSnapshot": {
-        "computedStyles": [
-          "display",
-          "visibility",
-          "position"
-        ],
-        "maxBytes": 5000000
       },
       "continueOnFailure": true
     },
     {
-      "id": "ax-tree",
-      "accessibilitySnapshot": {
-        "maxNodes": 2000
+      "id": "page-exceptions",
+      "type": "collectExceptions",
+      "options": {
+        "maxEvents": 100,
+        "failOnException": false
+      },
+      "continueOnFailure": true
+    },
+    {
+      "id": "network-summary",
+      "type": "collectNetwork",
+      "options": {
+        "maxEvents": 300
       },
       "continueOnFailure": true
     }

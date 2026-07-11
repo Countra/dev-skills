@@ -11,7 +11,7 @@ from ev_common import EVError, add_common_args, fail, load_config, print_json, r
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="采集 session snapshot。")
     add_common_args(parser)
-    parser.add_argument("--session", required=True)
+    parser.add_argument("--run-id", required=True)
     parser.add_argument("--id", default="snapshot")
     return parser
 
@@ -20,7 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = load_config(resolve_config_path(args))
-        result = request_json(config, "POST", "/actions/run", {"session": args.session, "action": {"id": args.id, "snapshot": True}}, timeout=120.0)
+        action = {"id": args.id, "type": "snapshot", "options": {}}
+        result = request_json(config, "POST", "/actions/run", {"runId": args.run_id, "action": action}, timeout=120.0)
         print_json(result)
         return result_exit_code(result)
     except EVError as exc:

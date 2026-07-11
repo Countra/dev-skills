@@ -1,0 +1,427 @@
+{
+  "task_id": "2026-07-11-feature-electron-ui-verifier-reliability-upgrade",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "把 electron-ui-verifier 升级为基于 Playwright CDP、严格语义定位、可恢复 run 事务和可解释状态感知知识检索的稳定 Electron 验证 skill，使真实 packaged Electron 的验证更快、更可靠，并让证据、批准与全新知识资产可校验、可审计、可重建。"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "把单体 server 和散落业务逻辑拆成高内聚 package、稳定 ports/adapters 与薄 ev_* CLI，同时保持 verifier service 由 process-manager 托管、Electron GUI 独立启动的边界。"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "删除自制 WebSocket/raw CDP 生产链路，建立单 owner 的 async Playwright connect_over_cdp driver、有界 command queue、严格 endpoint 安全、target capability 与可恢复 session lifecycle。"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "建立结构化 strict locator、Playwright actionability、可靠 fill/key、显式高风险坐标动作、compact ARIA observation、隔离 diagnostics 与 required postcondition 的 action contract。"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "建立 prepare/append/finalize run 状态机、UUID journal、原子 evidence manifest、截图质量与 failure trace，使 report/pending 每个 run 只生成一次且只引用真实已提交证据。"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "强化 pending 与 persistence，按实际通过路径清洗 workflow，以 canonical digest、参数与风险检查绑定 preview/approve，并实现 sealed、幂等、可恢复的批准写入。"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "直接建立以 approved canonical JSON 为真相源、SQLite 为可重建 derived index 的全新知识库；不读取、导入、转换或双写旧知识 schema/资产，仅通过 fingerprint reset 安全退役旧目录并初始化空的新库。"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "删除业务硬编码与无关补齐，建立 app/version/screen 状态过滤、exact/alias/BM25/CJK ngram/RRF 检索、阈值 abstain、explain、参数绑定和状态兼容 workflow 组合。"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "重写 skill 主流程和按需 references，新增统一 prepare/finalize 与知识 reset 入口、紧凑默认输出、锁定依赖与 current schema/assets/docs，不保留 v1/v2、旧知识 reader 或永久旧实现 fallback。"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "建立隔离 unit/component/CDP fixture、retrieval/performance eval、fresh knowledge reset/rebuild regression、process-manager integration 与 Termous 真实只读 smoke，并规划三平台 CI 和最终代码审查。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "给定升级后的源码，ev_* 入口仅负责参数与 envelope，driver、session、action、run、approval、knowledge 分层可独立测试，新增生产 Python 文件均不超过 500 行且不存在循环依赖或新的巨型 server。"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02"],
+      "summary": "给定本机 Electron CDP target，当 probe/attach/screenshot 时只使用 async Playwright CDP driver，生产代码不含手写 WebSocket/raw frame path，Termous warm screenshot 连续 10 次成功且 P95 不超过 2 秒。"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-02"],
+      "summary": "给定多 target、target close、app exit、server restart 或重复 detach，当 session 被选择或复用时必须健康校验、严格选 target、重连或返回 stale/ambiguous，绝不把 intent 误报为 live connection。"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-03"],
+      "summary": "给定多个同名元素、延迟/覆盖/disabled 元素、受控输入和组合键，当执行 action 时 strict locator 会阻塞歧义，Playwright actionability 与 typed fill/key 生效，副作用只执行一次且 required postcondition 决定通过。"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-03"],
+      "summary": "给定 observation 与多个 diagnostics，当 ARIA/CDP capability 可用或部分不可用时默认返回有界 compact 状态，实验 diagnostics 独立记录 unsupported/failure，不短路其它只读诊断，也不持久化临时 ARIA ref。"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-04"],
+      "summary": "给定同一秒内 20 个探索 action，当 append 并 finalize 时产生 20 个唯一 step/artifact 标识、一个 report 和至多一个 pending；action 阶段不重复生成 report/pending，crash 后 journal 可确定恢复或 abort。"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-04"],
+      "summary": "给定成功、空白、损坏、超时或写入失败的截图/诊断，当 evidence commit 时只有原子落盘且通过格式、尺寸、有效像素与 hash 校验的文件进入 manifest/report，失败 run 按策略保留 trace。"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-05"],
+      "summary": "给定 failed/skipped/unexecuted/detour step、缺失证据、未绑定参数、风险未确认或被修改 pending，当 finalize/approve 时 proposal 只含实际通过路径，旧 fingerprint 被拒，合法重复 approve 幂等且 bundle sealed。"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-06"],
+      "summary": "给定空目录、旧知识布局或损坏 derived index，当初始化/reset/rebuild 时空目录直接建立新版 canonical store，旧布局返回 knowledge_reinitialize_required 且不被读取；exact fingerprint 确认后旧目录被退役、空的新库原子启用，index 可从新版 canonical 确定重建。"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-07"],
+      "summary": "给定不少于 40 个正例和 20 个负例的中英文检索 corpus，当 suggest/search 时 Recall@5 至少 0.90、MRR@5 至少 0.80、负例假阳性不超过 0.05，低置信明确 abstain 且 explain 可追溯各通道。"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-07"],
+      "summary": "给定参数化资产与多个 action 候选，当执行或组合时 required 参数必须显式绑定，未解析占位符被拒，只有 pre/post state 相容、版本/screen/risk 合法的 action 才组成可执行 workflow。"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-07", "REQ-08"],
+      "summary": "给定 308 资产和 10k 索引基准，当批量写入与 warm query 时 308 ingest 不超过 1.5 秒且至少提速 3 倍、query P95 不超过 100 ms，prepare 默认 stdout 不超过 16 KiB。"
+    },
+    {
+      "id": "AC-13",
+      "requirement_ids": ["REQ-08"],
+      "summary": "给定首次、普通、知识复用和故障任务，当 agent 使用 skill 时只按需加载 reference，通过 prepare/run/finalize 完成主路径，依赖可在 fresh venv 重现，SKILL、help、schema、assets、agent metadata 与当前行为一致。"
+    },
+    {
+      "id": "AC-14",
+      "requirement_ids": ["REQ-09"],
+      "summary": "给定全部修改，当执行 required unit/component/eval/performance/knowledge-reset/process-manager/skill/Termous gates 与 final review 时全部通过，测试不污染 live knowledge/profile，所有本轮进程和句柄完成 owner-empty 清理。"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "可靠性：session、run、evidence、pending 与 knowledge 状态转移必须显式、可恢复、幂等；副作用未知结果不得自动重放。"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "性能与资源有界：queue、event、body、step、artifact、output、retry、timeout 和历史均有默认及硬上限，并满足检索和 Termous P95 门槛。"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "安全与隐私：默认 loopback、remote 显式批准、隔离 profile、owner-only token、constant-time auth、敏感内容脱敏，测试不读取真实凭据或 profile。"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "数据完整性：关键 JSON/证据原子写入并带 hash，canonical 可重建 derived index，当前 SQLite 3.51.1 禁止启用 WAL。"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "可维护性：遵循项目与 Google Python 规范，ports/adapters 单向依赖、高内聚低耦合、public API 类型化、新生产文件不超过 500 行。"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "可观察性：稳定 error code、step duration、capability、backend reason、retrieval explain、evidence hash 和 cleanup 证据可审计，默认输出保持紧凑。"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "可复现与平台透明：锁定依赖和 schema，公共 CLI/envelope 不暴露平台分支；required tests 证明平台无关 contract，Windows、Linux、macOS hosted matrix 作为需 push 授权的 release evidence，未运行时必须记录残余风险。"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/domain-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/target-architecture.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "契约、package 与隔离测试地基",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01"],
+      "acceptance_ids": ["AC-01"],
+      "nonfunctional_ids": ["NFR-04", "NFR-05", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/electron-ui-verifier/schemas/**", "skills/electron-ui-verifier/scripts/electron_verifier/**", "skills/electron-ui-verifier/tests/**", "skills/electron-ui-verifier/requirements*.txt", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["skills/process-manager/**", "skills/complex-coding-planner/**", "skills/complex-coding-executor/**", "真实 Electron profile/knowledge 数据", "无关 skill 或全仓格式化"],
+      "entry_conditions": ["ART-01 至 ART-05 已重读", "当前 public CLI/help 和 baseline 输出已记录", "测试 root 指向 task tmp"],
+      "exit_conditions": ["Draft 2020-12 schema 与 typed domain boundary 建立", "package dependency direction 无循环且文件预算通过", "基础 unit/static/fresh-env fixture 可运行且不污染 live runtime"],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-02",
+      "title": "Playwright driver、service 与 session 生命周期",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-02"],
+      "acceptance_ids": ["AC-02", "AC-03"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-04", "VAL-05", "VAL-07", "VAL-08", "VAL-09"],
+      "allowed_changes": ["skills/electron-ui-verifier/scripts/ev_server.py", "skills/electron-ui-verifier/scripts/ev_init.py", "skills/electron-ui-verifier/scripts/ev_probe.py", "skills/electron-ui-verifier/scripts/ev_attach.py", "skills/electron-ui-verifier/scripts/ev_sessions.py", "skills/electron-ui-verifier/scripts/ev_detach.py", "skills/electron-ui-verifier/scripts/electron_verifier/**", "skills/electron-ui-verifier/tests/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["第二 automation backend", "手写 WebSocket/raw frame fallback", "verifier 托管 Electron GUI", "未批准 remote CDP", "无界 queue/event/body/timeout"],
+      "entry_conditions": ["STG-01 完成", "async Playwright owner 和 endpoint policy 已冻结", "Playwright/CDP capability fixture 可用"],
+      "exit_conditions": ["生产 raw transport 删除且 code search gate 通过", "probe/attach/health/reconnect/detach/target lifecycle tests 通过", "process-manager smoke 与 Termous attach/screenshot session gate 通过"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-03",
+      "title": "严格 action、run 事务与可信证据",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-03", "REQ-04"],
+      "acceptance_ids": ["AC-04", "AC-05", "AC-06", "AC-07"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-01", "VAL-04", "VAL-05", "VAL-08", "VAL-09"],
+      "allowed_changes": ["skills/electron-ui-verifier/scripts/ev_action.py", "skills/electron-ui-verifier/scripts/ev_workflow.py", "skills/electron-ui-verifier/scripts/ev_snapshot.py", "skills/electron-ui-verifier/scripts/ev_screenshot.py", "skills/electron-ui-verifier/scripts/ev_console.py", "skills/electron-ui-verifier/scripts/ev_exceptions.py", "skills/electron-ui-verifier/scripts/ev_network.py", "skills/electron-ui-verifier/scripts/ev_report.py", "skills/electron-ui-verifier/scripts/ev_artifact.py", "skills/electron-ui-verifier/scripts/ev_prepare.py", "skills/electron-ui-verifier/scripts/ev_finalize.py", "skills/electron-ui-verifier/scripts/electron_verifier/**", "skills/electron-ui-verifier/schemas/**", "skills/electron-ui-verifier/tests/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["歧义静默首选", "无 postcondition 自动副作用", "未知 outcome 重放", "证据写前登记", "每 action 自动 report/pending", "默认采集 cookie/storage/Authorization"],
+      "entry_conditions": ["STG-02 完成", "driver/session contract 稳定", "run/evidence schema 已通过 invalid fixture"],
+      "exit_conditions": ["strict locator/actionability/controlled input/key/postcondition tests 通过", "20-action 唯一 run 与 crash replay 通过", "截图质量、manifest、trace 和独立 diagnostics gates 通过"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-04",
+      "title": "批准完整性与全新 canonical knowledge 直接切换",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-05", "REQ-06"],
+      "acceptance_ids": ["AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-01", "VAL-05", "VAL-10"],
+      "allowed_changes": ["skills/electron-ui-verifier/scripts/ev_init.py", "skills/electron-ui-verifier/scripts/ev_pending.py", "skills/electron-ui-verifier/scripts/ev_persist.py", "skills/electron-ui-verifier/scripts/ev_learn.py", "skills/electron-ui-verifier/scripts/ev_promote.py", "skills/electron-ui-verifier/scripts/ev_knowledge_store.py", "skills/electron-ui-verifier/scripts/ev_knowledge_extract.py", "skills/electron-ui-verifier/scripts/electron_verifier/**", "skills/electron-ui-verifier/schemas/**", "skills/electron-ui-verifier/tests/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["旧 knowledge schema reader/import/converter", "failed/unexecuted 自动提升", "无 fingerprint approve/reset", "永久双 schema/双写", "当前 SQLite 3.51.1 WAL", "静默覆盖或读取旧知识目录"],
+      "entry_conditions": ["STG-03 完成", "run/evidence manifest contract 稳定", "新版 canonical schema 与 legacy-layout detection 已冻结"],
+      "exit_conditions": ["pending digest/seal/idempotency/partial-write tests 通过", "canonical 可确定重建 derived index", "fresh init、legacy rejection、fingerprint reset、retired-root isolation 和 rebuild regression 通过"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-05",
+      "title": "混合召回、资产复用与精简 skill 流程",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-07", "REQ-08"],
+      "acceptance_ids": ["AC-10", "AC-11", "AC-12", "AC-13"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07"],
+      "allowed_changes": ["skills/electron-ui-verifier/SKILL.md", "skills/electron-ui-verifier/agents/openai.yaml", "skills/electron-ui-verifier/references/**", "skills/electron-ui-verifier/assets/**", "skills/electron-ui-verifier/requirements*.txt", "skills/electron-ui-verifier/scripts/ev_knowledge.py", "skills/electron-ui-verifier/scripts/ev_suggest.py", "skills/electron-ui-verifier/scripts/ev_assets.py", "skills/electron-ui-verifier/scripts/ev_asset_extract.py", "skills/electron-ui-verifier/scripts/ev_asset_runner.py", "skills/electron-ui-verifier/scripts/ev_export_workflow.py", "skills/electron-ui-verifier/scripts/electron_verifier/**", "skills/electron-ui-verifier/tests/**", "evals/electron-ui-verifier/**", "README.md", "CHANGELOG.md", ".gitignore"],
+      "forbidden_changes": ["VideoForensic/Termous 业务词进入生产检索", "无关 recent action 补齐", "未绑定占位符执行", "vector DB/embedding/LLM service", "每任务强制读取全部 references", "v1/v2 并行入口"],
+      "entry_conditions": ["STG-04 完成", "canonical/index schema 稳定", "retrieval positive/negative corpus 已由 fixture 固定"],
+      "exit_conditions": ["retrieval quality 与 300/10k performance gates 通过", "参数和状态兼容 composition tests 通过", "SKILL/refs/assets/help/metadata/requirements 一致且 quick_validate/eval 通过"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-06",
+      "title": "真实应用验收、跨平台准备与最终审查",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**", ".github/workflows/electron-ui-verifier.yml", "README.md", "CHANGELOG.md", ".gitignore", ".harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/artifacts/**", ".harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/**"],
+      "forbidden_changes": ["Termous 安装目录/默认 profile/真实凭据", "创建主机/连接 SSH/端口转发写操作", "无 fingerprint 的 live knowledge reset", "远端 CI/push 未授权", "未授权 commit", "修改批准后的 plan/contract/artifacts"],
+      "entry_conditions": ["STG-05 完成", "全部 required validation 可运行", "worktree 变更仅位于批准范围", "GUI/elevated Termous smoke 授权已确认"],
+      "exit_conditions": ["全部 required gates 和 final review 通过", "Termous read-only smoke 10/10 screenshot、stale/ambiguity/cleanup 通过", "live knowledge/profile 未污染且 owner-empty", "若 VAL-12 未运行则明确记录 residual risk；获得 commit 授权时仅最终一次 git commit -F"],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B -m unittest discover -s skills/electron-ui-verifier/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/unit-component-tests.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-01", "AC-13", "AC-14", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B evals/electron-ui-verifier/run_evals.py --work-dir .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/evals",
+      "evidence_path": "artifacts/validation/skill-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-10", "AC-11", "AC-12", "NFR-02", "NFR-04", "NFR-06"],
+      "command": "python -X utf8 -B evals/electron-ui-verifier/run_retrieval_benchmark.py --work-dir .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/retrieval",
+      "evidence_path": "artifacts/validation/retrieval-benchmark.json"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-06", "AC-07", "AC-12", "NFR-01", "NFR-02", "NFR-04", "NFR-06"],
+      "command": "python -X utf8 -B evals/electron-ui-verifier/run_performance.py --work-dir .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/performance",
+      "evidence_path": "artifacts/validation/performance.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-05", "AC-07", "AC-08", "AC-09", "AC-11", "AC-13", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B evals/electron-ui-verifier/run_static_checks.py",
+      "evidence_path": "artifacts/validation/static-checks.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "other",
+      "required": true,
+      "covers": ["AC-13", "AC-14", "NFR-05"],
+      "command": "使用 skill-creator quick_validate.py 校验 skills/electron-ui-verifier，并记录实际 helper 路径与输出",
+      "evidence_path": "artifacts/validation/skill-validation.txt"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "build",
+      "required": true,
+      "covers": ["AC-02", "AC-13", "AC-14", "NFR-03", "NFR-04", "NFR-07"],
+      "command": "在 task tmp fresh venv 安装 locked requirements，运行 ev_check_env.py --json、SQLite journal guard 和 package import smoke",
+      "evidence_path": "artifacts/validation/fresh-env.txt"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-06", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-06", "NFR-07"],
+      "command": "python -X utf8 -B skills/electron-ui-verifier/tests/run_process_manager_smoke.py --workspace .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/pm --output .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/artifacts/validation/process-manager-smoke.json",
+      "evidence_path": "artifacts/validation/process-manager-smoke.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "manual",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-06"],
+      "command": "在 GUI/elevated 授权后运行 run_termous_smoke.py --exe D:/SoftWare/Termous/Termous.exe --isolated-profile .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/termous-profile --no-learn，并验证截图 P95、歧义、stale session、report/pending 和 owner-empty cleanup",
+      "evidence_path": "artifacts/validation/termous-smoke.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-08", "AC-09", "NFR-01", "NFR-03", "NFR-04", "NFR-06"],
+      "command": "python -X utf8 -B evals/electron-ui-verifier/run_knowledge_reset_regression.py --work-dir .harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/tmp/knowledge-reset --deny-unconfirmed-live-reset",
+      "evidence_path": "artifacts/validation/knowledge-reset.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "按 ART-05 checklist 执行 architecture/security/data/retrieval/test/docs review、git diff --check、scope/tree 和 process cleanup 复核",
+      "evidence_path": "artifacts/reviews/final-code-review.md"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "smoke",
+      "required": false,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "用户授权 push 后运行 .github/workflows/electron-ui-verifier.yml 的 windows-latest、ubuntu-latest、macos-latest fixture Chromium/CDP matrix；本任务不自行 push 或触发远端 Actions",
+      "evidence_path": "artifacts/validation/platform-matrix.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02", "ART-03", "ART-04", "ART-05"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "恢复或新增 raw WebSocket/CDP driver、第二 automation backend、native OS automation 或 verifier-owned Electron launcher",
+    "引入 vector database、embedding/LLM service、外部 telemetry、后台 broker 或未列入 contract 的第三方运行依赖",
+    "改变 loopback/remote CDP、token/DACL、profile/redaction、resource limit、action retry 或 postcondition 安全边界",
+    "改变 canonical truth/derived index、旧知识拒绝策略、retired-root 保留、knowledge reset fingerprint 或删除策略",
+    "修改 process-manager、planner/executor、其它 skill、Stage DAG、required validation、公共 CLI/schema/envelope 或依赖范围",
+    "把 Termous 验收扩展为创建主机/凭据、SSH/端口转发连接、默认 profile/安装目录写入，或需要远端 CI/push/commit 而未获授权",
+    "批准后的 execution-plan、plan-contract 或 approval-included artifact 需要修改"
+  ],
+  "stop_conditions": [
+    "用户要求暂停、撤回批准或改变目标",
+    "出现 reapproval trigger、未批准 external write/elevated tool/commit/push 或 Termous/profile 边界无法证明",
+    "Playwright CDP 主流程不能满足 screenshot/locator/session contract，且只能通过新增 backend 才能继续",
+    "required validation 在有界修复尝试后仍失败，或 retrieval/performance/knowledge-reset 数据不能闭合",
+    "发现敏感凭据/profile 泄露、无关进程可能被终止、canonical 数据可能损坏或证据可能被伪造"
+  ]
+}

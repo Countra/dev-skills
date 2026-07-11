@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/knowledge.schema.json",
+  "title": "Canonical approved verifier asset",
+  "type": "object",
+  "required": ["schemaVersion", "format", "assetId", "kind", "appId", "goal", "aliases", "status", "payload", "evidence"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "format": {"const": "electron-verifier-canonical"},
+    "assetId": {"type": "string", "pattern": "^[a-z]+-[0-9a-f]{24,64}$"},
+    "kind": {"enum": ["action", "workflow"]},
+    "appId": {"type": "string", "minLength": 1},
+    "status": {"const": "approved"},
+    "payload": {"type": "object"},
+    "goal": {"type": "string", "minLength": 1},
+    "aliases": {"type": "array", "items": {"type": "string"}},
+    "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
+    "createdAt": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,54 @@
+name: Electron UI Verifier
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-cdp:
+    name: ${{ matrix.os }} public contract and CDP lifecycle
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      EV_TEST_ROOT: ${{ runner.temp }}/electron-verifier-unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: skills/electron-ui-verifier/requirements.txt
+      - name: Install locked runtime
+        run: python -m pip install -r skills/electron-ui-verifier/requirements.txt
+      - name: Install Chromium and Linux dependencies
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps chromium
+      - name: Install Chromium
+        if: runner.os != 'Linux'
+        run: python -m playwright install chromium
+      - name: Unit and component tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/electron-ui-verifier/tests -p "test_*.py" -v
+      - name: Static contract
+        run: python -u -X utf8 -B evals/electron-ui-verifier/run_static_checks.py
+      - name: Fixture CDP lifecycle
+        run: >-
+          python -u -X utf8 -B skills/electron-ui-verifier/tests/run_fixture_cdp_smoke.py
+          --work-dir "${{ runner.temp }}/electron-verifier-fixture"
+          --output "${{ runner.temp }}/electron-verifier-fixture-result.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: electron-ui-verifier-${{ matrix.os }}
+          path: ${{ runner.temp }}/electron-verifier-fixture-result.json
+          if-no-files-found: warn

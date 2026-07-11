@@ -1,49 +1,30 @@
 {
-  "readiness": [
-    {
-      "waitText": {
-        "text": "历史记录",
-        "timeoutMs": 30000
-      }
-    }
-  ],
+  "schemaVersion": 1,
+  "appId": "sample-app",
+  "goal": "保存设置并确认结果",
   "steps": [
     {
-      "id": "open-case",
-      "clickText": {
-        "text": "查看"
-      }
+      "id": "save-settings",
+      "type": "click",
+      "locator": {
+        "role": "button",
+        "accessibleName": "Save"
+      },
+      "postconditions": [
+        {
+          "type": "visible",
+          "locator": {
+            "text": "Saved"
+          }
+        }
+      ]
     },
     {
-      "id": "wait-result",
-      "waitText": {
-        "text": "${result_title}"
-      }
-    },
-    {
-      "id": "result-shot",
-      "screenshot": "result.png",
-      "continueOnFailure": true
-    }
-  ],
-  "metadata": {
-    "source": "knowledge.workflow_asset",
-    "workflowAssetId": "workflow-example",
-    "appId": "example-app",
-    "goal": "打开案件并采集结果页证据",
-    "status": "candidate",
-    "riskFlags": [
-      "optionalSkippedStep"
-    ],
-    "evidenceRefs": [
-      "evidence-example"
-    ],
-    "requiredParams": {
-      "result_title": {
-        "type": "string",
-        "required": true,
-        "reason": "businessText"
+      "id": "saved-state",
+      "type": "screenshot",
+      "options": {
+        "label": "saved-state"
       }
     }
-  }
+  ]
 }

@@ -1,3 +1,4 @@
-display_name: Electron UI 验证器
-short_description: 验证 Electron UI 和诊断信息
-default_prompt: 验证这个 Electron 应用的 UI 流程，按需收集截图、DOM、console、异常、网络和结构化报告。
+interface:
+  display_name: "Electron UI Verifier"
+  short_description: "验证 Electron UI、诊断运行状态并沉淀可信证据"
+  default_prompt: "Use $electron-ui-verifier to verify this Electron UI flow and return evidence-backed findings."
