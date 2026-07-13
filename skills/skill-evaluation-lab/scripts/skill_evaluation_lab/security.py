@@ -35,6 +35,7 @@ SENSITIVE_KEY = re.compile(
     re.IGNORECASE,
 )
 REDACTED = "[REDACTED]"
+MANAGED_CODEX_PERMISSION_PROFILE = ":workspace"
 
 
 def is_sensitive_key(name: str) -> bool:
@@ -66,6 +67,23 @@ def build_child_env(
     result.setdefault("PYTHONUTF8", "1")
     result.setdefault("PYTHONDONTWRITEBYTECODE", "1")
     return result
+
+
+def build_codex_child_env(
+    source: Mapping[str, str] | None = None,
+) -> tuple[dict[str, str], str | None]:
+    """仅向 Codex CLI 透传宿主提供的受管 workspace 权限标识。"""
+    source_env = os.environ if source is None else source
+    profile = source_env.get("CODEX_PERMISSION_PROFILE")
+    if profile == MANAGED_CODEX_PERMISSION_PROFILE:
+        return (
+            build_child_env(
+                source_env,
+                extra={"CODEX_PERMISSION_PROFILE": MANAGED_CODEX_PERMISSION_PROFILE},
+            ),
+            MANAGED_CODEX_PERMISSION_PROFILE,
+        )
+    return build_child_env(source_env), None
 
 
 def sensitive_values(source: Mapping[str, str] | None = None) -> tuple[str, ...]:

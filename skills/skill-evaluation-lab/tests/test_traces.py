@@ -6,8 +6,8 @@ import json
 import unittest
 
 from _helpers import temporary_workspace
-from skill_evaluation_lab.errors import ExecutionError
-from skill_evaluation_lab.traces import load_structured_final, parse_jsonl_trace
+from skill_evaluation_lab.errors import ExecutionError, UnsupportedError
+from skill_evaluation_lab.traces import load_structured_final, parse_jsonl_trace, require_supported_trace
 
 
 class TraceTests(unittest.TestCase):
@@ -24,6 +24,27 @@ class TraceTests(unittest.TestCase):
             self.assertEqual(summary["event_count"], 3)
             self.assertEqual(summary["unknown_event_types"], ["future.event"])
             self.assertEqual(summary["usage"]["input_tokens"], 10)
+            with self.assertRaisesRegex(UnsupportedError, "未知事件"):
+                require_supported_trace(summary, return_code=0)
+
+    def test_success_requires_one_completed_turn(self) -> None:
+        with self.assertRaisesRegex(ExecutionError, "turn.completed"):
+            require_supported_trace(
+                {
+                    "event_count": 2,
+                    "event_types": {"thread.started": 1, "turn.started": 1},
+                    "unknown_event_types": [],
+                },
+                return_code=0,
+            )
+        require_supported_trace(
+            {
+                "event_count": 1,
+                "event_types": {"turn.failed": 1},
+                "unknown_event_types": [],
+            },
+            return_code=1,
+        )
 
     def test_rejects_invalid_jsonl_without_guessing(self) -> None:
         with temporary_workspace() as root:

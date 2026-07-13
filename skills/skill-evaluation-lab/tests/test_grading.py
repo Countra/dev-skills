@@ -70,6 +70,7 @@ def raw_record(variant: str, *, errors: int = 0, failures: int = 0) -> dict[str,
                 "case_id": "behavior-case",
                 "attempt": 1,
                 "variant": variant,
+                **({"skill_tree_sha256": "d" * 64} if variant == "candidate" else {}),
             },
             "observation": {},
         },
@@ -118,6 +119,8 @@ class DeterministicGradingTests(unittest.TestCase):
         )
 
         self.assertTrue(grade["records"][0]["deterministic"]["passed"])
+        self.assertEqual((grade["run_state"], grade["run_status"]), ("completed", "FAIL"))
+        self.assertIsNone(grade["run_error"])
         self.assertEqual(grade["records"][0]["human_feedback"]["label"], "pass")
         self.assertEqual(grade["records"][1]["deterministic"]["failure_type"], "assertion_error")
         self.assertIsNone(grade["records"][1]["human_feedback"])
@@ -187,6 +190,20 @@ class DeterministicGradingTests(unittest.TestCase):
         )
         self.assertFalse(grade["records"][0]["deterministic"]["passed"])
         self.assertEqual(grade["records"][0]["deterministic"]["failure_type"], "trigger_mismatch")
+
+    def test_grade_rejects_judge_authority_inconsistent_with_calibration(self) -> None:
+        manifest = run_manifest([raw_record("candidate"), raw_record("baseline")])
+        with self.assertRaisesRegex(SuiteError, "swap/calibration"):
+            grade_manifest(
+                manifest,
+                judge_result={
+                    "status": "candidate",
+                    "authority": "advisory",
+                    "calibrated": True,
+                    "translated_winners": ["candidate", "candidate"],
+                    "mean_confidence": 0.9,
+                },
+            )
 
 
 class BlindJudgeTests(unittest.TestCase):

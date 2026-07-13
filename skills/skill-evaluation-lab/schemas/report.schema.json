@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/report.schema.json",
+  "title": "Skill Evaluation Lab Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "suite_id", "run_id", "fingerprint", "run", "quality", "trigger", "case_results", "paired_delta", "cost", "failure_taxonomy", "human_feedback", "judge", "gates", "gate_decisions", "uncertainty", "provenance"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "suite_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "fingerprint": {"$ref": "#/$defs/sha256"},
+    "run": {"$ref": "#/$defs/run"},
+    "quality": {"type": "object", "additionalProperties": {"$ref": "#/$defs/qualitySummary"}},
+    "trigger": {"$ref": "#/$defs/trigger"},
+    "case_results": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/caseResult"}},
+    "paired_delta": {"$ref": "#/$defs/pairedDelta"},
+    "cost": {"$ref": "#/$defs/cost"},
+    "failure_taxonomy": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "human_feedback": {"$ref": "#/$defs/humanFeedback"},
+    "judge": {"$ref": "#/$defs/judge"},
+    "gates": {"$ref": "#/$defs/gates"},
+    "gate_decisions": {"$ref": "#/$defs/gateDecisions"},
+    "uncertainty": {"$ref": "#/$defs/uncertainty"},
+    "provenance": {"$ref": "#/$defs/provenance"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "nullableNumber": {"type": ["number", "null"]},
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tree_sha256", "file_count"],
+      "properties": {"tree_sha256": {"$ref": "#/$defs/sha256"}, "file_count": {"type": "integer", "minimum": 1}}
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "outcome"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "outcome": {"type": "string", "minLength": 1},
+        "path": {"type": "string"},
+        "guidance": {"type": "string"}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "status", "error"],
+      "properties": {
+        "state": {"enum": ["completed", "failed"]},
+        "status": {"enum": ["PASS", "FAIL", "ERROR"]},
+        "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]}
+      }
+    },
+    "interval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["low", "high", "confidence", "available"],
+      "properties": {
+        "low": {"$ref": "#/$defs/nullableNumber"},
+        "high": {"$ref": "#/$defs/nullableNumber"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "available": {"type": "boolean"}
+      }
+    },
+    "modeSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "passed", "pass_rate", "wilson_interval"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 0},
+        "passed": {"type": "integer", "minimum": 0},
+        "pass_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "wilson_interval": {"$ref": "#/$defs/interval"}
+      }
+    },
+    "qualitySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "passed", "pass_rate", "wilson_interval", "by_mode"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 0},
+        "passed": {"type": "integer", "minimum": 0},
+        "pass_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "wilson_interval": {"$ref": "#/$defs/interval"},
+        "by_mode": {"type": "object", "additionalProperties": {"$ref": "#/$defs/modeSummary"}}
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["n", "valid_n", "invalid_n", "activated", "activation_rate", "true_positive_rate", "true_negative_rate", "false_positive_rate", "false_negative_rate", "confusion_matrix", "invalid_records", "available"],
+      "properties": {
+        "n": {"type": "integer", "minimum": 0}, "valid_n": {"type": "integer", "minimum": 0},
+        "invalid_n": {"type": "integer", "minimum": 0}, "activated": {"type": "integer", "minimum": 0},
+        "activation_rate": {"$ref": "#/$defs/nullableNumber"}, "true_positive_rate": {"$ref": "#/$defs/nullableNumber"},
+        "true_negative_rate": {"$ref": "#/$defs/nullableNumber"}, "false_positive_rate": {"$ref": "#/$defs/nullableNumber"},
+        "false_negative_rate": {"$ref": "#/$defs/nullableNumber"},
+        "confusion_matrix": {
+          "type": "object", "additionalProperties": false,
+          "required": ["true_positive", "false_positive", "true_negative", "false_negative"],
+          "properties": {"true_positive": {"type": "integer", "minimum": 0}, "false_positive": {"type": "integer", "minimum": 0}, "true_negative": {"type": "integer", "minimum": 0}, "false_negative": {"type": "integer", "minimum": 0}}
+        },
+        "invalid_records": {"type": "array", "items": {"type": "string"}}, "available": {"type": "boolean"}
+      }
+    },
+    "caseResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["record_key", "case_id", "mode", "split", "variant", "repetition", "status", "passed", "failure_type", "assertion_counts", "trigger", "duration_seconds", "human_label"],
+      "properties": {
+        "record_key": {"type": "string"}, "case_id": {"type": "string"}, "mode": {"enum": ["trigger", "behavior"]},
+        "split": {"enum": ["train", "validation", "holdout"]}, "variant": {"enum": ["candidate", "baseline"]},
+        "repetition": {"type": "integer", "minimum": 1}, "status": {"enum": ["PASS", "FAIL"]}, "passed": {"type": "boolean"},
+        "failure_type": {"type": ["string", "null"]}, "assertion_counts": {"type": ["object", "null"]},
+        "trigger": {"type": ["object", "null"]}, "duration_seconds": {"$ref": "#/$defs/nullableNumber"},
+        "human_label": {"type": ["string", "null"]}
+      }
+    },
+    "numericSummary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["count", "min", "max", "mean", "median", "p95", "sample_stdev", "available"],
+      "properties": {"count": {"type": "integer", "minimum": 0}, "min": {"$ref": "#/$defs/nullableNumber"}, "max": {"$ref": "#/$defs/nullableNumber"}, "mean": {"$ref": "#/$defs/nullableNumber"}, "median": {"$ref": "#/$defs/nullableNumber"}, "p95": {"$ref": "#/$defs/nullableNumber"}, "sample_stdev": {"$ref": "#/$defs/nullableNumber"}, "available": {"type": "boolean"}}
+    },
+    "pairedDelta": {
+      "type": "object", "additionalProperties": false,
+      "required": ["n_pairs", "wins", "losses", "ties", "delta", "low_information", "excluded_pairs"],
+      "properties": {
+        "n_pairs": {"type": "integer", "minimum": 0}, "wins": {"type": "integer", "minimum": 0}, "losses": {"type": "integer", "minimum": 0}, "ties": {"type": "integer", "minimum": 0},
+        "delta": {"$ref": "#/$defs/numericSummary"}, "low_information": {"type": "boolean"},
+        "excluded_pairs": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["pair_key", "reasons"], "properties": {"pair_key": {"type": "string"}, "reasons": {"type": "array", "items": {"type": "string"}}}}}
+      }
+    },
+    "tokenTotals": {"type": "object", "additionalProperties": false, "properties": {"input_tokens": {"type": "integer", "minimum": 0}, "cached_input_tokens": {"type": "integer", "minimum": 0}, "output_tokens": {"type": "integer", "minimum": 0}, "reasoning_output_tokens": {"type": "integer", "minimum": 0}}},
+    "tokenAvailability": {"type": "object", "additionalProperties": false, "required": ["sample_count", "available", "complete"], "properties": {"sample_count": {"type": "integer", "minimum": 0}, "available": {"type": "boolean"}, "complete": {"type": "boolean"}}},
+    "cost": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tokens", "token_availability", "tokens_by_variant", "usage_records", "record_count", "duration_seconds"],
+      "properties": {
+        "tokens": {"$ref": "#/$defs/tokenTotals"},
+        "token_availability": {"type": "object", "additionalProperties": false, "required": ["input_tokens", "cached_input_tokens", "output_tokens", "reasoning_output_tokens"], "properties": {"input_tokens": {"$ref": "#/$defs/tokenAvailability"}, "cached_input_tokens": {"$ref": "#/$defs/tokenAvailability"}, "output_tokens": {"$ref": "#/$defs/tokenAvailability"}, "reasoning_output_tokens": {"$ref": "#/$defs/tokenAvailability"}}},
+        "tokens_by_variant": {"type": "object", "additionalProperties": {"$ref": "#/$defs/tokenTotals"}},
+        "usage_records": {"type": "integer", "minimum": 0}, "record_count": {"type": "integer", "minimum": 0}, "duration_seconds": {"$ref": "#/$defs/numericSummary"}
+      }
+    },
+    "humanFeedback": {"type": "object", "additionalProperties": false, "required": ["n", "labels"], "properties": {"n": {"type": "integer", "minimum": 0}, "labels": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}}},
+    "judge": {"oneOf": [{"type": "object", "additionalProperties": false, "required": ["status", "authority"], "properties": {"status": {"const": "disabled"}, "authority": {"const": "none"}}}, {"type": "object", "additionalProperties": false, "required": ["status", "authority", "calibrated", "translated_winners", "mean_confidence"], "properties": {"status": {"enum": ["candidate", "baseline", "tie", "inconclusive"]}, "authority": {"enum": ["decision", "advisory"]}, "calibrated": {"type": "boolean"}, "translated_winners": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"enum": ["candidate", "baseline", "tie"]}}, "mean_confidence": {"type": "number", "minimum": 0, "maximum": 1}}}]},
+    "gates": {"type": "object", "additionalProperties": false, "required": ["trigger_threshold", "required_case_pass_rate", "judge_required"], "properties": {"trigger_threshold": {"type": "number", "minimum": 0, "maximum": 1}, "required_case_pass_rate": {"type": "number", "minimum": 0, "maximum": 1}, "judge_required": {"type": "boolean"}}},
+    "gateDecision": {"type": "object", "additionalProperties": false, "required": ["name", "required", "available", "status", "threshold", "actual", "sample_count", "passed", "reason"], "properties": {"name": {"type": "string"}, "required": {"type": "boolean"}, "available": {"type": "boolean"}, "status": {"type": "string"}, "threshold": {"$ref": "#/$defs/nullableNumber"}, "actual": {}, "sample_count": {"type": ["integer", "null"]}, "passed": {"type": ["boolean", "null"]}, "reason": {"type": "string"}}},
+    "gateDecisions": {"type": "object", "additionalProperties": false, "required": ["all_required_passed", "all_required_available", "required_gate_count", "decisions"], "properties": {"all_required_passed": {"type": "boolean"}, "all_required_available": {"type": "boolean"}, "required_gate_count": {"type": "integer", "minimum": 0}, "decisions": {"type": "array", "items": {"$ref": "#/$defs/gateDecision"}}}},
+    "uncertainty": {"type": "object", "additionalProperties": false, "required": ["small_sample", "paired_low_information", "duration_available", "token_usage_complete", "judge_advisory_only", "gate_evidence_complete", "run_completed", "run_status_consistent"], "properties": {"small_sample": {"type": "boolean"}, "paired_low_information": {"type": "boolean"}, "duration_available": {"type": "boolean"}, "token_usage_complete": {"type": "boolean"}, "judge_advisory_only": {"type": "boolean"}, "gate_evidence_complete": {"type": "boolean"}, "run_completed": {"type": "boolean"}, "run_status_consistent": {"type": "boolean"}}},
+    "sourceIdentity": {"type": "object", "additionalProperties": false, "required": ["candidate", "baseline"], "properties": {"candidate": {"$ref": "#/$defs/identity"}, "baseline": {"oneOf": [{"const": "none"}, {"$ref": "#/$defs/identity"}]}}},
+    "executionGroup": {"type": "object", "additionalProperties": false, "required": ["fingerprint", "lab_tree_sha256", "adapter", "cli_version", "model", "sandbox", "network_access", "permission_profile", "record_count"], "properties": {"fingerprint": {"$ref": "#/$defs/sha256"}, "lab_tree_sha256": {"$ref": "#/$defs/sha256"}, "adapter": {"type": "string"}, "cli_version": {"type": ["string", "null"]}, "model": {"type": "string"}, "sandbox": {"type": "string"}, "network_access": {"type": "boolean"}, "permission_profile": {"type": ["string", "null"]}, "record_count": {"type": "integer", "minimum": 1}}},
+    "provenance": {"type": "object", "additionalProperties": false, "required": ["fingerprint", "source_identity", "lab_identity", "grader_identity", "record_count", "execution_groups"], "properties": {"fingerprint": {"$ref": "#/$defs/sha256"}, "source_identity": {"$ref": "#/$defs/sourceIdentity"}, "lab_identity": {"$ref": "#/$defs/identity"}, "grader_identity": {"$ref": "#/$defs/identity"}, "record_count": {"type": "integer", "minimum": 0}, "execution_groups": {"type": "array", "items": {"$ref": "#/$defs/executionGroup"}}}}
+  }
+}

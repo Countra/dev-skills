@@ -101,7 +101,7 @@
 - `se_plan.py` 在模型调用前展开矩阵并绑定 source/lab implementation hash；真实 Codex run 必须获得用户对当前 fingerprint 和有限预算的明确授权。
 - trigger 使用临时 snapshot nonce observation；behavior 在独立 Git workspace 中成对执行，oracle/assertion 不进入 agent prompt。
 - deterministic grade 优先；human feedback 独立，blind/swap judge 未校准时仅 advisory，位置冲突为 inconclusive。
-- JSON/Markdown 报告逐项执行 gate，并公开样本量、Wilson 区间、paired delta、token/duration 可用性、failure taxonomy 与 provenance，不生成不透明总分。
+- JSON/Markdown 报告先执行强制 `run_completed` gate，再评估质量与 judge 门禁；同时公开样本量、Wilson 区间、paired delta、token/duration 可用性、failure taxonomy 与 provenance，不生成不透明总分。
 - ordinary CI 只运行 fake/offline pipeline；live model smoke 是显式、独立且有预算的入口。
 
 ## Repository Layout

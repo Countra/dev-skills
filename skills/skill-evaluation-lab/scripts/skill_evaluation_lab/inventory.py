@@ -81,10 +81,14 @@ def scan_repository(root: Path) -> dict[str, Any]:
     skills_root = root / "skills"
     evals_root = root / "evals"
     workflows_root = root / ".github" / "workflows"
+    workflow_files = (
+        sorted(path for path in workflows_root.iterdir() if path.suffix.lower() in {".yml", ".yaml"})
+        if workflows_root.is_dir()
+        else []
+    )
     workflow_text = "\n".join(
-        path.read_text(encoding="utf-8", errors="replace")
-        for path in sorted(workflows_root.glob("*.yml"))
-    ) if workflows_root.is_dir() else ""
+        path.read_text(encoding="utf-8", errors="replace") for path in workflow_files
+    )
     skills: list[dict[str, Any]] = []
     if skills_root.is_dir():
         for skill_dir in sorted(path for path in skills_root.iterdir() if path.is_dir()):
@@ -104,7 +108,7 @@ def scan_repository(root: Path) -> dict[str, Any]:
                     "test_count": len(tests),
                     "has_openai_metadata": (skill_dir / "agents" / "openai.yaml").is_file(),
                     "has_eval_dir": eval_dir.is_dir(),
-                    "eval_file_count": len(list(eval_dir.rglob("*"))) if eval_dir.is_dir() else 0,
+                    "eval_file_count": sum(path.is_file() for path in eval_dir.rglob("*")) if eval_dir.is_dir() else 0,
                     "ci_referenced": skill_dir.name in workflow_text,
                 }
             )

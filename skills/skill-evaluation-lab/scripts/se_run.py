@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import subprocess
 import time
 from pathlib import Path
@@ -28,9 +27,9 @@ from skill_evaluation_lab.errors import AuthorizationError, ExecutionError, LabE
 from skill_evaluation_lab.isolation import CaseWorkspace, RunLayout, create_case_workspace, create_run_layout
 from skill_evaluation_lab.output import render_json
 from skill_evaluation_lab.runners import FakeRunner, RunRequest, RunResult, validate_live_request
-from skill_evaluation_lab.security import build_child_env
+from skill_evaluation_lab.security import build_codex_child_env
 from skill_evaluation_lab.snapshots import build_tree_manifest, create_snapshot, verify_tree
-from skill_evaluation_lab.traces import load_structured_final, parse_jsonl_trace
+from skill_evaluation_lab.traces import load_structured_final, parse_jsonl_trace, require_supported_trace
 
 
 def _write_json(path: Path, value: Any) -> None:
@@ -52,10 +51,8 @@ def _write_behavior_schema(path: Path) -> None:
 
 def _behavior_child_env() -> tuple[dict[str, str], str]:
     """仅透传桌面受管 workspace profile，不接受任意权限配置。"""
-    profile = os.environ.get("CODEX_PERMISSION_PROFILE")
-    if profile == ":workspace":
-        return build_child_env(extra={"CODEX_PERMISSION_PROFILE": profile}), profile
-    return build_child_env(), "cli-workspace-write"
+    environment, profile = build_codex_child_env()
+    return environment, profile or "cli-workspace-write"
 
 
 def _run_behavior_bounded(
@@ -165,42 +162,53 @@ class BehaviorCodexRunner:
             ]
         )
         child_env, permission_profile = _behavior_child_env()
-        started_at = time.monotonic()
-        return_code = _run_behavior_bounded(
-            argv,
-            cwd=request.workspace,
-            stdout_path=trace_path,
-            stderr_path=stderr_path,
-            timeout_seconds=min(request.timeout_seconds, max(1, int(budget.remaining_seconds()))),
-            environment=child_env,
-        )
-        trace = parse_jsonl_trace(trace_path)
-        final = load_structured_final(final_path) if final_path.exists() else {}
-        outcome = "passed" if return_code == 0 and not trace["failed_event_seen"] and final else "failed"
-        return RunResult(
-            outcome=outcome,
-            return_code=return_code,
-            final=final,
-            trace_path=trace_path,
-            stderr_path=stderr_path,
-            duration_seconds=max(0.0, time.monotonic() - started_at),
-            usage=dict(trace["usage"]),
-            provenance={
-                "adapter": "codex-cli",
-                "cli_version": cli_version,
-                "model": request.model,
-                "sandbox": request.sandbox,
-                "permission_profile": permission_profile,
-                "network_access": False,
-                "fingerprint": request.fingerprint,
-                "lab_tree_sha256": request.lab_tree_sha256,
-                "prompt_sha256": hashlib.sha256(request.prompt.encode("utf-8")).hexdigest(),
-                "case_id": request.case_id,
-                "attempt": request.attempt,
-                "variant": request.variant,
-                "trace": trace,
-            },
-        )
+        visible_manifest = build_tree_manifest(request.skill_path) if request.skill_path is not None else None
+        try:
+            started_at = time.monotonic()
+            return_code = _run_behavior_bounded(
+                argv,
+                cwd=request.workspace,
+                stdout_path=trace_path,
+                stderr_path=stderr_path,
+                timeout_seconds=min(request.timeout_seconds, max(1, int(budget.remaining_seconds()))),
+                environment=child_env,
+            )
+            trace = parse_jsonl_trace(trace_path)
+            require_supported_trace(trace, return_code=return_code)
+            final = load_structured_final(final_path) if return_code == 0 or final_path.exists() else {}
+            outcome = "passed" if return_code == 0 and not trace["failed_event_seen"] and final else "failed"
+            return RunResult(
+                outcome=outcome,
+                return_code=return_code,
+                final=final,
+                trace_path=trace_path,
+                stderr_path=stderr_path,
+                duration_seconds=max(0.0, time.monotonic() - started_at),
+                usage=dict(trace["usage"]),
+                provenance={
+                    "adapter": "codex-cli",
+                    "cli_version": cli_version,
+                    "model": request.model,
+                    "sandbox": request.sandbox,
+                    "permission_profile": permission_profile,
+                    "network_access": False,
+                    "fingerprint": request.fingerprint,
+                    "lab_tree_sha256": request.lab_tree_sha256,
+                    "prompt_sha256": hashlib.sha256(request.prompt.encode("utf-8")).hexdigest(),
+                    "case_id": request.case_id,
+                    "attempt": request.attempt,
+                    "variant": request.variant,
+                    **(
+                        {"skill_tree_sha256": visible_manifest["tree_sha256"]}
+                        if visible_manifest is not None
+                        else {}
+                    ),
+                    "trace": trace,
+                },
+            )
+        finally:
+            if request.skill_path is not None and visible_manifest is not None:
+                verify_tree(request.skill_path, visible_manifest)
 
 
 def _snapshot_sources(suite: SuiteDocument, snapshot_root: Path) -> tuple[dict[str, Path | None], dict[str, Any]]:

@@ -58,14 +58,18 @@ class BuiltinAssertionTests(unittest.TestCase):
 
             checks = [
                 assertion("changed", "path_changed", path="input.txt"),
+                assertion("portable", "path_changed", path=r"outputs\result.txt"),
                 assertion("unchanged", "path_unchanged", path="outputs"),
-                assertion("allow", "diff_allows_only", allow=["input.txt", "outputs/**"]),
+                assertion("allow", "diff_allows_only", allow=["input.txt", r"outputs\**"]),
                 assertion("deny", "diff_excludes", deny=["secrets/**"]),
             ]
             results = evaluate_assertions(checks, workspace=workspace)
 
-        self.assertEqual([item["status"] for item in results["results"]], ["PASS", "FAIL", "PASS", "PASS"])
-        self.assertEqual(results["results"][1]["evidence"]["changed"], True)
+        self.assertEqual(
+            [item["status"] for item in results["results"]],
+            ["PASS", "PASS", "FAIL", "PASS", "PASS"],
+        )
+        self.assertEqual(results["results"][2]["evidence"]["changed"], True)
 
     def test_invalid_contract_shape_and_path_escape_are_errors(self) -> None:
         with temporary_workspace() as workspace:
@@ -78,8 +82,27 @@ class BuiltinAssertionTests(unittest.TestCase):
                 workspace=workspace,
             )
             unknown = evaluate_assertion(assertion("unknown", "arbitrary-shell"), workspace=workspace)
+            summary = evaluate_assertions(
+                [assertion("unknown", "arbitrary-shell")],
+                workspace=workspace,
+            )
 
         self.assertEqual([malformed.status, escaped.status, unknown.status], ["ERROR", "ERROR", "ERROR"])
+        self.assertEqual(summary["status"], "ERROR")
+
+    def test_large_file_evidence_skips_unbounded_hashing(self) -> None:
+        with temporary_workspace() as workspace:
+            path = workspace / "large.bin"
+            path.write_bytes(b"x" * 64)
+            with mock.patch("skill_evaluation_lab.assertions.MAX_ASSERTION_FILE_BYTES", 32):
+                result = evaluate_assertion(
+                    assertion("large", "file_exists", path="large.bin"),
+                    workspace=workspace,
+                )
+
+        self.assertEqual(result.status, "PASS")
+        self.assertFalse(result.evidence["sha256_available"])
+        self.assertNotIn("sha256", result.evidence)
 
     def test_rename_evidence_contains_old_and_new_paths(self) -> None:
         with temporary_workspace() as workspace:
@@ -93,6 +116,20 @@ class BuiltinAssertionTests(unittest.TestCase):
             )
 
         self.assertEqual(result.status, "PASS")
+
+    def test_git_status_output_limit_becomes_assertion_error(self) -> None:
+        with temporary_workspace() as workspace:
+            (workspace / "tracked.txt").write_text("before\n", encoding="utf-8")
+            initialize_git_baseline(workspace)
+            (workspace / "tracked.txt").write_text("after\n", encoding="utf-8")
+            with mock.patch("skill_evaluation_lab.assertions.MAX_GIT_STATUS_BYTES", 4):
+                result = evaluate_assertion(
+                    assertion("bounded", "path_changed", path="tracked.txt"),
+                    workspace=workspace,
+                )
+
+        self.assertEqual(result.status, "ERROR")
+        self.assertIn("大小上限", result.message)
 
 
 class TrustedVerifierTests(unittest.TestCase):
@@ -115,6 +152,23 @@ class TrustedVerifierTests(unittest.TestCase):
         self.assertEqual(denied.status, "ERROR")
         self.assertEqual(allowed.status, "PASS")
         self.assertEqual(allowed.evidence["return_code"], 0)
+
+    def test_verifier_disables_git_configuration_and_prompts(self) -> None:
+        script = (
+            "import os,sys;"
+            "ok=os.environ.get('GIT_CONFIG_NOSYSTEM')=='1' and "
+            "os.environ.get('GIT_TERMINAL_PROMPT')=='0' and "
+            "bool(os.environ.get('GIT_CONFIG_GLOBAL'));"
+            "sys.exit(0 if ok else 1)"
+        )
+        with temporary_workspace() as workspace:
+            result = evaluate_assertion(
+                assertion("git-env", "verifier_command", argv=[sys.executable, "-c", script]),
+                workspace=workspace,
+                trusted_verifier=True,
+            )
+
+        self.assertEqual(result.status, "PASS")
 
     def test_verifier_reports_nonzero_timeout_and_output_limit(self) -> None:
         with temporary_workspace() as workspace:

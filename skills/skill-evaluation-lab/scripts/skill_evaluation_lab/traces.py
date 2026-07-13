@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .errors import ExecutionError
+from .errors import ExecutionError, UnsupportedError
 
 
 KNOWN_EVENT_TYPES = {
@@ -63,6 +63,22 @@ def parse_jsonl_trace(path: Path, *, max_events: int = 10000, max_line_bytes: in
         "usage": usage,
         "failed_event_seen": failed,
     }
+
+
+def require_supported_trace(summary: dict[str, Any], *, return_code: int) -> None:
+    """确认 trace 足以证明成功或已知失败，不猜测新版事件语义。"""
+    unknown = summary.get("unknown_event_types")
+    if isinstance(unknown, list) and unknown:
+        raise UnsupportedError(
+            f"Codex JSONL 包含未知事件：{unknown[0]}",
+            outcome="unknown",
+            guidance="先升级 adapter 对该事件的解析与测试，再决定是否重跑",
+        )
+    event_types = summary.get("event_types")
+    if not isinstance(event_types, dict) or not summary.get("event_count"):
+        raise ExecutionError("Codex JSONL 没有可用事件", outcome="unknown")
+    if return_code == 0 and event_types.get("turn.completed") != 1:
+        raise ExecutionError("Codex JSONL 未能唯一证明 turn.completed", outcome="unknown")
 
 
 def load_structured_final(path: Path, *, max_bytes: int = 1024 * 1024) -> dict[str, Any]:

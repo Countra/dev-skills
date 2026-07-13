@@ -6,6 +6,7 @@ from collections import Counter
 from typing import Any
 
 from .errors import SuiteError
+from .grade_contracts import validate_grade_document
 from .metrics import cost_metrics, failure_taxonomy, paired_delta_metrics, quality_metrics, trigger_metrics
 
 
@@ -105,8 +106,38 @@ def _gate_decisions(
     records: list[dict[str, Any]],
     judge: dict[str, Any],
     gates: dict[str, Any],
+    *,
+    run_state: str,
+    run_status: str,
 ) -> dict[str, Any]:
+    run_completed = run_state == "completed"
+    expected_run_status = "PASS" if all(
+        record["deterministic"]["passed"] for record in records
+    ) else "FAIL"
+    run_status_consistent = not run_completed or run_status == expected_run_status
     decisions = [
+        {
+            "name": "run_completed",
+            "required": True,
+            "available": True,
+            "status": "passed" if run_completed else "failed",
+            "threshold": None,
+            "actual": f"{run_state}/{run_status}",
+            "sample_count": len(records),
+            "passed": run_completed,
+            "reason": "run_completed" if run_completed else "run_failed",
+        },
+        {
+            "name": "run_status_consistent",
+            "required": run_completed,
+            "available": run_completed,
+            "status": "passed" if run_status_consistent else "failed",
+            "threshold": None,
+            "actual": f"reported={run_status},deterministic={expected_run_status}",
+            "sample_count": len(records),
+            "passed": run_status_consistent if run_completed else None,
+            "reason": "status_consistent" if run_status_consistent else "status_conflict",
+        },
         _quality_gate(
             quality,
             records,
@@ -177,6 +208,7 @@ def _validated_gates(value: Any) -> dict[str, Any]:
 
 
 def build_report(graded: dict[str, Any]) -> dict[str, Any]:
+    graded = validate_grade_document(graded)
     records = graded.get("records")
     if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
         raise SuiteError("grade 文档缺少 records", path="$.records")
@@ -191,15 +223,33 @@ def build_report(graded: dict[str, Any]) -> dict[str, Any]:
         for item in records
         if isinstance(item.get("human_feedback"), dict) and item["human_feedback"].get("label")
     )
-    small_sample = any(item["n"] < 5 for item in quality.values())
+    small_sample = not quality or any(item["n"] < 5 for item in quality.values())
     judge = graded.get("judge") if isinstance(graded.get("judge"), dict) else {"status": "invalid"}
     gates = _validated_gates(graded.get("gates"))
-    gate_decisions = _gate_decisions(quality, records, judge, gates)
+    expected_run_status = "PASS" if all(
+        record["deterministic"]["passed"] for record in records
+    ) else "FAIL"
+    run_status_consistent = (
+        graded["run_state"] != "completed" or graded["run_status"] == expected_run_status
+    )
+    gate_decisions = _gate_decisions(
+        quality,
+        records,
+        judge,
+        gates,
+        run_state=graded["run_state"],
+        run_status=graded["run_status"],
+    )
     return {
         "schema_version": 1,
         "suite_id": graded.get("suite_id"),
         "run_id": graded.get("run_id"),
         "fingerprint": graded.get("fingerprint"),
+        "run": {
+            "state": graded["run_state"],
+            "status": graded["run_status"],
+            "error": graded["run_error"],
+        },
         "quality": quality,
         "trigger": trigger,
         "case_results": _case_results(records),
@@ -219,6 +269,8 @@ def build_report(graded: dict[str, Any]) -> dict[str, Any]:
             ),
             "judge_advisory_only": judge.get("authority") != "decision",
             "gate_evidence_complete": gate_decisions["all_required_available"],
+            "run_completed": graded["run_state"] == "completed",
+            "run_status_consistent": run_status_consistent,
         },
         "provenance": {
             "fingerprint": graded.get("fingerprint"),
@@ -247,12 +299,16 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- Suite: `{report.get('suite_id')}`",
         f"- Run: `{report.get('run_id')}`",
         f"- Fingerprint: `{report.get('fingerprint')}`",
+        f"- Run state: `{report['run']['state']}/{report['run']['status']}`",
         "",
         "## Quality",
         "",
         "| Variant | n | Passed | Pass rate | Wilson 95% interval |",
         "| --- | ---: | ---: | ---: | --- |",
     ]
+    run_error = report["run"].get("error")
+    if isinstance(run_error, dict):
+        lines.insert(6, f"- Run error: `{run_error.get('code')}` {run_error.get('message')}")
     for variant, value in sorted(report["quality"].items()):
         interval = value["wilson_interval"]
         interval_text = f"{_number(interval['low'])} to {_number(interval['high'])}"

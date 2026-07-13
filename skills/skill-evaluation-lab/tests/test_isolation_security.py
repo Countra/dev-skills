@@ -6,11 +6,12 @@ import os
 import stat
 import subprocess
 import unittest
+from unittest import mock
 
 from _helpers import temporary_workspace
 from skill_evaluation_lab.errors import ExecutionError, SuiteError
 from skill_evaluation_lab.isolation import create_case_workspace, create_run_layout, resolve_within
-from skill_evaluation_lab.security import REDACTED, build_child_env, redact_value
+from skill_evaluation_lab.security import REDACTED, build_child_env, build_codex_child_env, redact_value
 from skill_evaluation_lab.snapshots import build_tree_manifest, create_snapshot, verify_tree
 
 
@@ -63,6 +64,37 @@ class SnapshotTests(unittest.TestCase):
             with self.assertRaisesRegex(SuiteError, "链接"):
                 build_tree_manifest(linked)
 
+    def test_rejects_snapshot_file_over_resource_limit(self) -> None:
+        with temporary_workspace() as root:
+            source = root / "source"
+            source.mkdir()
+            (source / "large.bin").write_bytes(b"1234")
+            with mock.patch("skill_evaluation_lab.snapshots.MAX_SNAPSHOT_FILE_BYTES", 3):
+                with self.assertRaisesRegex(SuiteError, "单文件"):
+                    build_tree_manifest(source)
+
+    def test_snapshot_validation_failure_removes_partial_destination(self) -> None:
+        with temporary_workspace() as root:
+            source = root / "source"
+            source.mkdir()
+            (source / "SKILL.md").write_text("# Test\n", encoding="utf-8")
+            destination = root / "snapshot"
+            original = build_tree_manifest
+
+            def fail_destination(path: object) -> dict[str, object]:
+                if path == destination:
+                    raise SuiteError("fixture validation failure")
+                return original(path)
+
+            with mock.patch(
+                "skill_evaluation_lab.snapshots.build_tree_manifest",
+                side_effect=fail_destination,
+            ):
+                with self.assertRaisesRegex(ExecutionError, "fixture validation failure"):
+                    create_snapshot(source, destination)
+
+            self.assertFalse(destination.exists())
+
 
 class IsolationTests(unittest.TestCase):
     def test_case_workspace_has_clean_git_baseline(self) -> None:
@@ -89,6 +121,17 @@ class IsolationTests(unittest.TestCase):
         with temporary_workspace() as root:
             with self.assertRaisesRegex(SuiteError, "不安全"):
                 resolve_within(root, "../outside.txt")
+            with self.assertRaisesRegex(SuiteError, "不安全"):
+                resolve_within(root, r"C:\outside.txt")
+
+    def test_resolve_within_normalizes_portable_separators(self) -> None:
+        with temporary_workspace() as root:
+            target = root / "outputs" / "result.txt"
+            target.parent.mkdir()
+            target.write_text("ok\n", encoding="utf-8")
+            resolved = resolve_within(root, r"outputs\result.txt", must_exist=True)
+
+        self.assertEqual(resolved.name, "result.txt")
 
     def test_run_id_rejects_path_components(self) -> None:
         with temporary_workspace() as root:
@@ -108,6 +151,24 @@ class SecurityTests(unittest.TestCase):
     def test_child_environment_rejects_explicit_secret(self) -> None:
         with self.assertRaisesRegex(SuiteError, "敏感环境变量"):
             build_child_env({}, extra={"ACCESS_TOKEN": "secret"})
+
+    def test_codex_environment_only_forwards_managed_workspace_profile(self) -> None:
+        managed, profile = build_codex_child_env(
+            {
+                "PATH": os.environ.get("PATH", ""),
+                "CODEX_PERMISSION_PROFILE": ":workspace",
+                "SKILL_GITLAB_PAT": "secret",
+            }
+        )
+        self.assertEqual(profile, ":workspace")
+        self.assertEqual(managed["CODEX_PERMISSION_PROFILE"], ":workspace")
+        self.assertNotIn("SKILL_GITLAB_PAT", managed)
+
+        rejected, profile = build_codex_child_env(
+            {"PATH": os.environ.get("PATH", ""), "CODEX_PERMISSION_PROFILE": "danger-full-access"}
+        )
+        self.assertIsNone(profile)
+        self.assertNotIn("CODEX_PERMISSION_PROFILE", rejected)
 
     def test_redacts_sensitive_fields_and_known_values(self) -> None:
         value = {"token": "abc123", "message": "credential=abc123", "nested": [{"password": "visible"}]}

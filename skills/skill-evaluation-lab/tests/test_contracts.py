@@ -142,8 +142,13 @@ class ContractTests(unittest.TestCase):
         final_schema = json.loads(
             (SKILL_ROOT / "schemas" / "final-response.schema.json").read_text(encoding="utf-8")
         )
+        report_schema = json.loads(
+            (SKILL_ROOT / "schemas" / "report.schema.json").read_text(encoding="utf-8")
+        )
         self.assertFalse(run_schema["additionalProperties"])
         self.assertEqual(len(final_schema["oneOf"]), 2)
+        self.assertFalse(report_schema["additionalProperties"])
+        self.assertFalse(report_schema["$defs"]["gateDecisions"]["additionalProperties"])
 
 
 if __name__ == "__main__":

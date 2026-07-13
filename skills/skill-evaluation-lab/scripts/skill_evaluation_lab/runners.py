@@ -10,6 +10,7 @@ from typing import Any, Protocol
 
 from .budgets import RunBudget
 from .errors import AuthorizationError, InconclusiveError, SuiteError
+from .snapshots import build_tree_manifest
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,7 @@ class FakeRunner:
         started_at = time.monotonic()
         budget.reserve_agent()
         value = self._scripted.get(request.case_id, {})
+        skill_manifest = build_tree_manifest(request.skill_path) if request.skill_path is not None else None
         return RunResult(
             outcome=str(value.get("outcome", "passed")),
             return_code=int(value.get("return_code", 0)),
@@ -110,6 +112,11 @@ class FakeRunner:
                 "case_id": request.case_id,
                 "attempt": request.attempt,
                 "variant": request.variant,
+                **(
+                    {"skill_tree_sha256": skill_manifest["tree_sha256"]}
+                    if skill_manifest is not None
+                    else {}
+                ),
             },
             observation=dict(value.get("observation", {})),
         )

@@ -250,6 +250,13 @@ def _validate_runner(value: Any, path: str, record: dict[str, Any], manifest: di
         or provenance["prompt_sha256"] != record["pairing"]["prompt_sha256"]
     ):
         raise SuiteError("provenance 执行条件不一致", path=f"{path}.provenance")
+    snapshot_variant = "candidate" if record["mode"] == "trigger" else record["pairing"]["skill_snapshot"]
+    expected_skill = manifest["source_identity"].get(snapshot_variant)
+    expected_hash = expected_skill.get("tree_sha256") if isinstance(expected_skill, dict) else None
+    if expected_hash is not None and provenance.get("skill_tree_sha256") != expected_hash:
+        raise SuiteError("provenance skill identity 不一致", path=f"{path}.provenance.skill_tree_sha256")
+    if expected_hash is None and "skill_tree_sha256" in provenance:
+        raise SuiteError("无 skill 的 run 不允许 skill identity", path=f"{path}.provenance.skill_tree_sha256")
     observation = _object(item["observation"], f"{path}.observation", {"activation_receipt_exact"}, set())
     if "activation_receipt_exact" in observation and not isinstance(observation["activation_receipt_exact"], bool):
         raise SuiteError("activation observation 必须是 boolean", path=f"{path}.observation.activation_receipt_exact")
@@ -296,6 +303,11 @@ def _validate_assertions(value: Any, path: str, mode: str) -> None:
     expected_status = "ERROR" if counts["ERROR"] else "FAIL" if counts["FAIL"] else "PASS"
     if item["status"] != expected_status:
         raise SuiteError("assertion summary 与 counts 不一致", path=f"{path}.status")
+
+
+def validate_assertion_summary(value: Any, *, path: str, mode: str) -> None:
+    """复用 run assertion 契约校验 grade 中保留的原始证据。"""
+    _validate_assertions(value, path, mode)
 
 
 def _validate_record(value: Any, path: str, manifest: dict[str, Any]) -> dict[str, Any]:

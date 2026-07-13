@@ -18,9 +18,9 @@ from typing import Any, BinaryIO
 from .budgets import RunBudget
 from .errors import DependencyError, ExecutionError, UnsupportedError
 from .runners import RunRequest, RunResult, validate_live_request
-from .security import build_child_env
-from .snapshots import build_tree_manifest, create_snapshot, verify_tree
-from .traces import load_structured_final, parse_jsonl_trace
+from .security import build_child_env, build_codex_child_env
+from .snapshots import build_tree_manifest, create_snapshot, verify_tree, verify_trees
+from .traces import load_structured_final, parse_jsonl_trace, require_supported_trace
 
 
 MAX_PROCESS_STREAM_BYTES = 16 * 1024 * 1024
@@ -86,6 +86,25 @@ def skill_name(skill_path: Path) -> str:
     return match.group(1).strip().strip("\"'")
 
 
+def prompt_skill_marker_count(raw: str, skill_path: Path) -> int:
+    """从 prompt-input JSON 中统计指向目标 SKILL.md 的结构化条目。"""
+    try:
+        messages = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise UnsupportedError("prompt-input 未返回合法 JSON") from exc
+    if not isinstance(messages, list):
+        raise UnsupportedError("prompt-input 根必须是 JSON array")
+    marker = f"(file: {(skill_path / 'SKILL.md').resolve().as_posix()})"
+    count = 0
+    for message in messages:
+        if not isinstance(message, dict) or not isinstance(message.get("content"), list):
+            continue
+        for part in message["content"]:
+            if isinstance(part, dict) and isinstance(part.get("text"), str):
+                count += part["text"].count(marker)
+    return count
+
+
 def _remove_readonly(function: Any, path: str, _error: Any) -> None:
     Path(path).chmod(stat.S_IWRITE)
     function(path)
@@ -139,8 +158,10 @@ def probe_codex(skill_path: Path, *, workspace: Path, timeout: int = 30) -> dict
         )
     finally:
         shutil.rmtree(probe_root, ignore_errors=False, onerror=_remove_readonly)
-    candidate_visible = name in candidate
-    baseline_hidden = name not in baseline
+    candidate_marker_count = prompt_skill_marker_count(candidate, discovered_skill)
+    baseline_marker_count = prompt_skill_marker_count(baseline, discovered_skill)
+    candidate_visible = candidate_marker_count == 1
+    baseline_hidden = baseline_marker_count == 0
     if not candidate_visible or not baseline_hidden:
         raise UnsupportedError("prompt-input 无法证明 candidate 可见且 baseline 隐藏")
     return {
@@ -149,6 +170,8 @@ def probe_codex(skill_path: Path, *, workspace: Path, timeout: int = 30) -> dict
         "skill_name": name,
         "candidate_visible": candidate_visible,
         "baseline_hidden": baseline_hidden,
+        "candidate_marker_count": candidate_marker_count,
+        "baseline_marker_count": baseline_marker_count,
         "candidate_prompt_sha256": hashlib.sha256(candidate.encode("utf-8")).hexdigest(),
         "baseline_prompt_sha256": hashlib.sha256(baseline.encode("utf-8")).hexdigest(),
         "live_model_called": False,
@@ -227,6 +250,7 @@ def _run_bounded(
     stderr_path: Path,
     timeout_seconds: int,
     stream_limit: int = MAX_PROCESS_STREAM_BYTES,
+    environment: dict[str, str] | None = None,
 ) -> int:
     """运行 finite 子进程，timeout 或输出越界时立即失败关闭。"""
     overflow = threading.Event()
@@ -235,7 +259,7 @@ def _run_bounded(
         process = subprocess.Popen(
             argv,
             cwd=cwd,
-            env=build_child_env(),
+            env=build_codex_child_env()[0] if environment is None else environment,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -313,9 +337,11 @@ class CodexRunner:
         if nonce in request.prompt:
             raise ExecutionError("trigger prompt 意外包含 instrumentation nonce", outcome="not_started")
         source_manifest = instrument_trigger_snapshot(request.skill_path, instrumented, nonce)
+        instrumented_manifest = build_tree_manifest(instrumented)
         _write_trigger_schema(schema_path)
         executable = codex_path()
         cli_version = run_capture([executable, "--version"], cwd=request.workspace).strip().splitlines()[0]
+        child_env, permission_profile = build_codex_child_env()
         argv = [
             executable,
             "-a",
@@ -356,9 +382,11 @@ class CodexRunner:
                 stdout_path=trace_path,
                 stderr_path=stderr_path,
                 timeout_seconds=min(request.timeout_seconds, max(1, int(budget.remaining_seconds()))),
+                environment=child_env,
             )
             trace = parse_jsonl_trace(trace_path)
-            final = load_structured_final(final_path) if final_path.exists() else {}
+            require_supported_trace(trace, return_code=return_code)
+            final = load_structured_final(final_path) if return_code == 0 or final_path.exists() else {}
             outcome = "passed" if return_code == 0 and not trace["failed_event_seen"] else "failed"
             activated = outcome == "passed" and final.get("activation_receipt") == nonce
             return RunResult(
@@ -374,6 +402,7 @@ class CodexRunner:
                     "cli_version": cli_version,
                     "model": request.model,
                     "sandbox": request.sandbox,
+                    "permission_profile": permission_profile or "cli-read-only",
                     "network_access": False,
                     "fingerprint": request.fingerprint,
                     "lab_tree_sha256": request.lab_tree_sha256,
@@ -386,4 +415,9 @@ class CodexRunner:
                 observation={"activation_receipt_exact": activated},
             )
         finally:
-            verify_tree(request.skill_path, source_manifest)
+            verify_trees(
+                [
+                    (request.skill_path, source_manifest),
+                    (instrumented, instrumented_manifest),
+                ]
+            )

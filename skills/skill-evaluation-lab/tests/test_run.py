@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+import stat
 from copy import deepcopy
 import unittest
 from unittest import mock
 
 from _helpers import temporary_workspace, valid_suite, write_json
-from se_run import _behavior_child_env, execute_suite
+from se_run import BehaviorCodexRunner, _behavior_child_env, execute_suite
+from skill_evaluation_lab.budgets import RunBudget
 from skill_evaluation_lab.contracts import load_suite
-from skill_evaluation_lab.errors import SuiteError
+from skill_evaluation_lab.errors import ExecutionError, SuiteError
 from skill_evaluation_lab.run_contracts import validate_run_manifest
+from skill_evaluation_lab.runners import RunRequest
 
 
 class SuiteRunTests(unittest.TestCase):
@@ -79,6 +82,60 @@ class SuiteRunTests(unittest.TestCase):
             )
             self.assertEqual(paired[0]["pairing"]["skill_snapshot"], "candidate")
             self.assertEqual(paired[1]["pairing"]["skill_snapshot"], "none")
+
+    def test_behavior_runner_detects_visible_skill_mutation(self) -> None:
+        with temporary_workspace() as root:
+            workspace = root / "workspace"
+            skill = workspace / ".agents" / "skills" / "probe"
+            skill.mkdir(parents=True)
+            skill_file = skill / "SKILL.md"
+            skill_file.write_text(
+                "---\nname: probe\ndescription: Probe.\n---\n\n# Probe\n",
+                encoding="utf-8",
+            )
+            request = RunRequest(
+                run_id="run",
+                case_id="behavior",
+                attempt=1,
+                prompt="Create an output.",
+                workspace=workspace,
+                artifact_dir=root / "artifacts",
+                model="test-model",
+                sandbox="workspace-write",
+                timeout_seconds=30,
+                fingerprint="f" * 64,
+                lab_tree_sha256="a" * 64,
+                approved_fingerprint="f" * 64,
+                live_authorized=True,
+                skill_path=skill,
+            )
+
+            def mutate_skill(*_args: object, **_kwargs: object) -> int:
+                (request.artifact_dir / "trace.jsonl").write_text(
+                    "".join(
+                        json.dumps(event) + "\n"
+                        for event in (
+                            {"type": "thread.started", "thread_id": "thread"},
+                            {"type": "turn.completed", "usage": {}},
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+                (request.artifact_dir / "final.json").write_text(
+                    '{"response":"ok"}\n',
+                    encoding="utf-8",
+                )
+                skill_file.chmod(skill_file.stat().st_mode | stat.S_IWUSR)
+                skill_file.write_text("mutated\n", encoding="utf-8")
+                return 0
+
+            budget = RunBudget(max_agent_runs=1, max_judge_runs=0, max_wall_seconds=60)
+            with mock.patch("se_run.codex_path", return_value="codex"), mock.patch(
+                "se_run.run_capture",
+                return_value="codex 1.0\n",
+            ), mock.patch("se_run._run_behavior_bounded", side_effect=mutate_skill):
+                with self.assertRaisesRegex(ExecutionError, "完整性"):
+                    BehaviorCodexRunner().run(request, budget)
 
 
 if __name__ == "__main__":

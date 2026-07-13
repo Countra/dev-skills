@@ -21,6 +21,8 @@ from .security import build_child_env, redact_text, sensitive_values
 
 MAX_ASSERTION_FILE_BYTES = 4 * 1024 * 1024
 MAX_VERIFIER_OUTPUT_BYTES = 1024 * 1024
+MAX_GIT_STATUS_BYTES = 4 * 1024 * 1024
+MAX_CHANGED_PATHS = 10_000
 
 
 @dataclass(frozen=True)
@@ -52,17 +54,21 @@ def _error(assertion: dict[str, Any], message: str, evidence: dict[str, Any] | N
 
 
 def _safe_path(workspace: Path, raw: str, *, must_exist: bool = False) -> Path:
-    unresolved = workspace.resolve() / Path(raw)
+    unresolved = workspace.resolve() / Path(raw.replace("\\", "/"))
     is_junction = getattr(unresolved, "is_junction", None)
     if unresolved.is_symlink() or bool(is_junction and is_junction()):
         raise SuiteError(f"断言路径不能是链接或 junction：{raw}", path="$.cases.assertions.path")
     return resolve_within(workspace, raw, must_exist=must_exist)
 
 
-def _file_hash(path: Path) -> str:
+def _file_hash(path: Path, *, max_bytes: int) -> str:
     digest = hashlib.sha256()
+    total = 0
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            total += len(chunk)
+            if total > max_bytes:
+                raise ExecutionError(f"断言目标在读取期间超过 {max_bytes} bytes")
             digest.update(chunk)
     return digest.hexdigest()
 
@@ -70,7 +76,10 @@ def _file_hash(path: Path) -> str:
 def _path_evidence(path: Path, raw: str) -> dict[str, Any]:
     evidence: dict[str, Any] = {"path": raw, "exists": path.exists()}
     if path.is_file():
-        evidence.update({"kind": "file", "size": path.stat().st_size, "sha256": _file_hash(path)})
+        size = path.stat().st_size
+        evidence.update({"kind": "file", "size": size, "sha256_available": size <= MAX_ASSERTION_FILE_BYTES})
+        if size <= MAX_ASSERTION_FILE_BYTES:
+            evidence["sha256"] = _file_hash(path, max_bytes=MAX_ASSERTION_FILE_BYTES)
     elif path.is_dir():
         evidence["kind"] = "directory"
     return evidence
@@ -91,29 +100,43 @@ def _read_text(path: Path) -> str:
 def changed_paths(workspace: Path) -> list[str]:
     """返回相对 Git baseline 的 tracked 与 untracked 文件集合。"""
     try:
-        completed = subprocess.run(
-            ["git", "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
-            cwd=workspace,
-            env=build_child_env(
-                extra={
-                    "GIT_CONFIG_GLOBAL": os.devnull,
-                    "GIT_CONFIG_NOSYSTEM": "1",
-                    "GIT_TERMINAL_PROMPT": "0",
-                }
-            ),
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        with tempfile.TemporaryFile() as stdout_file, tempfile.TemporaryFile() as stderr_file:
+            process = subprocess.Popen(
+                ["git", "-c", "core.quotepath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all"],
+                cwd=workspace,
+                env=build_child_env(
+                    extra={
+                        "GIT_CONFIG_GLOBAL": os.devnull,
+                        "GIT_CONFIG_NOSYSTEM": "1",
+                        "GIT_TERMINAL_PROMPT": "0",
+                    }
+                ),
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+            )
+            try:
+                return_code = process.wait(timeout=30)
+            except subprocess.TimeoutExpired as exc:
+                process.kill()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired as stop_exc:
+                    raise ExecutionError("Git status 终止后仍未退出") from stop_exc
+                raise ExecutionError("Git status 在 30 秒后超时") from exc
+            output_bytes = os.fstat(stdout_file.fileno()).st_size + os.fstat(stderr_file.fileno()).st_size
+            if output_bytes > MAX_GIT_STATUS_BYTES:
+                raise ExecutionError("Git status 输出超过大小上限")
+            stdout_file.seek(0)
+            stderr_file.seek(0)
+            stdout = stdout_file.read(MAX_GIT_STATUS_BYTES + 1).decode("utf-8", errors="replace")
+            stderr = stderr_file.read(1000).decode("utf-8", errors="replace")
+    except OSError as exc:
         raise ExecutionError(f"无法读取 Git 差异：{exc}") from exc
-    if completed.returncode != 0:
-        raise ExecutionError(f"Git status 失败：{completed.stderr.strip()[:1000]}")
+    if return_code != 0:
+        raise ExecutionError(f"Git status 失败：{stderr.strip()}")
     paths: set[str] = set()
-    entries = [entry for entry in completed.stdout.split("\0") if entry]
+    entries = [entry for entry in stdout.split("\0") if entry]
     index = 0
     while index < len(entries):
         entry = entries[index]
@@ -125,6 +148,8 @@ def changed_paths(workspace: Path) -> list[str]:
             if index >= len(entries):
                 raise ExecutionError("Git status 的 rename/copy 记录缺少原路径")
             paths.add(entries[index].replace("\\", "/"))
+        if len(paths) > MAX_CHANGED_PATHS:
+            raise ExecutionError(f"Git 变化路径超过 {MAX_CHANGED_PATHS} 项")
         index += 1
     return sorted(paths)
 
@@ -154,7 +179,8 @@ def _evaluate_path_assertion(assertion: dict[str, Any], workspace: Path) -> Asse
     if kind == "file_absent":
         return _result(assertion, not path.exists(), "目标路径不存在" if not path.exists() else "目标路径意外存在", evidence)
     changes = changed_paths(workspace)
-    changed = raw.replace("\\", "/") in changes or any(item.startswith(raw.rstrip("/") + "/") for item in changes)
+    portable = raw.replace("\\", "/").rstrip("/")
+    changed = portable in changes or any(item.startswith(portable + "/") for item in changes)
     evidence["changed"] = changed
     evidence["changed_path_count"] = len(changes)
     expected = kind == "path_changed"
@@ -198,7 +224,8 @@ def _evaluate_content_assertion(assertion: dict[str, Any], workspace: Path) -> A
 def _evaluate_diff_assertion(assertion: dict[str, Any], workspace: Path) -> AssertionResult:
     changes = changed_paths(workspace)
     kind = assertion["type"]
-    patterns = assertion["allow"] if kind == "diff_allows_only" else assertion["deny"]
+    raw_patterns = assertion["allow"] if kind == "diff_allows_only" else assertion["deny"]
+    patterns = [pattern.replace("\\", "/") for pattern in raw_patterns]
     matched = [path for path in changes if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)]
     if kind == "diff_allows_only":
         unexpected = [path for path in changes if path not in matched]
@@ -235,7 +262,13 @@ def _evaluate_verifier(assertion: dict[str, Any], workspace: Path, *, trusted: b
             with subprocess.Popen(
                 argv,
                 cwd=cwd,
-                env=build_child_env(),
+                env=build_child_env(
+                    extra={
+                        "GIT_CONFIG_GLOBAL": os.devnull,
+                        "GIT_CONFIG_NOSYSTEM": "1",
+                        "GIT_TERMINAL_PROMPT": "0",
+                    }
+                ),
                 stdin=subprocess.DEVNULL,
                 stdout=stdout_file,
                 stderr=stderr_file,
@@ -321,7 +354,7 @@ def evaluate_assertions(
     ]
     counts = {status: sum(item["status"] == status for item in results) for status in ("PASS", "FAIL", "ERROR")}
     return {
-        "status": "PASS" if counts["FAIL"] == 0 and counts["ERROR"] == 0 else "FAIL",
+        "status": "ERROR" if counts["ERROR"] else "FAIL" if counts["FAIL"] else "PASS",
         "counts": counts,
         "results": results,
     }

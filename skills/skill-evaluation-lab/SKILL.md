@@ -23,7 +23,7 @@ description: 设计、校验、运行和解释 Agent Skill 的结构化评测。
 - `se_inventory.py`：只读扫描 skill、脚本、测试、eval 和 CI coverage。
 - `se_validate.py`：闭合校验 suite、路径、assertion 和 runner 安全边界。
 - `se_plan.py`：展开矩阵与硬预算，计算 source-aware fingerprint；不调用模型。
-- `se_doctor.py`：仅在 Codex capability 不确定或 live 入口失败时诊断；普通流程不先运行。
+- `se_doctor.py`：仅在 Codex capability 不确定或 live 入口失败时诊断；用 `--probe-skill` 做无模型可见性 probe，普通流程不先运行。
 - `se_run.py`：创建隔离快照并执行 trigger/paired behavior；不负责质量结论。
 - `se_grade.py`：生成确定性 grade，可选合并独立 human feedback 与 blind/swap judge 结果。
 - `se_report.py`：生成透明 JSON/Markdown 报告，不产生单一不透明总分。

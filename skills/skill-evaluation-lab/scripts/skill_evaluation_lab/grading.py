@@ -11,6 +11,7 @@ from typing import Any
 
 from .budgets import implementation_identity
 from .errors import ExecutionError, SuiteError
+from .grade_contracts import validate_grade_document
 from .run_contracts import validate_run_manifest
 
 
@@ -198,8 +199,11 @@ def grade_manifest(
     if unknown_feedback:
         raise SuiteError(f"human feedback 引用了未知 record：{unknown_feedback[0]}", path="$.human_feedback")
     grader_identity = implementation_identity()
-    return {
+    grade = {
         "schema_version": 1,
+        "run_state": manifest["state"],
+        "run_status": manifest["status"],
+        "run_error": manifest.get("error"),
         "suite_id": manifest.get("suite_id"),
         "run_id": manifest.get("run_id"),
         "fingerprint": fingerprint,
@@ -213,6 +217,7 @@ def grade_manifest(
         "records": graded,
         "judge": judge_result if judge_result is not None else {"status": "disabled", "authority": "none"},
     }
+    return validate_grade_document(grade)
 
 
 def _deidentify(value: Any) -> Any:

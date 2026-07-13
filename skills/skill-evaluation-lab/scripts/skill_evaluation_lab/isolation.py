@@ -16,6 +16,7 @@ from .snapshots import create_snapshot
 
 
 RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$")
+WINDOWS_ABSOLUTE_PATTERN = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 @dataclass(frozen=True)
@@ -40,8 +41,8 @@ class CaseWorkspace:
 
 def resolve_within(root: Path, raw: str, *, must_exist: bool = False) -> Path:
     """解析工作区相对路径，拒绝绝对路径、父级跳转和解析后逃逸。"""
-    relative = Path(raw)
-    if relative.is_absolute() or ".." in relative.parts:
+    relative = Path(raw.replace("\\", "/"))
+    if WINDOWS_ABSOLUTE_PATTERN.match(raw) or relative.is_absolute() or ".." in relative.parts:
         raise SuiteError(f"不安全的工作区路径：{raw}", path="$.cases")
     root = root.resolve()
     resolved = (root / relative).resolve()

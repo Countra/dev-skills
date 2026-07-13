@@ -18,6 +18,7 @@ grader-only 内容不得复制到 agent workspace。input 路径名包含 `oracl
 - suite 内 input/assertion path 必须是相对路径，不能包含 `..`。
 - 符号链接和 Windows junction 均拒绝，目录复制不跟随链接。
 - source path 可位于 suite 外，但必须存在、不是链接，并只复制到 snapshot。
+- snapshot 最多 10000 个文件、总计 256 MiB、单文件 64 MiB；不可读目录或越界输入不会被静默跳过。
 - run 目录不可复用或覆盖；每次实验使用新 run id。
 - trusted verifier 的 cwd 必须解析在 case workspace 内。
 
@@ -33,6 +34,8 @@ grader-only 内容不得复制到 agent workspace。input 路径名包含 `oracl
 
 代码不得读取或复制 Codex `auth.json`。Codex CLI 可以使用本机已有认证机制，但 suite、prompt、artifact 和日志中不能出现凭据值。
 
+受管宿主提供精确的 `CODEX_PERMISSION_PROFILE=:workspace` 时，trigger 与 behavior runner 都会向 Codex CLI 透传该标识；其它 profile 一律丢弃。它不改变 suite 声明的 `read-only`/`workspace-write` sandbox，也不会放行凭据变量。
+
 证据写入前会按敏感字段名和当前环境中的已知秘密值脱敏。脱敏不是数据治理替代品：不要把私有数据或生产样本放进 suite。
 
 ## Network And Tools
@@ -44,6 +47,7 @@ grader-only 内容不得复制到 agent workspace。input 路径名包含 `oracl
 - 使用 argv 数组和 `shell=False`。
 - 仅在 case 显式 `trusted_verifier: true` 时运行。
 - 有 timeout、输出大小上限和有界 excerpt。
+- Git status 证据限制为 4 MiB 和 10000 个变化路径；大于 4 MiB 的普通文件只记录大小，不做无界哈希。
 - Git verifier 环境禁用 system/global config 和终端提示。
 - 非零退出为 FAIL；无法启动、timeout 或输出越界为 ERROR。
 

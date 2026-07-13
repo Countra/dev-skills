@@ -56,6 +56,7 @@ def _record(variant: str, *, passed: bool) -> dict[str, object]:
                 "case_id": "paired-case",
                 "attempt": 1,
                 "variant": variant,
+                **({"skill_tree_sha256": "d" * 64} if variant == "candidate" else {}),
             },
             "observation": {},
         },
@@ -110,7 +111,8 @@ class GradingMetricsReportContractTests(unittest.TestCase):
         self.assertEqual(report["paired_delta"]["wins"], 1)
         self.assertEqual(report["failure_taxonomy"], {"requirement_failure": 1})
         self.assertTrue(report["gate_decisions"]["all_required_passed"])
-        self.assertEqual(report["gate_decisions"]["required_gate_count"], 1)
+        self.assertEqual(report["gate_decisions"]["required_gate_count"], 3)
+        self.assertTrue(report["uncertainty"]["run_completed"])
         self.assertTrue(report["uncertainty"]["small_sample"])
         self.assertNotIn("overall_score", json.dumps(report, sort_keys=True))
         self.assertIn("Wilson 95% interval", markdown)
