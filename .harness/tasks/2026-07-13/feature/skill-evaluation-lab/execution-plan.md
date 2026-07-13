@@ -1,675 +1,445 @@
-# Skill Evaluation Lab 执行计划
+# Skill Evaluation Lab 用户驱动重构执行计划
 
-## 规划摘要（Plan Summary）
+## 规划摘要
 
 - Task ID：`skill-evaluation-lab-20260713`
-- Plan revision：`1`
+- Plan revision：`3`
 - Lifecycle route：`managed`
 - Plan profile：`full`
-- Discovery-first：`no`，关键方向已由本地代码、官方资料和 capability 边界收敛；runner 版本漂移留在 STG-03 做 fail-closed probe
-- Task contract：`plan-contract.json`
-- Approval request：请求 implementation 与有限 live Codex model-run 授权；不请求 commit、external system write 或 elevated tool 授权
+- 变更类型：breaking amendment，不兼容 revision 1
+- 目标：把 `skill-evaluation-lab` 从派生 Agent 的 benchmark runner 重构为用户驱动、静态优先、证据分层的
+  Skill 评估工作流。
+- 核心不变量：生产代码永远不调用、探测或启动 Codex、模型 API、子代理或其它 Agent runtime。
+- 用户授权：当前消息明确要求方案完成后按 executor 实施并可提交；不授权 push、外部系统写入或提权。
 
-本文件只保存批准意图。批准后不写入 current stage、progress、运行结果、ledger 摘要或 commit 状态；执行事实由 executor 创建的 `attestation.json`、`run-state.json` 和 `ledger.jsonl` 保存。
+## Amendment 背景
+
+revision 1 已完成前六个阶段，但最终阶段仍要求两项 live Codex 验证。用户确认该方向
+不符合 Skill 职责且风险过高。executor 已记录 `research_drift` 与 `amendment_requested`，并将 revision 1 的 plan、
+contract、attestation、ledger、run-state 和 approved artifacts 归档到
+`artifacts/amendments/revision-0001/`。
+
+本 revision 改变公共脚本、数据契约、架构边界、Stage DAG 和 required validations。旧 stage 的语义均已发生变化，
+因此不继承任何 completed stage；新 attestation 激活后从 STG-01 重新执行。
 
 ## 问题定义（Problem）
 
-目标（Goal）：`GOAL-01`，交付一个安全、可重复、可审计的 `skill-evaluation-lab`，不仅检查 skill 文件是否合法，还能在显式预算与授权下比较 candidate 与 baseline 的触发、行为、质量和成本。
+### GOAL-01
 
-非目标（Non-goals）：
+交付一个安全、可重复、可审计的 `skill-evaluation-lab`：当前 Agent 按 Skill 工作流完成静态检查和语义审查，
+可选地导入用户独立运行产生的观察证据，最后才综合给出完整结论。
 
-- 不构建常驻服务、Web UI、数据库或分布式调度。
-- 不自动修改被测 skill，也不根据一次 eval 自动发布或提交。
-- 不批量重写当前五个 skill 的 eval runner。
-- 不依赖进入退役期的 OpenAI Evals API。
-- 不支持默认网络、生产外部写入或 danger-full-access case。
+### 范围内
 
-验收标准（Acceptance）：`AC-01` 至 `AC-13` 全部由 required `VAL-01` 至 `VAL-15` 闭环；其中 live synthetic evidence 需要用户明确授权模型调用。
+- Skill metadata、目录、引用、渐进披露、语法、能力风险和验证资产的只读静态检查。
+- candidate 与可选 baseline 的 source-bound 静态差异。
+- 当前 Agent 使用固定维度完成结构化语义 review。
+- 生成不可执行的人工 observation packet，由用户自行在独立会话操作。
+- 导入并校验用户提供的 observation、artifact hash 和 provenance。
+- 分层 JSON/Markdown evidence report、离线 self-eval 和三平台 CI。
+- 删除 revision 1 的 runner、live、judge、trace、budget 和兼容协议。
 
-约束（Constraints）：
+### 范围外
 
-- 遵循仓库 `AGENTS.md`：中文注释、最小变更、完整错误路径、真实验证和长文件分段。
-- 核心 runtime 使用 Python 3.12 标准库，跨平台统一 CLI，无后台服务。
-- source repo、source skill、oracle、秘密与认证材料不进入可写 case workspace。
-- 普通 push/PR CI 不运行付费 live model 或 LLM judge。
-- 实施批准与 commit 授权分开；当前没有 commit 授权。
+- `codex exec`、Codex capability/version probe、模型 API、子代理、thread 派生或其它 Agent CLI。
+- 自动运行目标 Skill、目标脚本、测试、verifier 或 packet case。
+- 后台服务、数据库、Web UI、网络评测、外部系统写入和凭据读取。
+- 真实触发率、token、duration、paired win rate 或 LLM judge 自动统计。
+- 自动修改被评估 Skill，或把报告结论直接写回目标源码。
+- 兼容旧 suite/run/grade/report、旧 CLI alias 或 schema version 分支。
 
-待确认项（Open uncertainties）：无审批阻塞项。Codex activation 没有文档化通用事件，这一外部版本风险已转化为 STG-03 的 synthetic nonce probe 和明确 stop condition，不以假设通过。
+## 约束
 
-## 需求与验收（Requirements And Acceptance）
+- 所有新增和修改后的注释、docstring 使用中文。
+- 核心 runtime 仅使用 Python 3.12+ 标准库，并保持 Windows、Linux、macOS 同一接口。
+- 生产 Python 不 import `subprocess`、socket/HTTP client 或 Agent SDK。
+- 目标和 baseline 只读；输出只进入显式 workspace 内评估目录。
+- 静态、语义、观察三层证据不能互相覆盖或提升证据等级。
+- 当前 Agent 在 report 生成前不得给出整体通过/失败结论。
+- 不 push；用户自行推送后观察 hosted Actions。
 
-功能需求：
+## 需求与验收
 
-| ID | Priority | Requirement | Evidence |
+| ID | Priority | Requirement | Acceptance |
 | --- | --- | --- | --- |
-| REQ-01 | must | closed suite/case/assertion/budget/run contract | AC-01 / VAL-01 |
-| REQ-02 | must | 只读 inventory 与静态 coverage | AC-02 / VAL-02 |
-| REQ-03 | must | candidate/baseline 快照、隔离和 oracle 防泄漏 | AC-03 / VAL-04 |
-| REQ-04 | must | should/should-not trigger、near miss、split、重复与 body-load observation | AC-04 / VAL-07 |
-| REQ-05 | must | paired behavior、typed assertion、trusted verifier | AC-05 / VAL-08、VAL-09 |
-| REQ-06 | must | Codex CLI JSONL/output-schema/usage/sandbox adapter | AC-06 / VAL-06、VAL-09 |
-| REQ-07 | must | deterministic grading、blind judge、human calibration | AC-07 / VAL-10、VAL-11 |
-| REQ-08 | must | provenance、delta、区间、成本和 failure taxonomy 报告 | AC-08 / VAL-10、VAL-12 |
-| REQ-09 | must | dry-run matrix、硬预算、fingerprint、secret redaction、无隐式 retry | AC-09 / VAL-04、VAL-05 |
-| REQ-10 | must | 原子脚本、内聚包、精简 SKILL.md、按需 references | AC-10 / VAL-03、VAL-12 |
-| REQ-11 | must | unit/component/mutation/self/live smoke/三平台 offline CI | AC-11 / VAL-14 |
-| REQ-12 | must | 现有 eval runner 不变，渐进 inventory 与转换指引 | AC-12 / VAL-02、VAL-13 |
-| REQ-13 | must | unsupported/inconclusive/error 不伪装 passed | AC-13 / VAL-06、VAL-11、VAL-15 |
+| `REQ-01` | must | 永久移除所有 Codex、模型、子代理和 Agent 派生执行能力 | `AC-01`：生产树无 Agent runner/doctor/live 入口，AST 安全测试证明无进程和网络执行能力 |
+| `REQ-02` | must | 提供只读、source-bound 的 Skill 静态契约检查 | `AC-02`：合法 fixture 生成稳定 evidence，metadata、断链、语法、路径和资源 mutation 均准确 fail/warn |
+| `REQ-03` | must | 当前 Agent 必须完成固定七维语义 review | `AC-03`：缺维度、source hash、evidence、limitation 或 warn/fail recommendation 时报告拒绝生成 |
+| `REQ-04` | must | 可选生成由用户手工执行的 observation packet | `AC-04`：packet 包含 case/source/input hash 与人工说明，目录不覆盖且不含任何 Agent 启动命令 |
+| `REQ-05` | must | 只导入、不执行用户 observation | `AC-05`：有效 bundle 被规范化；未知 case、hash drift、路径逃逸和不完整 provenance 返回稳定错误 |
+| `REQ-06` | must | 报告透明分层并由当前 Agent 最终综合 | `AC-06`：report 分开 static/semantic/observed，未观察时禁止 runtime claim，无单一不透明总分 |
+| `REQ-07` | must | 支持 candidate 与显式 baseline 的静态比较 | `AC-07`：相同 source 被拒绝，差异绑定双方 tree hash 并按文件/check/capability 分组 |
+| `REQ-08` | must | 公共 CLI 与 JSON 契约稳定、有限、跨平台 | `AC-08`：六个 CLI 的 help、合法/非法 envelope、closed schema 和 UTF-8 行为通过三平台离线测试 |
+| `REQ-09` | must | `SKILL.md` 体现用户驱动分支和最终完成门禁 | `AC-09`：主路径、可选 observation 路径、停止点、引用加载时机和结论边界与实现一致 |
+| `REQ-10` | must | 仓库 inventory、self-eval 和只读 CI 保持可审计 | `AC-10`：inventory/static self-eval 通过，Actions 覆盖三平台、所有分支、只读权限且无 secrets/live |
+| `REQ-11` | must | 直接删除旧协议，不保留兼容层 | `AC-11`：旧 CLI、模块、schema、asset、reference、fixture 和测试均消失，全仓无旧公共契约引用 |
 
-非功能需求：
+## 非功能需求
 
-| ID | Requirement | Validation |
-| --- | --- | --- |
-| NFR-01 | 标准库、finite process、三平台统一 CLI | VAL-06、VAL-14 |
-| NFR-02 | 最小权限、网络关闭、source 只读、路径/秘密 fail closed | VAL-04 |
-| NFR-03 | input/oracle 分离、case 公平、重复与人工校准 | VAL-07 至 VAL-11 |
-| NFR-04 | 全链路 provenance，跨指纹不聚合 | VAL-04、VAL-05、VAL-10 |
-| NFR-05 | timeout、调用/并发/输出上限 | VAL-03、VAL-05、VAL-10 |
-| NFR-06 | 高内聚低耦合、closed validation、无巨型脚本 | VAL-01、VAL-08、VAL-12、VAL-15 |
-| NFR-07 | Agent Skills/Codex 官方契约，不绑定 Evals API | VAL-01、VAL-03、VAL-06、VAL-13 |
-
-验收标准：
-
-| ID | Requirement IDs | Given / When / Then |
-| --- | --- | --- |
-| AC-01 | REQ-01 | 合法 suite 通过；mutation suite 返回稳定 JSON path、错误码和非零退出码 |
-| AC-02 | REQ-02 | inventory 完整报告五个 skill 与 coverage，且无模型调用或秘密读取 |
-| AC-03 | REQ-03 | 独立快照/workspace 带 hash，oracle 不可见，source before/after 不变 |
-| AC-04 | REQ-04、REQ-06、REQ-13 | nonce 证明 body-load，输出 trigger 指标；probe 失败为 unsupported |
-| AC-05 | REQ-05 | paired run 的 assertion/verifier 给出逐项 PASS/FAIL/ERROR 和证据 |
-| AC-06 | REQ-06、REQ-09 | live artifact 有 JSONL/final/usage/provenance，ephemeral、无 case 网络和源写入 |
-| AC-07 | REQ-07 | deterministic first；judge 盲化和 swap，冲突 inconclusive，未校准 advisory-only |
-| AC-08 | REQ-08 | JSON/Markdown 报告展示质量、成本、区间、低信息和失败分类 |
-| AC-09 | REQ-09 | fingerprint/预算/秘密/unknown outcome 任一不安全即调用前拒绝 |
-| AC-10 | REQ-10 | skill 能组合最小脚本，全部 help 无认证可用，输出契约一致 |
-| AC-11 | REQ-11 | 三平台普通 CI 只跑 offline；live 只有显式入口 |
-| AC-12 | REQ-12 | 现有 eval 命令不变并通过，新协议提供示例和转换路径 |
-| AC-13 | REQ-13 | 未知 event、probe failure、judge 分歧、provenance 冲突不计 passed |
+| ID | Requirement |
+| --- | --- |
+| `NFR-01` | 生产路径零子进程、零网络、零 Agent SDK、零凭据读取；静态测试将其固化为架构不变量 |
+| `NFR-02` | Python 3.12+ 标准库，同一公共接口支持 Windows、Linux、macOS，不依赖 shell 行为 |
+| `NFR-03` | 路径 containment、symlink/junction、文件数、单文件、总大小和文本 excerpt 均有硬上限 |
+| `NFR-04` | source、packet、review、observation 和 report 使用 SHA-256 绑定，可检测 drift 与证据不兼容 |
+| `NFR-05` | 模块高内聚、依赖单向、公共函数有类型标注、错误不吞掉、代码与测试保持现有项目风格 |
+| `NFR-06` | `SKILL.md` 保持精炼，详细契约按需进入一层 references，规则只有一个真相源 |
+| `NFR-07` | CI 使用最小只读权限、无 secrets、无 package install、无模型/Agent 操作，证据有界保存 |
 
 ## 调研门禁（Research Gate）
 
-研究模式（Research mode）：`online-required`
-
-触发原因（Why this mode）：Agent Skills 规范、Codex CLI/config/sandbox、OpenAI eval 生命周期和 2026 benchmark 审计都属于会变化的外部事实；只靠模型记忆无法安全规划。
-
-不确定项清单（Uncertainty inventory）：
-
-| 问题（Question） | 类型（Type） | Online | Resolution | Impact |
-| --- | --- | --- | --- | --- |
-| Skill 触发如何测量 | external-tool | yes | description 正负例 + body nonce；先做 capability probe | 决定 STG-03 truth source |
-| Codex 如何隔离和记录 | external-tool | yes | ephemeral、ignore config/rules、JSONL、output schema、sandbox、skills.config | 决定 runner contract |
-| 是否依赖托管 Evals | external-service | yes | 否，旧平台有退役计划 | 采用本地 adapter 架构 |
-| LLM judge 是否可信 | high-risk | yes | 仅可选 blind/swap/human-calibrated | 不作唯一硬门禁 |
-| benchmark 如何防失真 | high-risk | yes | oracle 隔离、case QA、holdout、污染说明 | 形成 NFR-03 |
-| 是否需要后台服务 | local-code | no | 无，finite subprocess 足够 | 降低生命周期复杂度 |
-
-搜索记录（Search log）：
-
-| 查询/来源 | 工具 | 日期 | 结果 | 后续动作 |
-| --- | --- | --- | --- | --- |
-| Agent Skills specification/evaluating/description/scripts | web | 2026-07-13 | 确认 trigger/outcome eval、baseline、split、脚本契约 | 固化 ART-01/ART-02 |
-| Codex non-interactive/config/sandbox | official docs + local CLI | 2026-07-13 | 确认 JSONL、usage、output schema、skills.config 和最小权限 | 设计 Codex adapter |
-| OpenAI evaluation best practices/graders | official docs | 2026-07-13 | 确认 pairwise、human calibration、position/verbosity bias | 设计 grading |
-| OpenAI 2026 coding eval audits | official research | 2026-07-13 | 发现约 30% benchmark task 问题与污染风险 | 增加 suite QA |
-| mattpocock/skills、stitch-skills | local reference repos | 2026-07-13 | 吸收原子编排、frontier probe、artifact loop；排除非标准 metadata 和弱 eval | 形成架构边界 |
-
-来源矩阵：完整 URL、访问日期、可信度和影响见 `ART-01`；所有关键外部结论均来自官方规范、官方文档、官方研究或论文一手资料。
-
-调研结论（Research result）：`passed`。新来源已不再改变目标、候选方案、影响面或 required validation。
+- 模式：`online-required`。
+- 研究结论见 `ART-01`，规范映射见 `ART-02`。
+- 已核对 Agent Skills 官方 specification、description optimization、skill evaluation、OpenAI Evals API、本地
+  `skill-creator`、`mattpocock/skills` 和 `stitch-skills`。
+- 关键结论：保留 case/baseline/assertion/evidence 方法，调度权交给用户；脚本不派生 Agent。
+- 未解决事实：无。
 
 ## 规范发现门禁（Standards Discovery Gate）
 
-发现模式（Discovery mode）：`online-required`
-
-技术栈清单：
-
-| 类型 | 发现 | 来源 | 影响 |
-| --- | --- | --- | --- |
-| 语言 | Python 3.12 标准库 | repo CI / Python docs | 统一三平台，无安装依赖 |
-| 框架 | Agent Skills 文件协议，无应用框架 | agentskills.io | SKILL.md 渐进披露与合法 metadata |
-| API/架构 | 本地 CLI + Adapter + immutable file artifacts | Codex docs / repo patterns | finite process，不建服务 |
-| 工具链 | unittest、Git、Codex CLI、GitHub Actions | repository | offline CI 与显式 live 分层 |
-
-规范来源矩阵：
-
-| 规范来源 | 类型 | 官方/一手 | 适用边界 | 访问日期 | 影响 |
-| --- | --- | --- | --- | --- | --- |
-| `AGENTS.md` | project | yes | 全部改动 | 2026-07-13 | 中文注释、最小修改、验证与提交格式 |
-| agentskills.io/specification | framework | yes | skill metadata/resources | 2026-07-13 | name、description、progressive disclosure |
-| Google Python Style Guide | language | yes | Python 实现 | 2026-07-13 | 命名、异常、main、docstring |
-| Python subprocess/pathlib/secrets/hashlib | language/API | yes | runner/security | 2026-07-13 | argv、timeout、containment、nonce、hash |
-| Codex docs | API/security | yes | live adapter | 2026-07-13 | sandbox、env、JSONL、config |
-| OpenAI eval guidance + coding eval audits | evaluation | yes | suite/grading/report | 2026-07-13 | 公平 case、人工校准、污染与测试完整性 |
-
-standards index：`ART-02`，记录采用、冲突和明确不采用项。
-
-规范发现结论（Standards result）：`passed`。
+- 语言：Python 3.12+ 标准库；数据：JSON/Markdown/YAML；CI：GitHub Actions。
+- 必须规范：项目 AGENTS、当前 planner/executor、Agent Skills specification、Google Python style、JSON Schema
+  2020-12 和 GitHub Actions secure use。
+- 参考规范：Agent Skills best practices/evaluation、当前 Codex skill-creator、本地两个参考仓库。
+- 冲突处理：用户的零 Codex 操作边界优先于官方文档中可选的 subagent/run 自动化建议。
 
 ## 开发质量门禁（Development Quality Gate）
 
-| Dimension | Plan | Stage mapping | Validation mapping |
-| --- | --- | --- | --- |
-| 代码标准 | Python 3.12、中文说明性注释、薄 CLI、typed internal API、真实错误处理 | STG-01 至 STG-07 | VAL-01、VAL-03、VAL-15 |
-| 静态质量 | quick validate、JSON parse、CLI help、unit、diff check | STG-01、STG-06、STG-07 | VAL-01、VAL-03、VAL-14、VAL-15 |
-| 架构边界 | contract/isolation/runner/grading/report 单向依赖 | STG-01 至 STG-05 | VAL-08、VAL-10、VAL-15 |
-| 设计模式取舍 | 仅使用 Adapter/Strategy/Artifact Store 的轻量边界；不建插件框架或服务 | STG-03、STG-05 | VAL-06、VAL-10、VAL-15 |
-| 低耦合 | runner 不知道 grading，grader 不启动 case，report 只读 artifacts | STG-03 至 STG-05 | VAL-10、VAL-12 |
-| 高内聚 | public scripts 只编排，内部模块按契约/安全/runner/评分分组 | STG-01 至 STG-06 | VAL-01、VAL-12、VAL-15 |
-
-过度设计防护：首版只实现 Codex CLI adapter、闭合 assertion 集和文件 artifact；不预建多 provider registry、数据库、UI、队列或通用 workflow engine。模块少于真实职责时允许合并，但不跨越安全与评分边界。
-
-开发质量结论（Development quality result）：`passed`。
+- 代码标准：类型标注、聚焦函数、中文注释、稳定错误码、显式资源限制和 `main()` CLI。
+- 静态质量：AST、JSON/schema、unit/component/self-eval、quick validator、CLI help 和 `git diff --check`。
+- 架构：当前 Agent 编排；static/packet/import/report 单向依赖；无 runner adapter 和后台服务。
+- 模式：采用有完成条件的 Pipeline 和 closed document；拒绝为已删除能力保留 Strategy/Plugin 抽象。
+- 耦合/内聚：path/hash 单一实现；schema/runtime/example 同步；CLI 薄层；三种证据类型分离。
+- 详细映射见 `ART-02`，每个 stage 都必须记录 Development Quality Check。
 
 ## 上下文（Context）
 
-本地代码（Local code）：
-
-- 三个操作型 skill 已证明“薄脚本 + 内部包 + unittest + root eval”适合当前仓库。
-- planner/executor eval 强于机器契约，弱于真实代理行为；GitLab prompts 有业务场景但不执行 agent。
-- 当前只有两个专用 workflow；新增 lab workflow 不应改写它们。
-- `skill.sh` 自动遍历 `skills/*`，新 skill 自动进入安装范围。
-
-本地文档（Local docs）：`README.md`、`CHANGELOG.md`、planner/executor task contract、各 skill SKILL/references、两个参考仓库。完整 change map 见 `ART-06`。
-
-外部来源（External sources）：详见 `ART-01` 和 `ART-02`，核心包括 Agent Skills、Codex non-interactive/config/sandbox、OpenAI eval guidance、2026 coding eval audits 与 MT-Bench judge 论文。
-
-用户约束（User constraints）：深入调研；使用 complex-coding-planner 落盘 detailed plan；当前阶段只规划，不实现；后续按 executor 执行；遵守全局中文注释和验证规则。
-
-证据等级：
-
-| Claim | Level | Source | Impact |
-| --- | --- | --- | --- |
-| 当前 eval 不运行真实 agent | confirmed | 已读 root eval runners | 新增 live/offline 分层 |
-| Codex JSONL 含 usage 和 trace | external | 官方 docs + local help | 可记录 provenance/cost |
-| skills.config session override 存在 | external | 官方 config + local help | 可做 candidate/baseline |
-| 没有文档化 skill activation event | external | 官方 JSONL event list | 采用 nonce probe，失败即 stop |
-| Evals API 不宜成为依赖 | external | 官方 deprecation | 使用本地协议 |
-| benchmark 测试自身可能错误 | external | 2026 官方审计 | 增加 suite QA/human calibration |
+- 本地代码：当前 Skill 有 7 个公共 CLI、19 个核心模块、17 个测试文件，主链路会启动 Codex CLI。
+- 本地任务：revision 1、2 已归档；revision 3 仅修复 inventory 入口的阶段范围遗漏。
+- 本地参考：`mattpocock/skills` 提供 invocation/completion criterion/pruning 思想，`stitch-skills` 提供
+  orchestration-agnostic 与确定性 CI validation 思想。
+- 外部来源：Agent Skills specification/best practices/evaluation、OpenAI Evals API、Google Python、JSON Schema 和
+  GitHub Actions secure use。
+- 用户约束：不自动执行任何 Codex 操作；从 Skill 角度设计；用户掌控观察运行；工作流结束后再综合结论。
+- 证据等级：本地实现和用户约束为 `confirmed`，官方资料为 `external-primary`，无依赖未验证 assumption。
 
 ## 候选方案（Options）
 
-### 方案 A：只补静态 skill 检查
+### 方案 A：保留 live runner，只增加更强授权
 
-- 做法：统一 quick validation、metadata lint、script help 和现有 eval inventory。
-- 优点：实现小、无模型成本、CI 稳定。
-- 缺点：无法证明自动触发、行为增益或 token/time 代价。
-- 风险：继续把静态 fixture 当成能力证据。
-- 验证：纯 unittest/CI。
-- 回滚：删除新增检查。
+- 能保留现有 trigger/behavior metrics，实施成本最低。
+- 仍然存在递归 Agent、认证继承、权限和额度风险，且用户已否定这一职责。
+- 拒绝。
 
-### 方案 B：本地分层 Evaluation Lab（选择）
+### 方案 B：纯静态 linter
 
-- 做法：静态/离线能力为基础，再提供显式授权的 Codex paired live adapter、deterministic grading 与可信报告。
-- 优点：既保留低成本 CI，也能回答“skill 是否真正有增益”；协议可移植，安全边界明确。
-- 缺点：实现和测试较多；activation 需版本探针；live 结果仍有模型漂移。
-- 风险：误隔离、成本失控、oracle 泄漏和 judge 偏差；均有 fail-closed gate。
-- 验证：VAL-01 至 VAL-15，含 synthetic live smoke。
-- 回滚：保留 offline 子集，移除 live adapter。
+- 安全简单、CI 稳定。
+- 无法组织语义审查，也不能承接用户主动提供的真实使用证据，最终结论不完整。
+- 不单独采用。
 
-### 方案 C：托管评测服务或常驻本地服务
+### 方案 C：静态内核 + 当前 Agent review + 用户 observation 导入
 
-- 做法：数据库、队列、Web dashboard 与远程 API 管理实验。
-- 优点：适合大规模并发和多人共享。
-- 缺点：远超当前五个 skill 的规模，引入部署、认证、迁移和生命周期负担；托管 Evals 平台还有退役风险。
-- 风险：扩大秘密和外部写入面，难以在 skill 安装后直接使用。
-- 验证：需要新的服务集成和运维体系。
-- 回滚：昂贵，不符合最小适用设计。
+- 脚本只做机械事实，Skill 约束当前 Agent，真实运行由用户掌控。
+- 保留 prompt/case/baseline/assertion/provenance 的优秀评测方法，不引入 Agent runtime。
+- 真实行为证据需要用户额外操作，但证据边界最清晰。
+- 选择。
 
 ## 决策（Decision）
 
-选择方案：方案 B。
+详细设计见 `ART-03`。公共流程收敛为：
 
-原因：它是唯一同时覆盖静态合法性、真实触发、行为增益、评测可信度和成本的方案，并可用现有 Python/CLI/repo patterns 落地；通过 offline/live 分层避免把昂贵非确定性任务变成普通 CI 依赖。
+```text
+inventory? -> static check -> semantic review -> report -> current Agent conclusion
+                                      \
+                                       -> prepare packet -> user run -> import -> report
+```
 
-影响：新增一个 skill、一个 root self-eval、一个 offline CI workflow、runtime ignore 规则和 README/CHANGELOG 条目；现有 skill runtime 与 eval contract 不变。
+公共 CLI 只有：
 
-可逆性：加法改动；live adapter 可独立回滚，offline inventory/validate/report 仍可使用。
+- `se_inventory.py`
+- `se_check.py`
+- `se_validate.py`
+- `se_prepare.py`
+- `se_import.py`
+- `se_report.py`
 
-变更条件：只有出现稳定官方 activation event、需要第二 runner、项目规模要求服务化或用户要求迁移现有 eval 时才重新评估架构。
-
-方案变更触发条件：与 `plan-contract.json.reapproval_triggers` 一致，包括公共协议、DAG/VAL、安全边界、依赖、activation truth source、批量迁移和授权范围变化。
+生产代码不出现 `subprocess`、Agent CLI 或模型 API。manual observation packet 是普通 JSON/Markdown 制品，不包含
+任何启动指令。报告只产出 evidence summary 和 claim boundary，最终结论由当前 Agent 在工作流末尾完成。
 
 ## 影响面矩阵（Impact Matrix）
 
-| Surface | Involved | Files/modules | Risk | Validation | Docs |
-| --- | --- | --- | --- | --- | --- |
-| API | yes | 7 个 `se_*.py` JSON CLI contract | medium | VAL-01、VAL-03 | SKILL/references |
-| 数据结构 | yes | suite/run/report schemas | high | VAL-01、VAL-10 | suite-contract |
-| 前端交互 | no | none | low | 不适用 | 无 |
-| 配置/环境 | yes | Codex flags、env policy、work-dir、budget | high | VAL-04 至 VAL-07 | codex-runner/security |
-| 兼容性 | yes | Python 3.12、三平台、Codex capability | high | VAL-06、VAL-14 | workflow/troubleshooting |
-| 测试 | yes | skill tests、root self-eval、synthetic fixtures | medium | VAL-01 至 VAL-14 | validation reference |
-| 文档 | yes | README、CHANGELOG、SKILL/references | low | VAL-03、VAL-15 | 同左 |
-| 代码标准 | yes | 新增 Python 模块和 workflow | medium | VAL-03、VAL-15 | ART-02 |
-| 架构设计 | yes | contracts -> isolation -> runner -> grading -> report | high | VAL-12、VAL-15 | ART-03、ART-06 |
+| Area | Impact | Evidence |
+| --- | --- | --- |
+| Skill instructions | 完整重写 workflow、references 和 UI prompt | `ART-03`、`ART-04` |
+| Public CLI | 删除 doctor/plan/run/grade，新增 check/prepare/import | `ART-04` |
+| Data contracts | 删除 run/trace/judge/budget，新增 static/review/observation/report | `ART-03` |
+| Python core | 从 Agent runner 重构为只读 parser/checker 和 evidence tools | `ART-04` |
+| Tests/evals | 删除 live/fake runner 测试，重建纯静态 fixtures 与 mutation coverage | `ART-06` |
+| CI | 三平台保持，但只运行 unit/inventory/static pipeline | `ART-06` |
+| Other skills | 不修改；inventory 继续只读识别 | `ART-04` |
+| Harness | revision 1、2 归档，revision 3 仅继承语义相同且已完成的前三阶段 | amendment archive |
+
+## 安全与错误策略
+
+- 目标/baseline/input 只读，拒绝 link、`..`、source=output 和覆盖已有 packet。
+- 不读取认证目录、环境秘密或用户配置；不需要任何新环境变量。
+- Python 语法通过 `ast.parse` 检查，目标模块永不 import。
+- capability scan 只报告静态信号，不执行或断言真实副作用。
+- closed document 对未知字段 fail closed；建议性规范只产生 warn。
+- observation 缺失、stale 或用户 provenance 不完整时保持 `inconclusive`。
+- 所有错误输出稳定 code、path、message、guidance 和非零退出码；无隐式 retry。
 
 ## 实施计划（Implementation Plan）
 
-阶段依赖、引用、授权和验证以 `plan-contract.json` 为机器真相源；以下各阶段形成可独立验收的纵向结果。
-
-### STG-01：建立评测协议、CLI 骨架与仓库 inventory
-
-目标：交付不需要模型的最小可用 lab：可以发现仓库 skill、验证 suite、展开 CLI 契约。
-
-做法：建立 `contracts/errors/output/cli/inventory`；实现 `se_doctor.py` offline、`se_inventory.py`、`se_validate.py`、`se_plan.py` 骨架；创建 closed schemas、valid/mutation fixtures 和 public help。
-
-原因：先用 tracer-bullet 打通 contract -> CLI -> fixture -> evidence，后续安全和 live 层只消费稳定模型。
-
-位置：`skills/skill-evaluation-lab/`、`evals/skill-evaluation-lab/`。
-
-参考来源：`ART-01` Agent Skills；`ART-02` Python argparse/json 与 script 规范。
-
-适用规范：非交互、JSON stdout、stderr diagnostic、稳定错误码、unknown field fail closed。
-
-开发质量检查：public scripts 只做参数解析/调用/输出；契约定义唯一；不复制 quick validator；无 live side effect。
-
-验证：`VAL-01`、`VAL-02`、`VAL-03`。
-
-风险和回滚：schema 过宽会掩盖错误，过窄会阻塞扩展；用 mutation fixtures 固化当前契约，后续实质变化走 amendment。回滚整个新目录不影响已有 skill。
-
-阶段契约：
-
-- 依赖：无。
-- 需求/验收：REQ-01、REQ-02、REQ-10；AC-01、AC-02、AC-10；NFR-05、NFR-06、NFR-07。
-- 允许修改：`skills/skill-evaluation-lab/`、`evals/skill-evaluation-lab/`。
-- 禁止修改：`existing skill runtime behavior`、`existing eval runner contracts`、`external systems`。
-- 进入条件：approved plan and executor attestation exist；workspace remains on harness/feature with known clean or reconciled changes。
-- 退出条件：suite validator and inventory return stable JSON contracts；all public CLI help paths work without live credentials；valid and mutation fixtures pass。
-- 必需验证：VAL-01、VAL-02、VAL-03。
-- 是否预期提交：none。
-
-### STG-02：实现快照、隔离、安全策略与预算指纹
-
-目标：在任何模型调用前证明 source/secret/oracle 边界和最大成本。
-
-做法：实现 `snapshots/isolation/security/budgets`；规范化 suite + snapshot + runner matrix 计算 SHA-256 fingerprint；复制独立 Git workspace；拒绝 symlink/junction/`..` 逃逸；构造 child env allowlist；unknown outcome 只 reconcile。
-
-原因：隔离是 live runner 的前置能力，不能在 runner 完成后补救。
-
-位置：`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/`、对应 tests/schemas。
-
-参考来源：Codex sandbox/config、Python subprocess/pathlib/secrets/hashlib、ART-03 安全模型。
-
-适用规范：argv + shell false、有限 timeout、显式 cwd/env、source read-only、atomic new run directory。
-
-开发质量检查：路径验证集中实现；redaction 与认证使用分离；budget 是硬 gate，不散落在 CLI。
-
-验证：`VAL-04`、`VAL-05`。
-
-风险和回滚：跨平台 symlink/junction 差异可能误判；用三平台 fixture 与 containment 双重检查。失败时保留 STG-01 offline 能力。
-
-阶段契约：
-
-- 依赖：STG-01。
-- 需求/验收：REQ-03、REQ-09；AC-03、AC-09；NFR-02、NFR-04、NFR-05、NFR-06。
-- 允许修改：`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/`、`skills/skill-evaluation-lab/tests/`、`skills/skill-evaluation-lab/schemas/`。
-- 禁止修改：`source skill contents during a run`、`secret files or secret values`、`danger-full-access execution`。
-- 进入条件：STG-01 contract and fixtures pass；snapshot exclusions and work-dir ownership are defined。
-- 退出条件：source hashes remain unchanged across fake runs；path escape and secret inheritance mutations fail closed；fingerprint changes on every material matrix or snapshot change。
-- 必需验证：VAL-04、VAL-05。
-- 是否预期提交：none。
-
-### STG-03：实现 Codex CLI adapter 与真实 trigger observation
-
-目标：用可验证、版本敏感且失败关闭的方式观测 skill body 是否实际加载。
-
-做法：实现 RunnerAdapter/Codex adapter/JSONL parser；先用 `debug prompt-input` 验证 candidate visible 与 baseline hidden；trigger snapshot 只追加随机 nonce body 回执，description 不变；prompt 不含 nonce；用 structured final 精确匹配；记录 CLI/model/config/usage。
-
-原因：self-report 不是 truth source，官方又没有文档化 activation event；nonce 是不会影响触发决策的最小 instrumentation。
-
-位置：`codex_runner.py`、`runners.py`、`traces.py`、tests 与 synthetic fixtures。
-
-参考来源：Codex non-interactive/config docs、Agent Skills progressive disclosure/trigger eval、ART-01。
-
-适用规范：ephemeral、ignore user config/rules、read-only trigger、network off、skills.config session override、secret-free artifact。
-
-开发质量检查：adapter 与 experiment strategy 分离；未知 event 保留但不猜语义；activation probe 连续失败即 stop。
-
-验证：`VAL-06` 为无/低成本 capability doctor，`VAL-07` 在明确模型调用授权后运行 3 positive + 3 near-miss attempts。
-
-风险和回滚：CLI 行为可能漂移；doctor 记录版本和 prompt fingerprint。若 nonce 机制不可靠，不改用回答文本猜测，停止并请求 amendment；offline lab 保留。
-
-阶段契约：
-
-- 依赖：STG-02。
-- 需求/验收：REQ-04、REQ-06、REQ-09、REQ-13；AC-04、AC-06、AC-09、AC-13；NFR-01、NFR-02、NFR-03、NFR-04、NFR-07。
-- 允许修改：`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/codex_runner.py`、`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/runners.py`、`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/traces.py`、`skills/skill-evaluation-lab/tests/`、`evals/skill-evaluation-lab/fixtures/`。
-- 禁止修改：`Codex authentication material`、`production skills for instrumentation`、`model self-report as activation truth`。
-- 进入条件：STG-02 security and budget tests pass；user explicitly authorizes finite live Codex model calls before VAL-07。
-- 退出条件：debug prompt-input proves candidate visible and baseline hidden；synthetic nonce positive and near-miss negative meet recorded threshold；unsupported capability returns stable fail-closed result。
-- 必需验证：VAL-06、VAL-07。
-- 是否预期提交：none。
-
-### STG-04：实现 paired behavior runner 与确定性断言
-
-目标：在 pristine candidate 与 baseline 之间执行公平的行为实验，并以可复核机械证据评分。
-
-做法：实现 case pairing、agent-visible copy、output manifest、typed assertions 和 trusted verifier argv；candidate/baseline 使用相同 prompt、fixture、model、sandbox、timeout 和近邻顺序；behavior 不使用 nonce snapshot。
-
-原因：trigger 成功不等于产出有价值，必须证明 skill 相对 baseline 的实际行为增益。
-
-位置：`assertions.py`、`isolation.py`、`se_run.py`、tests 与 behavior fixtures。
-
-参考来源：Agent Skills output eval、OpenAI task-specific eval、ART-03 assertion contract。
-
-适用规范：oracle 不复制、verifier shell=false/timeout/env allowlist、workspace containment、PASS 必须引用证据。
-
-开发质量检查：assertion type 使用 closed dispatcher；verifier 与 runner 分离；candidate/baseline 唯一差异可审计。
-
-验证：`VAL-08`、`VAL-09`。
-
-风险和回滚：baseline 可能也完成简单任务；报告为 low-information，不伪造 improvement。若 live behavior 无授权，stage 保持 blocked 而不是跳过 required evidence。
-
-阶段契约：
-
-- 依赖：STG-02、STG-03。
-- 需求/验收：REQ-03、REQ-05、REQ-06、REQ-13；AC-03、AC-05、AC-06、AC-13；NFR-02、NFR-03、NFR-04、NFR-06。
-- 允许修改：`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/assertions.py`、`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/isolation.py`、`skills/skill-evaluation-lab/scripts/se_run.py`、`skills/skill-evaluation-lab/tests/`、`evals/skill-evaluation-lab/fixtures/`。
-- 禁止修改：`arbitrary shell verifier strings`、`network-enabled behavior cases`、`writes outside isolated case workspace`。
-- 进入条件：STG-02 isolated workspace is proven；STG-03 runner produces valid trace/final/usage or explicit unsupported。
-- 退出条件：fake and live paired cases keep all variables except skill snapshot constant；typed assertions and trusted verifier emit concrete evidence；oracle leakage fixture is rejected。
-- 必需验证：VAL-08、VAL-09。
-- 是否预期提交：none。
-
-### STG-05：实现 grading、统计聚合与可信报告
-
-目标：把 run artifacts 转成不掩盖不确定性、成本和评测器缺陷的决策证据。
-
-做法：实现 deterministic grade、blind/swap judge protocol、human feedback merge、Wilson interval、paired delta、token/time 统计、provenance compatibility 和 JSON/Markdown report。
-
-原因：单一通过率或裁判总分会隐藏 baseline、样本量、漂移、成本和 inconclusive。
-
-位置：`grading.py`、`metrics.py`、`reports.py`、`se_grade.py`、`se_report.py` 与 tests。
-
-参考来源：OpenAI evaluation best practices/graders、MT-Bench judge 论文、2026 benchmark audits。
-
-适用规范：deterministic first、A/B 去标识、swap、人工校准、样本不足不伪造方差、跨指纹不聚合。
-
-开发质量检查：grader 只读 artifacts 不重跑 case；metrics 无 runner 依赖；report 只消费规范化模型。
-
-验证：`VAL-10`、`VAL-11`。
-
-风险和回滚：统计过度解释与 judge 偏差；报告强制展示 n、interval、advisory/inconclusive。可完全关闭 judge 而不影响 deterministic pipeline。
-
-阶段契约：
-
-- 依赖：STG-04。
-- 需求/验收：REQ-07、REQ-08、REQ-13；AC-07、AC-08、AC-13；NFR-03、NFR-04、NFR-05、NFR-06。
-- 允许修改：`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/grading.py`、`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/metrics.py`、`skills/skill-evaluation-lab/scripts/skill_evaluation_lab/reports.py`、`skills/skill-evaluation-lab/scripts/se_grade.py`、`skills/skill-evaluation-lab/scripts/se_report.py`、`skills/skill-evaluation-lab/tests/`。
-- 禁止修改：`single opaque overall score`、`unblinded candidate labels for judge`、`aggregation across incompatible provenance`。
-- 进入条件：STG-04 run artifacts and assertion evidence are stable；judge remains optional and separately budgeted。
-- 退出条件：metrics handle small samples and incompatible provenance correctly；swap conflict is inconclusive；JSON and Markdown reports expose quality, cost, uncertainty and failure taxonomy。
-- 必需验证：VAL-10、VAL-11。
-- 是否预期提交：none。
-
-### STG-06：完成 skill 工作流、self-eval 与现有 eval 衔接
-
-目标：把模块变成另一个 Codex 能正确触发、按需读取并组合使用的完整 skill。
-
-做法：写精简 `SKILL.md`、`agents/openai.yaml`、workflow/suite/grading/runner/security references、example assets；建立 root self-eval 与 synthetic skill；inventory 给出现有 eval 的 coverage/conversion 建议，保持其命令不变；更新 README/CHANGELOG。
-
-原因：skill 的价值来自可调用工作流，不是脚本数量；references 避免主上下文膨胀。
-
-位置：skill docs/assets、`evals/skill-evaluation-lab/`、`README.md`、`CHANGELOG.md`。
-
-参考来源：Agent Skills progressive disclosure、skill-creator、两个参考仓库的 atomic orchestration/artifact loop。
-
-适用规范：description 同时说明 what/when；body 用祈使流程；reference 一层；不创建 skill 内 README/CHANGELOG 等冗余文件。
-
-开发质量检查：能力列表简洁，只有不确定时读深 reference；脚本组合不固定成一次性场景；示例无真实秘密。
-
-验证：`VAL-03`、`VAL-12`、`VAL-13`。
-
-风险和回滚：description 太宽会误触发，太窄会漏触发；self trigger suite 覆盖正例和 near miss。文档与 eval 可以独立回滚。
-
-阶段契约：
-
-- 依赖：STG-05。
-- 需求/验收：REQ-02、REQ-10、REQ-12；AC-02、AC-10、AC-12；NFR-05、NFR-06、NFR-07。
-- 允许修改：`skills/skill-evaluation-lab/SKILL.md`、`skills/skill-evaluation-lab/agents/openai.yaml`、`skills/skill-evaluation-lab/references/`、`skills/skill-evaluation-lab/assets/`、`evals/skill-evaluation-lab/`、`README.md`、`CHANGELOG.md`。
-- 禁止修改：`bulk migration of existing evals`、`automatic modification of evaluated skills`、`duplicate user-facing documentation inside the skill`。
-- 进入条件：STG-05 public behavior and report schema are stable；self-eval fixtures do not contain real credentials or private data。
-- 退出条件：SKILL.md remains lean and routes to atomic scripts/references；self-eval demonstrates full fake pipeline and synthetic live path；existing eval commands remain unchanged and pass。
-- 必需验证：VAL-03、VAL-12、VAL-13。
-- 是否预期提交：none。
-
-### STG-07：完成三平台 CI、代码审查与最终交付证据
-
-目标：证明新增 lab 在仓库公共契约、三平台 offline 环境和实际 Codex smoke 中可用，并完成最终交付复核。
-
-做法：新增 offline matrix workflow 与 runtime ignore；串行运行全部 required VAL；审查安全、评测有效性、架构、文档和 diff；只记录实际 CI/live 状态。
-
-原因：跨平台与评测器可信度必须由独立证据闭环，不能以本地单平台通过代替。
-
-位置：`.github/workflows/skill-evaluation-lab.yml`、`.gitignore`、相关源码/tests/docs。
-
-参考来源：现有两套 workflow、OpenAI automation security guidance、ART-04。
-
-适用规范：ordinary CI 不含 secret/live；contents read；Python 3.12；失败上传 compact evidence；Git 串行。
-
-开发质量检查：审查正确性、路径/秘密/权限、prompt/oracle 泄漏、偏差、错误语义、耦合、重复和过度设计。
-
-验证：`VAL-01` 至 `VAL-15`；`VAL-14` 需要三平台 CI 证据，`VAL-15` 汇总 review 与 `git diff --check`。
-
-风险和回滚：workflow 表达式或平台差异可造成 CI failure；先本地解析/静态检查，再由 Actions 验证，不用 skip 掩盖失败。
-
-阶段契约：
-
-- 依赖：STG-06。
-- 需求/验收：REQ-01、REQ-02、REQ-03、REQ-04、REQ-05、REQ-06、REQ-07、REQ-08、REQ-09、REQ-10、REQ-11、REQ-12、REQ-13；AC-01、AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-09、AC-10、AC-11、AC-12、AC-13；NFR-01、NFR-02、NFR-03、NFR-04、NFR-05、NFR-06、NFR-07。
-- 允许修改：`.github/workflows/skill-evaluation-lab.yml`、`.gitignore`、`README.md`、`CHANGELOG.md`、`skills/skill-evaluation-lab/`、`evals/skill-evaluation-lab/`。
-- 禁止修改：`CI secrets in repository files`、`live model calls on ordinary pull_request`、`unrelated repository refactors`。
-- 进入条件：STG-06 self-eval and existing eval regression pass；all required live evidence is present or task is explicitly blocked。
-- 退出条件：Windows Linux and macOS offline CI contract is valid；all required validations and development quality review pass；diff check is clean and final evidence records actual results without overclaim。
-- 必需验证：VAL-01、VAL-02、VAL-03、VAL-04、VAL-05、VAL-06、VAL-07、VAL-08、VAL-09、VAL-10、VAL-11、VAL-12、VAL-13、VAL-14、VAL-15。
-- 是否预期提交：final，但当前 commit policy 未授权；获得单独授权后才提交。
+### STG-01：移除 Agent runner 并建立静态契约内核
+
+- Depends on：无。
+- Covers：`REQ-01`、`REQ-02`、`REQ-07`、`REQ-08`、`REQ-11`；`AC-01`、`AC-02`、`AC-07`、
+  `AC-08`、`AC-11`；`NFR-01`、`NFR-02`、`NFR-03`、`NFR-04`、`NFR-05`。
+- Allowed changes：`skills/skill-evaluation-lab/scripts/`、`skills/skill-evaluation-lab/schemas/`、
+  `skills/skill-evaluation-lab/assets/`、`skills/skill-evaluation-lab/tests/`。
+- Forbidden changes：`Codex、模型 API、子代理或其它 Agent 派生执行`、`网络、凭据读取或目标 source 写入`、
+  `revision 1 兼容 adapter 或 schema 分支`、`其它 Skill runtime`。
+- 实施：
+  1. 删除 revision 1 runner/live/trace/budget/assertion/grading 模块和公共 CLI。
+  2. 建立 safe paths、tree identity、frontmatter/Markdown/resource parser 和 closed contracts。
+  3. 实现 candidate/baseline 静态 checks、capability signals 和 transparent delta。
+  4. 增加 mutation、资源上限、link/path、AST 和零派生执行测试。
+- Required VAL：`VAL-01`、`VAL-02`、`VAL-03`。
+- Entry：revision 2 attestation 有效，工作树只有已知 amendment artifacts。
+- Exit：旧执行面完全消失，静态 evidence 对合法/非法/baseline fixtures 稳定闭环。
+- Risk：high；删除面大，需全仓引用检索和 fail-closed tests。
+- Rollback：整体恢复 revision 1 commit；不保留混合协议。
+- Commit expectation：none。
+
+### STG-02：实现用户 observation packet 与证据导入
+
+- Depends on：`STG-01`。
+- Covers：`REQ-04`、`REQ-05`、`REQ-07`、`REQ-08`；`AC-04`、`AC-05`、`AC-07`、`AC-08`；
+  `NFR-01`、`NFR-02`、`NFR-03`、`NFR-04`、`NFR-05`。
+- Allowed changes：`skills/skill-evaluation-lab/assets/`、`skills/skill-evaluation-lab/schemas/`、
+  `skills/skill-evaluation-lab/scripts/`、`skills/skill-evaluation-lab/tests/`。
+- Forbidden changes：`自动运行 packet 或任意目标脚本`、`Agent 启动命令、模型配置或凭据`、
+  `workspace 外写入或覆盖已有 packet`。
+- 实施：
+  1. 定义 trigger-positive、trigger-near-miss 和 behavior case 的 closed suite。
+  2. 生成带 source/input hash、用户步骤和唯一 fingerprint 的不可覆盖 packet。
+  3. 导入用户声明的 session/artifact，验证 packet、case、variant、path 和 hash。
+  4. 对 stale、partial、unknown 和 inconclusive 建立明确错误/状态语义。
+- Required VAL：`VAL-04`。
+- Entry：static identity 和 paths API 已稳定。
+- Exit：packet 生成过程无执行能力，合法与 mutation observation fixtures 全部闭环。
+- Risk：medium；用户数据和 artifact 路径可能不可信。
+- Rollback：删除 packet/import 分支，保留主静态流程。
+- Commit expectation：none。
+
+### STG-03：完成语义 review、报告与 Skill 工作流
+
+- Depends on：`STG-01`、`STG-02`。
+- Covers：`REQ-03`、`REQ-06`、`REQ-09`、`REQ-11`；`AC-03`、`AC-06`、`AC-09`、`AC-11`；
+  `NFR-04`、`NFR-05`、`NFR-06`。
+- Allowed changes：`skills/skill-evaluation-lab/SKILL.md`、`skills/skill-evaluation-lab/agents/openai.yaml`、
+  `skills/skill-evaluation-lab/references/`、`skills/skill-evaluation-lab/assets/`、
+  `skills/skill-evaluation-lab/schemas/`、`skills/skill-evaluation-lab/scripts/`、
+  `skills/skill-evaluation-lab/tests/`。
+- Forbidden changes：`脚本替当前 Agent 生成语义 finding`、`自动 LLM judge 或 runtime claim 推断`、
+  `revision 1 文档与公共入口残留`。
+- 实施：
+  1. 固定七维 semantic review contract、source binding、evidence 和 limitation 完整性。
+  2. 报告分开 static/semantic/observed，生成 claim boundary 和 evidence coverage。
+  3. 重写 Skill 主路径、人工 observation 分支、按需 references 和最终完成门禁。
+  4. 更新 UI metadata，确保默认 prompt 不再提 live/model authorization。
+- Required VAL：`VAL-05`、`VAL-09`。
+- Entry：static 与 observation documents 已稳定。
+- Exit：缺任一必需 review 维度时 fail closed；完整报告后当前 Agent 才能形成结论。
+- Risk：medium；过度自动化语义判断会再次越界。
+- Rollback：保留静态 evidence，回退 report/workflow 层。
+- Commit expectation：none。
+
+### STG-04：重建离线 self-eval 与三平台 CI
+
+- Depends on：`STG-03`。
+- Covers：`REQ-08`、`REQ-10`、`REQ-11`；`AC-08`、`AC-10`、`AC-11`；`NFR-01`、`NFR-02`、
+  `NFR-03`、`NFR-07`。
+- Allowed changes：`skills/skill-evaluation-lab/tests/`、`evals/skill-evaluation-lab/`、
+  `.github/workflows/skill-evaluation-lab.yml`、`skills/skill-evaluation-lab/scripts/se_inventory.py`、
+  `skills/skill-evaluation-lab/scripts/skill_evaluation_lab/inventory.py`。
+- Forbidden changes：`GitHub secrets、network eval 或 package install`、`Codex、模型或其它 Agent command`、
+  `push 或其它 workflow 行为`。
+- 实施：
+  1. 删除 fake/live runner fixture，建立 valid/invalid/baseline Skill 和 observation mutation fixtures。
+  2. 重写 inventory 与 static workflow self-eval，输出有界 evidence。
+  3. 更新三平台 Actions 命令和 artifact paths，保持所有分支触发与 `contents: read`。
+  4. 增加 CI contract test，明确生产代码无进程/网络能力且 workflow 无 live/secrets。
+- Required VAL：`VAL-06`、`VAL-07`、`VAL-08`、`VAL-10`、`VAL-11`。
+- Entry：所有公共 CLI、schema 和工作流文档已稳定。
+- Exit：本地完整复现 CI 命令，self-eval 明确 `agent_calls=0`、`network_calls=0`。
+- Risk：medium；fixture 或 Actions path 漂移会造成三平台失败。
+- Rollback：恢复上一离线 workflow；不能恢复 live CI。
+- Commit expectation：none。
+
+### STG-05：最终审查、回归与提交
+
+- Depends on：`STG-04`。
+- Covers：`REQ-01`、`REQ-02`、`REQ-03`、`REQ-04`、`REQ-05`、`REQ-06`、`REQ-07`、`REQ-08`、
+  `REQ-09`、`REQ-10`、`REQ-11`；`AC-01`、`AC-02`、`AC-03`、`AC-04`、`AC-05`、`AC-06`、
+  `AC-07`、`AC-08`、`AC-09`、`AC-10`、`AC-11`；`NFR-01`、`NFR-02`、`NFR-03`、`NFR-04`、
+  `NFR-05`、`NFR-06`、`NFR-07`。
+- Allowed changes：`approved skill-evaluation-lab scope problem fixes`、
+  `task-dir executor evidence and lifecycle files`、`final authorized Git commit`。
+- Forbidden changes：`new feature expansion or old protocol restoration`、
+  `push、external write or elevated tool`、`modification of archived revision 1`。
+- 实施：
+  1. 运行全量 lab tests、两套 self-eval、quick validator、CLI/schema/AST checks。
+  2. 运行 planner/executor harness 回归与 amendment/final checker。
+  3. 执行代码审查，重点验证无派生执行、证据等级、路径边界、错误语义和文档一致性。
+  4. 检查工作树范围、旧引用、凭据模式、`__pycache__`、行长和 `git diff --check`。
+  5. 使用单个 `git commit -F` 提交，写 `commit_recorded`，闭合任务并关闭 active pointer。
+- Required VAL：`VAL-12`、`VAL-13`，并重跑 `VAL-06`、`VAL-08`。
+- Entry：STG-01 至 STG-04 完成且无 blocking finding。
+- Exit：所有 required VAL 与 review 通过，提交已记录，executor final checker 通过。
+- Risk：medium；大规模删除可能存在陈旧引用或 evidence 盲点。
+- Rollback：提交前定点修复；提交后整体 revert 单一 commit。
+- Commit expectation：final。
+
+## 验证（Validation）
+
+| ID | Kind | Required | Coverage | Command/Process |
+| --- | --- | --- | --- | --- |
+| `VAL-01` | test | yes | `AC-02`、`AC-08`、`NFR-03`、`NFR-05` | 运行 contracts/parser/path 单元测试与 mutation fixtures |
+| `VAL-02` | test | yes | `AC-01`、`NFR-01` | 运行 `test_no_agent_execution.py`，AST 证明生产树无 subprocess/network/Agent runtime |
+| `VAL-03` | test | yes | `AC-02`、`AC-07`、`NFR-04` | 运行 static checks、candidate/baseline delta 和 source drift tests |
+| `VAL-04` | test | yes | `AC-04`、`AC-05`、`NFR-03`、`NFR-04` | 运行 packet/observation component 与 path/hash mutation tests |
+| `VAL-05` | test | yes | `AC-03`、`AC-06`、`AC-09`、`NFR-06` | 运行 semantic review completeness、report claim boundary 和 reference tests |
+| `VAL-06` | test | yes | `AC-08`、`AC-10`、`NFR-02` | 全量 `unittest discover` |
+| `VAL-07` | eval | yes | `AC-10` | 运行 inventory self-eval，确认现有 Skill coverage 和零 Agent/network 调用 |
+| `VAL-08` | eval | yes | `AC-02` 至 `AC-07`、`AC-10` | 运行 static workflow self-eval，闭合 check/review/report 和可选 import fixture |
+| `VAL-09` | lint | yes | `AC-09`、`NFR-06` | skill-creator quick validator 与 `agents/openai.yaml` 同步审查 |
+| `VAL-10` | lint | yes | `AC-08`、`NFR-02`、`NFR-05` | 六个 CLI `--help`、生产 Python AST parse、schemas/assets JSON parse、行长检查 |
+| `VAL-11` | build | yes | `AC-10`、`NFR-07` | CI contract test，并在本地执行 workflow 对应 unit/inventory/static 命令 |
+| `VAL-12` | regression | yes | amendment 与 harness 正确性 | planner/executor unit、eval、approval/preflight/transition/final checker |
+| `VAL-13` | review | yes | 全部 AC/NFR | 最终 code review、旧引用/secret/pycache 检索、范围检查和 `git diff --check` |
+
+具体命令、预期证据和替代路径见 `ART-06`。Hosted 三平台 Actions 需要用户 push，属于提交后的观察项，不作为本地
+提交前 required VAL，也不得为此自动 push 临时 ref。
 
 ## 环境（Environment）
 
-Workspace 环境来源：`.harness/environment.md` 仅作稳定能力参考；其中历史任务动态文字不作为当前活动任务真相，`.harness/active-task.json` pointer 才具有定位权威。
-
-本任务使用：
-
-- Windows PowerShell workspace：`D:/Item/vibe_coding/dev-skills`。
-- Git branch：`harness/feature`。
-- Python 3.12-compatible stdlib；执行统一加 `-X utf8 -B`。
-- Git、Codex CLI `0.144.1` 当前可发现；Actions 使用 Python 3.12。
-- live smoke 允许 Codex CLI 自己使用现有认证，但代码不得读取/复制认证内容。
-
-临时覆盖：
-
-- child Codex 使用独立 case workspace、`--ephemeral --ignore-user-config --ignore-rules` 与 session config。
-- 所有业务 token/PAT/key 从 child env 移除；case shell env 使用 include-only/none 策略。
-- runtime evidence 写 `.harness/test-tmp/skill-evaluation-lab/` 或 task validation artifacts，不提交 raw run。
+- Workspace：`D:/Item/vibe_coding/dev-skills`，稳定事实见 `.harness/environment.md`。
+- Runtime：本地 Python 3.13.12；公共兼容目标 Python 3.12+；Git 2.53.0.windows.2。
+- Package manager：无；不下载或安装依赖。
+- Runtime service：无。
+- 临时输出：`.harness/test-tmp/skill-evaluation-lab/`，验证后清理。
+- 认证与环境变量：不需要且不得读取。
 
 ## Git 上下文（Git Context）
 
-- Main / working branch：当前 `harness/feature`，跟踪 `origin/harness/feature`。
-- Task type / branch action：feature managed task；规划阶段不切分支、不 pull、不 push。
-- Sync source / occupancy evidence：规划开始时 `git status --short --branch` 为 clean；实施开始由 executor 重新确认。
-- Worktree status and known changes：规划文件是当前唯一预期新增；遇到用户新改动时工作并存，不回滚。
-- Commit authorization：`not requested`。
-- Branch closure：实现完成后只有获得明确 commit 授权才创建 final commit；push/PR 另行授权。
-
-规则：同一仓库 Git 命令串行；只读状态优先 no optional locks。不得自动 stash、rebase、reset、切分支或覆盖未知改动。
+- 当前分支：`harness/feature`；不切分支、不 stash、不 rebase、不 reset。
+- revision 1 的两个已提交 commit 保留；本 revision 在其上新增一个 breaking refactor commit。
+- 同一仓库 Git 命令串行；提交前检查 status、diff、diff-check 和 staged scope。
+- 用户已授权最终 commit，未授权 push、external write 或 elevated tool。
+- 提交使用 `git commit -F <message-file>`，标题后一个空行，bullet 之间无空行。
 
 ## 工具（Tooling）
 
-| Tool | Purpose | Stage | Status | Risk | Alternative | User confirmation |
-| --- | --- | --- | --- | --- | --- | --- |
-| Python 3.12 | runtime/tests/schema/report | all | required | low | none | implementation approval |
-| Git | snapshot metadata/workspace/diff | STG-02、STG-07 | required | medium | filesystem hash only loses repo evidence | implementation approval |
-| Codex CLI | capability probe/live runner | STG-03、STG-04 | required for live AC | model cost/external call | fake runner only,不能证明真实能力 | explicit finite model-run approval |
-| Agent Skills validator | validate new skill | STG-01、STG-06 | required | low | repo-local equivalent if path unavailable | implementation approval |
-| GitHub Actions | 三平台 offline evidence | STG-07 | required | external compute | user push then inspect CI | external action only after separate authorization |
-| web/official docs | implementation drift check | amendment only | conditional | changing facts | cached ART-01/ART-02 | new search needs normal network permission |
+- 允许工具：PowerShell、Python、Git、`apply_patch`、在线官方资料查询。
+- 禁止工具：`codex` 命令、模型 API、subagent/thread 派生、后台服务和 package auto-install。
+- 本任务无长期进程，不进入 process-manager。
 
 ## 长期进程管理（Process Manager Gate）
 
 - Needs long-running process：`no`。
-- Codex run、verifier、test 和 Actions job 都是有 timeout 的 finite command，不进入 process-manager。
-- 不启动后台 server、worker、watcher 或队列。
-- 若实现中出现常驻服务需求，属于架构变化，必须停止并重新批准；不得用手写后台 shell 绕过 manager。
-
-## 验证（Validation）
-
-| VAL ID | Required | Kind / command / tool | Covers | Evidence path | Failure handling |
-| --- | --- | --- | --- | --- | --- |
-| VAL-01 | yes | contract unittest | AC-01 / NFR-06、NFR-07 | artifacts/validation/contract-tests.json | 修 contract/fixture 后重跑 |
-| VAL-02 | yes | inventory eval | AC-02、AC-12 | artifacts/validation/inventory-evals.json | 修 scanner，不改现有 eval |
-| VAL-03 | yes | portable spec validation + all CLI help；官方 validator 可用时做 parity check | AC-10 / NFR-05、NFR-07 | artifacts/validation/skill-and-cli-validation.json | 修 metadata/CLI，差异不静默忽略 |
-| VAL-04 | yes | isolation/security unittest | AC-03、AC-09 / NFR-02、NFR-04 | artifacts/validation/isolation-security.json | security failure 立即停止 |
-| VAL-05 | yes | budget/fingerprint unittest | AC-09 / NFR-04、NFR-05 | artifacts/validation/budget-fingerprint.json | fail closed |
-| VAL-06 | yes | Codex doctor/capability probe | AC-06、AC-13 / NFR-01、NFR-07 | artifacts/validation/codex-probe.json | unsupported 不伪造通过 |
-| VAL-07 | yes | 3 positive + 3 near-miss live trigger | AC-04 / NFR-03、NFR-04 | artifacts/validation/live-trigger.json | 授权缺失则 blocked；机制失败触发 amendment |
-| VAL-08 | yes | assertion unittest | AC-05 / NFR-03、NFR-06 | artifacts/validation/assertion-tests.json | 修 typed checker |
-| VAL-09 | yes | live paired behavior | AC-05、AC-06 / NFR-03 | artifacts/validation/live-behavior.json | 不盲目 retry，先 reconcile |
-| VAL-10 | yes | grading/metrics/report unittest | AC-07、AC-08 / NFR-03、NFR-04、NFR-05 | artifacts/validation/grading-metrics-report.json | 修聚合并全量回归 |
-| VAL-11 | yes | blind judge protocol unittest | AC-07、AC-13 / NFR-03 | artifacts/validation/blind-judge-protocol.json | conflict 必须 inconclusive |
-| VAL-12 | yes | offline self-eval | AC-08、AC-10、AC-12 / NFR-06 | artifacts/validation/self-evals.json | 修 harness/fixture |
-| VAL-13 | yes | existing evals unchanged | AC-12 / NFR-07 | artifacts/validation/existing-evals-regression.json | 定位回归，禁止改命令掩盖 |
-| VAL-14 | yes | 三平台 offline Actions | AC-11 / NFR-01 | artifacts/validation/cross-platform-ci.md | 按真实平台日志修复 |
-| VAL-15 | yes | final development review + diff check | all AC/NFR | artifacts/validation/final-validation.md | finding 修复后重跑相关与全量 |
-
-无法执行的 required 项不得标 passed。尤其 VAL-07/VAL-09 需要 live model authorization，VAL-14 需要用户 push 或外部 Actions 授权；缺失时任务保持 blocked 并说明已有替代证据与残余风险。
+- 所有 validation 都是有 timeout 的 finite command，不启动服务、worker、watcher 或 dev server。
+- 若实现意外需要长期进程，属于 plan drift，必须 amendment；不得手写后台 shell。
 
 ## 文档（Documentation）
 
-必需更新：
+- 必需更新：`SKILL.md`、`agents/openai.yaml` 和五个按需 references，与当前唯一 CLI/schema 同步。
+- 必需删除：Codex runner、live grading、judge、budget、trace 和旧协议文档。
+- README/CHANGELOG：仅在仓库入口失真时定点修改；当前计划不产生无关发布文档变更。
+- Runtime packet/report 是用户工作制品，不放入 Skill 源码或 Git 提交。
 
-- `skills/skill-evaluation-lab/SKILL.md`、`agents/openai.yaml`。
-- `references/workflow.md`、`suite-contract.md`、`grading.md`、`codex-runner.md`、`security.md`。
-- example suite/judge assets；root self-eval 说明。
-- 根 `README.md` skill 列表/用途；根 `CHANGELOG.md` 记录新增能力和安全边界。
+## 文件写入策略
 
-Changelog 只写实际完成内容，不写 pending commit hash；skill 内不新增 README/CHANGELOG/quick reference 等冗余文档。
-
-## 文件写入策略（File Write Strategy）
-
-| File / group | Segmented | Semantic boundaries | Whole-file check |
-| --- | --- | --- | --- |
-| SKILL.md/references | yes | frontmatter、workflow、选择/安全/故障 | UTF-8、链接、行数、重复 |
-| contracts/schemas | yes | root、case、assertion、artifact | JSON parse、closed fields、fixtures |
-| internal Python package | yes | contract、安全、runner、grading、report | imports、unit、中文注释、无循环 |
-| tests/evals | yes | unit、component、mutation、synthetic | discover、fixture isolation |
-| workflow/docs | local patch | jobs/steps、README section、changelog entry | YAML 静态检查、diff check |
-
-长文件先建框架，再按完整类/函数/章节分段 patch；单次新增控制在 120 行附近、最多 200 行。已有大文件只做局部定点修改，完成后完整重读并检查末尾换行。
+- planning artifacts、plan 和 contract 已按完整章节分段 patch；大文件不整段单次重写。
+- 实施阶段优先删除失效模块后按模块新建，每个 patch 保持类/函数/配置对象完整。
+- schema 和 runtime validator 分文件更新，随后立即运行 parse/contract tests。
+- 不生成或提交 `__pycache__`、runtime packet、self-eval 临时目录或 active pointer。
 
 ## 问题和覆盖项（Questions And Overrides）
 
-| 是否阻塞 | 状态 | 问题 | 决策 | 应用位置 |
+| ID | Blocking | Status | Decision | Applied to |
 | --- | --- | --- | --- | --- |
-| no | closed | 是否建服务 | 不建；finite subprocess | GOAL-01、ART-03 |
-| no | closed | 是否迁移现有 evals | 保持不变，提供 inventory/conversion | REQ-12、STG-06 |
-| no | closed | 如何判断 activation | instrumented body nonce + synthetic capability probe | REQ-04、STG-03 |
-| no | closed | 是否默认 LLM judge | 否；可选、另计预算、盲化/swap/人工校准 | REQ-07、STG-05 |
-| no | closed | live call 如何授权 | dry-run fingerprint + 当前任务明确 model-run authorization | REQ-09、VAL-07、VAL-09 |
+| `Q-01` | no | resolved | 不保留任何自动 Codex/Agent 评测入口 | `REQ-01`、`NFR-01`、`VAL-02` |
+| `Q-02` | no | resolved | 真实观察由用户独立运行，Skill 只生成 packet 和导入 evidence | `REQ-04`、`REQ-05` |
+| `Q-03` | no | resolved | 不兼容 revision 1，amendment 不 carry stage | 所有 stages、`REQ-11` |
+| `Q-04` | no | resolved | Hosted Actions 由用户 push 后观察，本地不自动 push | `VAL-11`、最终交付 |
 
 ## 方案质量门禁（Plan Quality Gate）
 
-| Check | Status | Evidence |
-| --- | --- | --- |
-| 关键判断有证据等级 | passed | Context evidence table、ART-01 |
-| Research Gate 已完成 | passed | ART-01，官方/一手来源和 closed uncertainty |
-| Standards Discovery Gate 已完成 | passed | ART-02 |
-| Development Quality Gate 已完成 | passed | 本节与 ART-03/ART-04 |
-| 影响面矩阵完整 | passed | API/data/config/compat/tests/docs/architecture 全覆盖 |
-| 候选方案比较充分 | passed | 静态-only、本地分层、服务化三个可区分方案 |
-| 每阶段可独立验证 | passed | 7 个 stage 均有 observable exit 和 VAL |
-| 方案变更触发条件清楚 | passed | contract reapproval triggers |
-| 用户批准摘要可记录 | passed | Plan Approval 与 Executor Handoff |
-
-质量结论（Quality result）：`passed`。
+- 一手资料支持用户驱动、独立会话、机械断言和渐进披露决策。
+- 比较了保留 runner、纯 linter 和分层工作流三种可区分方案。
+- change map 覆盖公共入口、模块、schema、assets、tests、evals、CI 和删除面。
+- 所有 must REQ 均有 AC、stage 和 required VAL；所有 NFR 均进入 stage/VAL。
+- breaking behavior、回滚、权限、Git、三平台和用户 observation 停止点明确。
+- 无未解决决策、秘密、外部服务或长期进程 blocker。
 
 ## 规划自查（Plan Self-Review）
 
-自查结论（Review result）：`passed`。独立 evaluator 未调用，采用 deterministic checker + clean reread/self-critique fallback，结果记录在 `ART-05`。
-
-| Category | Finding | Action | Result |
-| --- | --- | --- | --- |
-| 缺陷 | 初始想法可能依赖 Evals API | 查到退役时间表 | 改为本地 adapter，closed |
-| 优化 | trigger self-report 不可靠 | 设计 nonce instrumentation + probe | closed |
-| 缺失项 | 原设计未充分处理 oracle 泄漏和 benchmark flaw | agent-visible/grader-only 分离并增加 suite QA | closed |
-| 风险 | auth/业务 token、source write、网络和成本 | env allowlist、sandbox、snapshot、fingerprint | closed |
-| 一致性 | plan/contract/artifact ID 与 stage scope 易漂移 | traceability + approval checker | closed |
-| 开发质量 | 模块可能过细或过度模式化 | 允许按内聚合并，不跨安全/评分边界 | closed |
-
-门禁重跑：完成 ART-05、ART-06、ART-07 后运行 draft checker；修正全部问题后运行 approval checker。Plan Quality、Self-Review 和 Readiness 均已按最终内容重读。
+- 缺陷修复：撤销“授权即可安全派生 Codex”的错误前提。
+- 优化：删除 runner/trace/budget/judge/statistics 过宽架构，公共 CLI 从 7 个收敛为 6 个确定性入口。
+- 缺失补全：新增当前 Agent semantic review、用户 packet、observation import 和 final synthesis gate。
+- 风险修复：生产树以 AST contract 禁止进程/网络能力，CI 不含 secrets 或 live 分支。
+- 一致性：revision 1、2 已归档；revision 3 只 carry 语义完全相同的 STG-01 至 STG-03；其它 IDs 和范围不变。
+- 降级说明：未使用独立 Agent critique，因为用户禁止自动派生 Agent；以官方资料、deterministic checker 和
+  structured self-review 替代，不伪造 clean-context review。
 
 ## 就绪门禁（Readiness Gate）
 
-| Check | Status | Evidence |
-| --- | --- | --- |
-| 目标和验收清楚 | passed | GOAL-01、REQ/AC tables |
-| 上下文已收集 | passed | local repo scan、ART-01、ART-06 |
-| 调研门禁已通过 | passed | ART-01 |
-| 规范发现门禁已通过 | passed | ART-02 |
-| 开发质量门禁已通过 | passed | ART-03、ART-04 |
-| 候选方案已比较 | passed | Options A/B/C |
-| 决策已记录 | passed | Decision 选择 B |
-| 实施阶段已细化 | passed | STG-01 至 STG-07 |
-| 环境已确认 | passed | Python/Git/Codex/Actions 及 fallback |
-| Git 上下文已确认 | passed | harness/feature、clean baseline、无 commit auth |
-| 工具已确认 | passed | Tooling table |
-| 验证已确认 | passed | VAL-01 至 VAL-15、授权/阻塞语义 |
-| 最终交付证据已规划 | passed | ART-04 required evidence |
-| 文档更新已确认 | passed | SKILL/references/root docs |
-| 风险已识别 | passed | ART-01 residual、ART-03 security、各 stage rollback |
-| 规划自查已通过 | passed | ART-05 + deterministic checker |
-| 阻塞问题已关闭 | passed | research unresolved=[]，无开放决策单 |
-
-就绪结论（Readiness result）：`passed`，可以请求用户批准；这不授权实现、模型调用或提交。
+- Research、Standards、Development Quality、Change Map、Traceability、Validation Strategy 已闭环。
+- `harness_plan_check --mode draft|approval` 必须通过后才能生成新 attestation。
+- 用户当前消息明确授权完成该重构和最终提交；revision 3 只纠正 inventory 文件的阶段归属，不扩展用户可见范围。
+- attestation：implementation=true、commit=true、external_write=false、elevated_tool=false。
+- 激活 amendment 时不 carry revision 1 stage，current ledger 从 `amendment_approved` 开始。
 
 ## 方案批准（Plan Approval）
 
-状态（Status）：`not_requested`，等待用户审阅本 revision。
-
-批准记录：由用户回复后由 executor/approval gate 写入 attestation，本计划不回写。
-
-批准摘要：
-
-- 批准范围：新增 `skill-evaluation-lab`、root self-eval、offline CI、runtime ignore、README/CHANGELOG；不迁移现有 eval，不改现有 skill runtime。
-- 阶段提交授权：未授权；STG-07 final expectation 只有后续明确授权才执行。
-- 工具/MCP 授权：请求实施授权；另请求 VAL-07/VAL-09 所需的有限 Codex model calls。GitHub Actions、push、外部写入和提权未授权。
-- 文档更新授权：随 implementation scope 请求。
-
-提交策略（Commit policy）：`not_authorized`。
+批准将 `skill-evaluation-lab` 直接重构为用户驱动的静态评估 Skill：删除全部 Codex/Agent live runner、probe、
+budget、trace、judge 和旧协议；新增静态检查、当前 Agent 七维语义 review、用户 observation packet/import、透明
+报告、离线 self-eval 和三平台 CI。授权实施与最终 `-F` commit；不授权 push、外部写入或提权。
 
 ## 方案变更门禁（Plan Amendment Gate）
 
-需要重新批准：
+- 拟恢复或新增任何 Codex、模型 API、子代理、Agent CLI、进程执行或网络能力。
+- required evidence layers、七维 review、公共 CLI、schema、Stage DAG 或 required VAL 实质变化。
+- 需要自动执行目标 Skill/脚本/test/verifier，或写入目标/baseline source。
+- 引入第三方依赖、后台服务、数据库、凭据、外部系统写入、提权或 push。
+- 需要兼容 revision 1 或批量修改其它 Skill/runtime。
 
-- public CLI、suite contract、error semantics、runner scope 或默认安全边界变化。
-- stage 数量/DAG/scope/required VAL 变化。
-- 引入第三方依赖、服务、数据库、danger-full-access、默认网络或外部写入。
-- nonce activation truth source 无法成立且拟更换机制。
-- 批量迁移现有 evals、修改现有 skill runtime 或扩大 model/commit/external/elevated 授权。
+## 停止条件（Stop Conditions）
 
-无需重新批准：不改变行为的错误文案澄清、测试 fixture 内部命名、执行 evidence、snapshot reconcile 和代码格式修复；由 executor ledger 记录，不改 immutable plan。
+- 检测到任何生产路径可能启动 Agent/进程、访问网络或读取凭据。
+- source/output containment、link、hash 或 observation provenance 无法 fail closed。
+- 实现需要超出 approved scope，或旧协议删除影响未确认的外部消费者。
+- required validation 在有界修复后仍失败，或 review 存在 blocking/major finding。
+- attestation/hash/ledger/run-state 不一致，或用户暂停/撤销授权。
 
 ## Artifact Index
 
-| ID | Kind | Path | Required | Approval included | Trigger |
-| --- | --- | --- | --- | --- | --- |
-| ART-01 | research | artifacts/research-findings.md | yes | yes | full + online-required |
-| ART-02 | standards | artifacts/standards-index.md | yes | yes | full + Python/Codex/eval standards |
-| ART-03 | architecture | artifacts/architecture.md | yes | yes | cross-module/high-risk runner |
-| ART-04 | validation | artifacts/validation-strategy.md | yes | yes | nondeterministic/live/cross-platform |
-| ART-05 | review | artifacts/plan-critique.md | yes | yes | full clean-context fallback critique |
-| ART-06 | other | artifacts/change-map.md | yes | yes | impact/call-path evidence |
-| ART-07 | other | artifacts/traceability.md | yes | yes | REQ/AC/NFR/STG/VAL closure |
-
-只列实际创建的 planning artifacts；运行日志、live traces、review 结果和 commit evidence 由 executor 在批准后创建。
+| ID | Kind | Path | Approval included |
+| --- | --- | --- | --- |
+| `ART-01` | research | `artifacts/research-findings.md` | yes |
+| `ART-02` | standards | `artifacts/standards-index.md` | yes |
+| `ART-03` | architecture | `artifacts/architecture.md` | yes |
+| `ART-04` | other | `artifacts/change-map.md` | yes |
+| `ART-05` | other | `artifacts/traceability.md` | yes |
+| `ART-06` | validation | `artifacts/validation-strategy.md` | yes |
+| `ART-07` | review | `artifacts/plan-critique.md` | yes |
 
 ## Executor Handoff
 
-- Planner checker：draft 与 approval mode 必须 passed 后才交接。
-- Open blocking decisions：none。
-- Requested implementation authorization：yes。
-- Requested commit authorization：no。
-- Requested external-write authorization：no；请求的 Codex model-run 是有限外部调用，不包含外部系统写入。
-- Requested elevated-tool authorization：no。
-- Residual risks：Codex activation 缺少官方事件、模型/CLI 漂移、私有 holdout 数据治理和三平台 sandbox 差异；均有 probe、provenance、fail-closed 和明确 stop condition。
-
-用户批准后由 executor 生成 attestation 并初始化 run-state/ledger。本文件批准后不可变。
+1. 校验 revision 3 approval 与 attestation。
+2. 使用 `activate-amendment` 且不传 `--carry-stage`，生成新 ledger/run-state。
+3. 按 STG-01 至 STG-05 连续执行；每阶段记录 Development Quality Check、review、VAL 和 transition。
+4. STG-05 提交后记录真实 commit，追加 completed，关闭 active pointer。
+5. 用显式 task-dir 运行 final checker，确认 revision 3 completed 后再向用户汇报。

@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "packet_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "declared_by": "user",
+  "sessions": [
+    {
+      "case_id": "trigger-positive",
+      "variant": "candidate",
+      "session_ref": "user-provided-session-reference",
+      "status": "inconclusive",
+      "notes": "示例值；实际使用时必须引用用户完成的独立会话。",
+      "artifacts": []
+    }
+  ]
+}

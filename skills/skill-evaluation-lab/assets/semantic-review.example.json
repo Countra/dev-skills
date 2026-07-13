@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "replace-with-static-evaluation-id",
+  "candidate_tree_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dimensions": [
+    {
+      "dimension": "invocation_boundary",
+      "status": "pass",
+      "summary": "description 同时说明适用请求与排除边界。",
+      "evidence": [{"path": "SKILL.md", "detail": "frontmatter description 包含使用和不使用条件。"}]
+    },
+    {
+      "dimension": "workflow_completeness",
+      "status": "pass",
+      "summary": "主路径具有输入、步骤、失败门禁和完成条件。",
+      "evidence": [{"path": "SKILL.md", "detail": "工作流明确静态检查、语义审查、报告和最终结论。"}]
+    },
+    {
+      "dimension": "information_architecture",
+      "status": "pass",
+      "summary": "核心工作流留在入口，细节按需进入 references。",
+      "evidence": [{"path": "SKILL.md", "detail": "原子入口和 reference 指针可渐进读取。"}]
+    },
+    {
+      "dimension": "tool_contract",
+      "status": "pass",
+      "summary": "公共 CLI 职责单一且参数边界明确。",
+      "evidence": [{"path": "SKILL.md", "detail": "六个 CLI 分别负责 inventory、check、validate、prepare、import、report。"}]
+    },
+    {
+      "dimension": "safety_and_permissions",
+      "status": "pass",
+      "summary": "流程禁止自动 Agent 派生执行和凭据访问。",
+      "evidence": [{"path": "SKILL.md", "detail": "人工观察分支要求生成 packet 后停止。"}]
+    },
+    {
+      "dimension": "verification_and_delivery",
+      "status": "pass",
+      "summary": "完成结论前要求静态、语义和报告证据闭环。",
+      "evidence": [{"path": "SKILL.md", "detail": "完成门禁不允许缺维度或脚本生成最终判断。"}]
+    },
+    {
+      "dimension": "scope_and_composability",
+      "status": "pass",
+      "summary": "原子工具可按目标组合，单 Skill 任务不强制全仓扫描。",
+      "evidence": [{"path": "SKILL.md", "detail": "inventory 是按需步骤，主路径可以从 se_check 开始。"}]
+    }
+  ],
+  "assumptions": [],
+  "limitations": ["示例未绑定真实 source hash，使用时必须替换 evaluation_id 和 candidate_tree_sha256。"],
+  "observation_decision": "not_requested"
+}

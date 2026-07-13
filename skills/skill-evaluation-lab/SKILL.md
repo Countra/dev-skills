@@ -1,40 +1,64 @@
 ---
 name: skill-evaluation-lab
-description: 设计、校验、运行和解释 Agent Skill 的结构化评测。用于创建或升级 skill、检查 description 的触发与 near-miss 边界、比较 candidate 与无 skill 或旧快照 baseline、验证行为产物、分析 token/耗时、不确定性和回归风险；当任务只需普通单元测试、代码评审或并不评估 skill 本身时不要使用。
+description: 静态检查并系统评审 Agent Skill 的触发边界、工作流、信息架构、工具契约、安全权限、验证交付和可组合性，生成 source-bound 分层证据与优化结论；可准备由用户在独立会话中手工完成的观察工作包并导入结果。当任务只是普通代码评审、单元测试，或并不评估 Skill 本身时不要使用。
 ---
 
 # Skill Evaluation Lab
 
-建立可重复、可审计的 skill 评测证据。默认只执行离线步骤；真实模型调用必须先展示不可变 fingerprint 和预算，并获得用户对本次有限调用的明确授权。
+以当前 Agent 的评审工作流评估 Skill。脚本只产生确定性静态事实、校验用户证据并汇总报告；不得自动启动或探测
+Codex、模型 API、子代理、其它 Agent 或目标脚本。
 
-## 工作流
+## 主工作流
 
-1. 明确要回答的是 inventory、触发边界、行为质量、candidate/baseline 差异还是回归门禁；不要先改被评估 skill。
-2. 需要仓库全貌时运行 `scripts/se_inventory.py --root <repo>`，把现有测试/eval 视为可保留资产，不批量迁移。
-3. 从 `assets/eval-suite.example.json` 建立闭合 suite。先设计正例、near miss、behavior oracle、split 和 baseline，再运行 `scripts/se_validate.py --suite <file>`。
-4. 运行 `scripts/se_plan.py --suite <file>`；记录 candidate/baseline 哈希、矩阵、模型、最大 agent/judge 调用数、墙钟上限和 fingerprint。
-5. `fake` suite 可直接运行。`codex-cli` suite 只有在用户批准当前 fingerprint 后，才能使用 `scripts/se_run.py --authorize-live --fingerprint <sha256>`。
-6. 依次运行 `scripts/se_grade.py` 与 `scripts/se_report.py`。确定性 assertion 优先；人工反馈和 blind/swap judge 保持独立证据层。
-7. 根据逐项 gate、样本量、Wilson 区间、paired delta、失败分类、provenance 和成本完整性解释结果；低信息或不兼容结果不得表述为提升。
-8. 修改 skill 后重新 validate/plan。任何 suite、模型、runner 配置或 source snapshot 变化都会要求新的 fingerprint 和授权。
+1. 明确 candidate、可选 baseline、用户要回答的决策问题和评估工作目录；先不修改 candidate。
+2. 只有需要仓库全貌或能力边界不清楚时，运行 `scripts/se_inventory.py --root <repo>`。
+3. 运行 `scripts/se_check.py --workspace <repo> --candidate <skill> --output <static.json>`；先处理机械 fail，
+   不把 capability signal 表述为实际行为。
+4. 当前 Agent 阅读 candidate 的 `SKILL.md`、references、scripts、tests、evals 和 static evidence，按以下七维各写一次
+   source-bound review：
+   - `invocation_boundary`
+   - `workflow_completeness`
+   - `information_architecture`
+   - `tool_contract`
+   - `safety_and_permissions`
+   - `verification_and_delivery`
+   - `scope_and_composability`
+5. 以 `assets/semantic-review.example.json` 为结构起点，替换真实 `evaluation_id`、tree hash、evidence、assumptions、
+   limitations 和 observation decision。不得让脚本替当前 Agent 生成语义 finding。
+6. 运行 `scripts/se_report.py --static <static.json> --review <review.json>` 生成分层报告。
+7. 当前 Agent 读取报告和原始证据，给出完整结论、置信边界、问题优先级与可执行优化建议。报告脚本不是结论作者。
+
+## 可选用户观察
+
+只有静态与语义证据不足以回答触发或真实行为问题时才进入此分支：
+
+1. 从 `assets/observation-suite.example.json` 建立正例、near-miss 和 behavior cases。
+2. 运行 `scripts/se_validate.py --workspace <repo> --suite <suite.json>`。
+3. 运行 `scripts/se_prepare.py --workspace <repo> --suite <suite.json> --output-dir <new-packet-dir>`。
+4. **立即停止。** 请用户在独立会话中逐个完成 packet；当前 Agent 不得代替用户启动任何 Agent 或模型。
+5. 用户交回 observation bundle 后，运行 `scripts/se_import.py` 校验 packet、source、case、artifact 和 provenance。
+6. 将 imported observation 传给 `se_report.py --observation <imported.json>`，再由当前 Agent 更新完整结论。
+
+没有导入完整 observation 时，报告必须保持 `not_requested`、`not_observed` 或 `partial`，不得推断真实触发率或行为提升。
 
 ## 原子入口
 
-- `se_inventory.py`：只读扫描 skill、脚本、测试、eval 和 CI coverage。
-- `se_validate.py`：闭合校验 suite、路径、assertion 和 runner 安全边界。
-- `se_plan.py`：展开矩阵与硬预算，计算 source-aware fingerprint；不调用模型。
-- `se_doctor.py`：仅在 Codex capability 不确定或 live 入口失败时诊断；用 `--probe-skill` 做无模型可见性 probe，普通流程不先运行。
-- `se_run.py`：创建隔离快照并执行 trigger/paired behavior；不负责质量结论。
-- `se_grade.py`：生成确定性 grade，可选合并独立 human feedback 与 blind/swap judge 结果。
-- `se_report.py`：生成透明 JSON/Markdown 报告，不产生单一不透明总分。
+- `se_inventory.py`：按需盘点 Skill、测试、eval 与 CI coverage。
+- `se_check.py`：只读生成 candidate 与可选 baseline 的确定性静态证据。
+- `se_validate.py`：校验人工 observation suite 与 workspace 资源。
+- `se_prepare.py`：只生成不可执行 packet；输出目录必须不存在。
+- `se_import.py`：只校验并规范化用户声明的 observation。
+- `se_report.py`：重新核验当前 candidate/baseline hash 后合并三层证据，不生成总分或最终判断。
 
-设计 case、split 或迁移现有 eval 时读 `references/workflow.md`。字段或 assertion 不确定时读 `references/suite-contract.md`。涉及 live Codex 时必须读 `references/codex-runner.md` 与 `references/security.md`。涉及人工反馈、指标或 LLM judge 时读 `references/grading.md`。
+## 完成门禁
 
-## 安全边界
+- static evidence 绑定当前 candidate tree，机械 fail 已解释或修复。
+- 七个语义维度完整，evidence path 存在；warn/fail 有 recommendation。
+- assumptions、limitations 和 observation decision 明确。
+- 报告分开“静态事实、审查判断、用户观察”，并保留 claim boundaries。
+- 最终结论由当前 Agent 基于完整证据给出；脚本不得代写。
 
-- 不把 expected behavior、assertion 或 judge rubric 放进 agent prompt/workspace。
-- 不直接在 source repo 上执行 behavior case；只使用隔离快照。
-- 不读取、复制或输出 `auth.json`、PAT、API key 等秘密。
-- 不在 fingerprint 不匹配、预算越界、source drift、timeout 或 outcome unknown 时盲目重放。
-- runner、trigger observation 或 judge 不受支持时明确返回 unsupported/inconclusive。
-- 不把未校准 judge 当成硬门禁，不跨 fingerprint/model/sandbox 聚合结果，不用重复次数掩盖 case 覆盖不足。
+设计评估流程时读 [workflow.md](references/workflow.md)。解释静态检查时读
+[static-checks.md](references/static-checks.md)。需要用户观察时读
+[observation-contract.md](references/observation-contract.md)。解释报告与结论边界时读
+[reporting.md](references/reporting.md)。

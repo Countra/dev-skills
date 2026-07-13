@@ -1,127 +1,69 @@
-# Skill Evaluation Workflow
+# 评估工作流
 
-只在需要设计评测、转换既有 fixture、解释结果或运行 live 矩阵时读取本文。公共脚本均为有限命令，不启动后台服务，也不会自动修改被评估 skill。
+## 证据顺序
 
-## 目录
+固定顺序为：目标界定、静态事实、当前 Agent 语义审查、可选用户观察、透明报告、当前 Agent 完整结论。
 
-1. [定义决策问题](#1-定义决策问题)
-2. [盘点现有证据](#2-盘点现有证据)
-3. [设计 case 组合](#3-设计-case-组合)
-4. [选择 baseline](#4-选择-baseline)
-5. [校验与预览](#5-校验与预览)
-6. [运行](#6-运行)
-7. [评分与报告](#7-评分与报告)
-8. [迭代与停止](#8-迭代与停止)
+任何后层都不能回写前层含义：
 
-## 1. 定义决策问题
+- 静态检查不能声称真实触发或运行行为。
+- 语义审查不能伪装成机械事实。
+- 用户 observation 是用户声明并经 hash 校验的有限样本，不能外推总体表现。
+- 报告只聚合，不替当前 Agent 作最终判断。
 
-先写一句可证伪的问题，例如：
+## 评估准备
 
-- 新 description 是否提高目标请求的触发率，同时不增加 near miss 误触发？
-- candidate 是否比无 skill baseline 更稳定地产生规定 artifact？
-- 重构是否降低 token 使用，且没有降低行为通过率？
+先记录：
 
-不要使用“整体更好”作为唯一目标。分别定义 trigger、behavior、cost 和 regression 证据；没有足够样本时保留 `low_information`。
+1. candidate 与可选 baseline 的 workspace 相对路径。
+2. 用户真正要做的决策，例如“description 是否过宽”或“工作流是否遗漏失败路径”。
+3. 是否必须观察真实触发；能由 source 回答时不创建 observation suite。
+4. evidence 输出目录。所有输出必须在 workspace 内、source 外，且使用新路径。
 
-## 2. 盘点现有证据
+仓库包含多个 Skill、用户询问 coverage 或不确定有哪些评估入口时才运行 inventory。单 Skill 请求直接进入 static check。
 
-需要仓库级全貌时运行：
+## 静态阶段
 
-```text
-python -u -X utf8 -B scripts/se_inventory.py --root <repo> --pretty
-```
+`se_check.py` 输出 source identity、八项 check、capability signals 和可选 baseline delta。处理顺序：
 
-inventory 是只读扫描，只报告 skill metadata、公共脚本、单元测试、eval 目录和 CI 引用。现有 eval 命令保持原样；只有需要统一 paired run 或报告时，才新增 suite 作为并行入口。
+1. `fail`：机械可证明的 metadata、路径、引用或语法问题。
+2. `warn`：需要当前 Agent 判断的建议或风险信号。
+3. `pass`：只代表该 check 的机械条件成立。
+4. `not_applicable`：例如未提供 baseline，不能解读为通过比较。
 
-转换既有 eval 时保留：
+修改 candidate 或 baseline 后 tree hash 会变化，旧 review、packet 和 observation 不再兼容；报告入口会重新计算当前 source，拒绝陈旧证据。
 
-1. 原 prompt/fixture 的意图与原命令。
-2. 原先可执行的机械断言。
-3. 原始 pass/fail 证据，避免先按新 runner 重写历史结论。
+## 七维语义阶段
 
-## 3. 设计 case 组合
+当前 Agent必须阅读真实 source，不得从 check status 自动推导语义 status：
 
-Trigger case 至少覆盖：
+| Dimension | 核心问题 |
+| --- | --- |
+| `invocation_boundary` | description 是否说明何时使用、何时不使用，near-miss 是否清楚 |
+| `workflow_completeness` | 输入、步骤、分支、错误、验证和完成门禁是否闭环 |
+| `information_architecture` | 核心流程是否直接可见，细节是否渐进披露且无重复真相源 |
+| `tool_contract` | 每个脚本/工具是否单责，参数、副作用和错误是否明确 |
+| `safety_and_permissions` | 凭据、网络、进程、外部写入和用户确认边界是否最小化 |
+| `verification_and_delivery` | 是否有可检查完成标准、测试/eval/CI 和真实交付说明 |
+| `scope_and_composability` | 能力是否原子、可组合，是否绑定一次性场景或过度抽象 |
 
-- 明确正例：用户直接请求该 skill 的核心能力。
-- 自然正例：不点名 skill，但语义应触发。
-- near miss：词汇相近但应由普通工具或另一个 skill 处理。
-- 明确负例：不属于能力边界的任务。
+每个维度必须引用 candidate 内真实文件。`warn`/`fail` 必须有 recommendation；limitations 至少一项。
 
-Behavior case 使用相同 prompt、inputs、model、sandbox、timeout 和 repetition 比较 candidate/baseline。只有 skill snapshot 可以不同。机械 assertion 与 grader oracle 不得进入 prompt 或 agent workspace。
+## 用户观察阶段
 
-Split 用途：
+触发、UI、工具选择或端到端行为确实需要实测时：
 
-- `train`：编写 skill 时可反复查看和调试。
-- `validation`：比较候选修改并做阶段决策。
-- `holdout`：定稿前才运行，避免按答案调整 skill。
+1. suite 至少包含一个 trigger positive、一个 near miss 和一个 behavior case。
+2. validate 后 prepare packet。
+3. 当前会话停止，由用户在独立会话中操作。
+4. 用户填写 bundle；importer 只校验，不运行、不补字段。
+5. source 或 input 漂移时废弃旧 packet，不能重解释旧结果。
 
-不要靠大量同义改写替代真实任务多样性。重复次数用于估计随机性，不用于扩充 case 覆盖。
+## 完整结论
 
-## 4. 选择 baseline
+报告 `completion.ready_for_agent_conclusion=true` 只说明证据结构完整，不等于质量通过。当前 Agent仍需：
 
-- `none`：回答“有这个 skill 是否优于没有”。
-- `snapshot`：回答“新版本是否优于明确的旧版本目录”。
-
-baseline 必须是独立目录，不能与 candidate 指向同一路径。不要在运行中修改 snapshot；任何 source hash 变化都必须重新 plan。
-
-## 5. 校验与预览
-
-```text
-python -u -X utf8 -B scripts/se_validate.py --suite <suite.json> --pretty
-python -u -X utf8 -B scripts/se_plan.py --suite <suite.json> --output <preview.json> --pretty
-```
-
-预览后检查：
-
-1. candidate/baseline source identity 是否正确。
-2. trigger 只运行 candidate，behavior 是否成对。
-3. case repetition 与最大 agent run 数是否一致。
-4. 配对顺序是否按 repetition 交替，声明并发与实际串行顺序是否符合预期。
-5. fingerprint 是否已记录；它同时绑定 suite、candidate/baseline 与当前 lab 实现树，live 授权只对该值有效。
-
-## 6. 运行
-
-离线 fake suite：
-
-```text
-python -u -X utf8 -B scripts/se_run.py --suite <suite.json> --work-root <run-root>
-```
-
-真实 Codex suite 必须先向用户展示 model、矩阵、调用上限、墙钟上限和 fingerprint。获得明确授权后才运行：
-
-```text
-python -u -X utf8 -B scripts/se_run.py --suite <suite.json> --work-root <run-root> --fingerprint <sha256> --authorize-live
-```
-
-不得自行把 timeout、unknown outcome 或写入失败重放为新尝试。先保留原 artifact，诊断是否属于 runner、权限、case 或 skill 问题；任何输入变化都重新 plan。
-
-## 7. 评分与报告
-
-```text
-python -u -X utf8 -B scripts/se_grade.py --run <run.json> --output <grade.json>
-python -u -X utf8 -B scripts/se_report.py --grade <grade.json> --json-output <report.json> --markdown-output <report.md>
-```
-
-先看确定性 failure taxonomy，再看 paired delta。报告必须同时说明：
-
-- 每个 variant/mode 的 `n`、passed、pass rate 和 Wilson 区间。
-- behavior pair 的 wins/losses/ties、排除原因和低信息标记。
-- token 字段是否完整、duration 是否可用。
-- fingerprint、model、adapter、CLI、sandbox、network 和权限配置。
-- human/judge 是否存在，以及 judge 是 advisory 还是 calibrated decision。
-- 每个 required gate 的 evidence 是否可用、实际值是否达到阈值。
-
-两个结果都失败、全部 tie、样本过少或 provenance 不兼容时，不得宣称 candidate 提升。
-
-## 8. 迭代与停止
-
-一次只修改一个可解释变量，例如 description、工作流指令或脚本。修改后重新 validate/plan，并保留旧报告用于比较。
-
-满足以下任一条件时停止并补证据，而不是继续扩大调用：
-
-- case 定义或 oracle 仍有歧义。
-- holdout 已被用于调参。
-- candidate/baseline 运行条件不一致。
-- 失败来自 runner capability 或权限，无法归因到 skill。
-- 预算不足以产生有解释力的样本。
+1. 按严重度列问题，并区分机械事实、设计判断和用户观察。
+2. 说明没有观察或样本不完整时不能声称什么。
+3. 给出与 evidence 对应的最小优化建议和验证方式。
+4. 若用户要求修改，另行进入实现流程；评估阶段不应先改 candidate。

@@ -92,17 +92,17 @@
 
 位置：`skills/skill-evaluation-lab/`
 
-用途：为 Agent Skill 设计并执行离线优先、可重复的 trigger/behavior 评测，比较 candidate 与无 skill 或旧快照 baseline，并报告质量、成本、不确定性和回归风险。
+用途：对 Agent Skill 进行 source-bound 静态检查和七维设计评审，并按需导入用户在独立会话中完成的观察证据，最终由当前 Agent 给出完整结论与优化建议。
 
 核心约束：
 
-- inventory 只读扫描现有 skill、测试、eval 与 CI coverage，不批量迁移或自动修改被评估 skill。
-- suite 使用闭合契约，显式声明 baseline、runner、预算、gate、train/validation/holdout case 和 typed assertion。
-- `se_plan.py` 在模型调用前展开矩阵并绑定 source/lab implementation hash；真实 Codex run 必须获得用户对当前 fingerprint 和有限预算的明确授权。
-- trigger 使用临时 snapshot nonce observation；behavior 在独立 Git workspace 中成对执行，oracle/assertion 不进入 agent prompt。
-- deterministic grade 优先；human feedback 独立，blind/swap judge 未校准时仅 advisory，位置冲突为 inconclusive。
-- JSON/Markdown 报告先执行强制 `run_completed` gate，再评估质量与 judge 门禁；同时公开样本量、Wilson 区间、paired delta、token/duration 可用性、failure taxonomy 与 provenance，不生成不透明总分。
-- ordinary CI 只运行 fake/offline pipeline；live model smoke 是显式、独立且有预算的入口。
+- `se_inventory.py` 按需只读盘点 Skill、测试、eval 与 CI coverage；单 Skill 请求不强制全仓扫描。
+- `se_check.py` 只解析 metadata、引用、语法、资源和静态能力信号，不 import 或执行目标代码。
+- 当前 Agent 按触发边界、工作流、信息架构、工具契约、安全权限、验证交付和可组合性七维完成语义评审。
+- 需要运行时证据时，`se_prepare.py` 只生成不可执行 packet，然后停止并等待用户在独立会话中操作。
+- `se_import.py` 只校验用户声明、source/case/artifact hash 与 provenance；缺失观察保持 partial/inconclusive。
+- `se_report.py` 重新核验当前 candidate/baseline hash，再分开静态事实、审查判断和用户观察；最终结论由当前 Agent 给出。
+- 生产代码与 CI 不启动或探测 Codex、模型 API、子代理或其它 Agent，不读取凭据、不运行网络评测。
 
 ## Repository Layout
 

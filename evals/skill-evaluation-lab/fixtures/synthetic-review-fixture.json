@@ -1,0 +1,7 @@
+{
+  "status": "pass",
+  "evidence_path": "SKILL.md",
+  "summary": "仅用于离线验证七维 review/report contract，不代表真实设计结论。",
+  "evidence_detail": "candidate fixture 提供可解析的 Skill 入口。",
+  "limitation": "这是 synthetic contract fixture，不能用于评价真实 Skill 质量。"
+}

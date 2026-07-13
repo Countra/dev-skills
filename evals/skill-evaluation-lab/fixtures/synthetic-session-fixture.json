@@ -1,0 +1,6 @@
+{
+  "declared_by": "user",
+  "status": "inconclusive",
+  "session_ref_prefix": "synthetic-contract-fixture",
+  "notes": "仅用于离线验证 importer/report contract，不代表真实用户会话或运行时质量。"
+}

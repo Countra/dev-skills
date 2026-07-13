@@ -3,3 +3,5 @@
 from .errors import LabError
 
 __all__ = ["LabError"]
+
+__version__ = "1.0"

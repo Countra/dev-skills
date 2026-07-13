@@ -1,244 +1,247 @@
 #!/usr/bin/env python3
-"""执行 Skill Evaluation Lab 的离线自评测。"""
+"""Skill Evaluation Lab 的纯静态、自包含回归评测。"""
 
 from __future__ import annotations
 
 import argparse
-import json
-import subprocess
 import sys
-import uuid
 from pathlib import Path
 from typing import Any
 
 
-EVAL_DIR = Path(__file__).resolve().parent
-REPO_ROOT = EVAL_DIR.parents[1]
-SCRIPT_DIR = REPO_ROOT / "skills" / "skill-evaluation-lab" / "scripts"
-FIXTURE_DIR = EVAL_DIR / "fixtures"
-MAX_CLI_OUTPUT_BYTES = 4 * 1024 * 1024
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SCRIPT_ROOT = REPO_ROOT / "skills" / "skill-evaluation-lab" / "scripts"
+if str(SCRIPT_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_ROOT))
+
+from skill_evaluation_lab.cli import run_cli
+from skill_evaluation_lab.contracts import (
+    SCHEMA_VERSION,
+    SEMANTIC_DIMENSIONS,
+    load_json_document,
+    load_suite,
+    validate_semantic_review,
+)
+from skill_evaluation_lab.errors import ContractError
+from skill_evaluation_lab.inventory import scan_repository
+from skill_evaluation_lab.observations import import_observations
+from skill_evaluation_lab.output import write_new_json, write_new_text
+from skill_evaluation_lab.packets import build_packet, suite_receipt, write_packet
+from skill_evaluation_lab.paths import resolve_output, resolve_workspace
+from skill_evaluation_lab.reports import build_report, render_markdown, verify_current_sources
+from skill_evaluation_lab.static_checks import evaluate_skill
 
 
-def _run(script: str, *arguments: str, timeout: int = 120) -> tuple[int, dict[str, Any]]:
-    try:
-        result = subprocess.run(
-            [sys.executable, "-u", "-X", "utf8", "-B", str(SCRIPT_DIR / script), *arguments],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            check=False,
+EXPECTED_PUBLIC_SCRIPTS = [
+    "se_check.py",
+    "se_import.py",
+    "se_inventory.py",
+    "se_prepare.py",
+    "se_report.py",
+    "se_validate.py",
+]
+
+
+def _assertion(assertion_id: str, passed: bool, detail: str) -> dict[str, Any]:
+    return {"id": assertion_id, "passed": passed, "detail": detail}
+
+
+def _require_passed(assertions: list[dict[str, Any]]) -> None:
+    failures = [item for item in assertions if not item["passed"]]
+    if failures:
+        raise ContractError(
+            "self-eval assertion 失败",
+            code="SELF_EVAL_FAILED",
+            path="$.assertions",
+            guidance=str(failures),
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return 1, {"ok": False, "error": {"code": "cli_execution_failed", "message": str(exc)}}
-    encoded_size = len(result.stdout.encode("utf-8")) + len(result.stderr.encode("utf-8"))
-    if encoded_size > MAX_CLI_OUTPUT_BYTES:
-        return 1, {"ok": False, "error": {"code": "cli_output_too_large", "message": str(encoded_size)}}
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        detail = (result.stderr or result.stdout).strip()[:2000]
-        payload = {"ok": False, "error": {"code": "invalid_cli_json", "message": detail}}
-    return result.returncode, payload
 
 
-def _step_ok(code: int, payload: dict[str, Any]) -> bool:
-    return code == 0 and payload.get("ok") is True
-
-
-def _coverage(inventory: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    coverage: list[dict[str, Any]] = []
-    suggestions: list[dict[str, str]] = []
-    for skill in inventory.get("data", {}).get("skills", []):
-        item = {
-            "name": skill.get("name"),
-            "valid": skill.get("valid"),
-            "public_script_count": skill.get("public_script_count"),
-            "test_count": skill.get("test_count"),
-            "has_eval_dir": skill.get("has_eval_dir"),
-            "eval_file_count": skill.get("eval_file_count"),
-            "ci_referenced": skill.get("ci_referenced"),
-        }
-        coverage.append(item)
-        if not item["has_eval_dir"]:
-            suggestions.append({"skill": str(item["name"]), "action": "保留现有测试并新增独立 suite"})
-        elif not item["ci_referenced"]:
-            suggestions.append({"skill": str(item["name"]), "action": "评估是否把现有离线 eval 接入 CI"})
-    return coverage, suggestions
-
-
-def inventory_suite() -> dict[str, Any]:
-    example_suite = REPO_ROOT / "skills" / "skill-evaluation-lab" / "assets" / "eval-suite.example.json"
-    inventory_code, inventory = _run(
-        "se_inventory.py",
-        "--root",
-        str(REPO_ROOT),
-        "--require-valid-skill",
-        "skill-evaluation-lab",
-    )
-    validate_code, validation = _run("se_validate.py", "--suite", str(example_suite))
-    plan_code, plan = _run("se_plan.py", "--suite", str(example_suite))
-    failures: list[str] = []
-    if not _step_ok(inventory_code, inventory):
-        failures.append("inventory CLI 失败")
-    elif inventory.get("data", {}).get("skill_count", 0) < 6:
-        failures.append("inventory 未发现全部 skill")
-    if not _step_ok(validate_code, validation):
-        failures.append("example suite 校验失败")
-    if not _step_ok(plan_code, plan):
-        failures.append("example suite 预算预览失败")
-    coverage, suggestions = _coverage(inventory)
-    return {
-        "ok": not failures,
+def _inventory_eval(work_dir: Path) -> dict[str, Any]:
+    inventory = scan_repository(REPO_ROOT)
+    by_name = {item["name"]: item for item in inventory["skills"]}
+    lab = by_name.get("skill-evaluation-lab")
+    assertions = [
+        _assertion("lab-discovered", lab is not None, "inventory 必须发现 skill-evaluation-lab"),
+        _assertion(
+            "lab-valid",
+            bool(lab and lab["valid"]),
+            "skill-evaluation-lab metadata 必须有效",
+        ),
+        _assertion(
+            "public-cli-boundary",
+            bool(lab and lab["public_scripts"] == EXPECTED_PUBLIC_SCRIPTS),
+            f"expected={EXPECTED_PUBLIC_SCRIPTS}; actual={lab['public_scripts'] if lab else None}",
+        ),
+        _assertion(
+            "validation-assets",
+            bool(lab and lab["test_files"] and lab["has_eval_dir"] and lab["ci_referenced"]),
+            "tests、evals 和 CI coverage 必须可发现",
+        ),
+        _assertion(
+            "zero-derived-calls",
+            inventory["checker"]["agent_calls"] == 0 and inventory["checker"]["network_calls"] == 0,
+            "inventory 必须声明零 Agent 与网络调用",
+        ),
+    ]
+    result = {
+        "schema_version": SCHEMA_VERSION,
         "suite": "inventory",
-        "steps": {
-            "inventory": {"exit_code": inventory_code, "ok": _step_ok(inventory_code, inventory)},
-            "validate_example": {"exit_code": validate_code, "ok": _step_ok(validate_code, validation)},
-            "plan_example": {"exit_code": plan_code, "ok": _step_ok(plan_code, plan)},
-        },
-        "skill_count": inventory.get("data", {}).get("skill_count"),
-        "coverage": coverage,
-        "conversion_suggestions": suggestions,
-        "example_plan": {
-            "fingerprint": plan.get("data", {}).get("fingerprint"),
-            "agent_run_count": plan.get("data", {}).get("agent_run_count"),
-            "runner": plan.get("data", {}).get("runner"),
-        },
-        "model_calls": 0,
-        "failures": failures,
+        "passed": all(item["passed"] for item in assertions),
+        "assertions": assertions,
+        "inventory": inventory,
+        "agent_calls": 0,
+        "network_calls": 0,
     }
+    write_new_json(work_dir / "inventory-evals.json", result)
+    _require_passed(assertions)
+    return result
 
 
-def offline_suite(work_dir: Path) -> dict[str, Any]:
-    suite_path = FIXTURE_DIR / "fake-suite" / "suite.json"
-    run_copy = work_dir / "run.json"
-    grade_path = work_dir / "grade.json"
-    report_path = work_dir / "report.json"
-    markdown_path = work_dir / "report.md"
-    run_id = f"offline-{uuid.uuid4().hex[:12]}"
-    steps: dict[str, dict[str, Any]] = {}
-    failures: list[str] = []
+def _synthetic_review(static: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
+    review = {
+        "schema_version": SCHEMA_VERSION,
+        "evaluation_id": static["evaluation_id"],
+        "candidate_tree_sha256": static["candidate"]["tree_sha256"],
+        "dimensions": [
+            {
+                "dimension": dimension,
+                "status": fixture["status"],
+                "summary": fixture["summary"],
+                "evidence": [
+                    {
+                        "path": fixture["evidence_path"],
+                        "detail": fixture["evidence_detail"],
+                    }
+                ],
+            }
+            for dimension in SEMANTIC_DIMENSIONS
+        ],
+        "assumptions": ["该文档只验证 contract，不代表真实语义评审。"],
+        "limitations": [fixture["limitation"]],
+        "observation_decision": "provided",
+    }
+    return validate_semantic_review(review)
 
-    validate_code, validation = _run("se_validate.py", "--suite", str(suite_path))
-    steps["validate"] = {"exit_code": validate_code, "ok": _step_ok(validate_code, validation)}
-    if not steps["validate"]["ok"]:
-        failures.append("fake suite 校验失败")
 
-    plan_code, plan = _run("se_plan.py", "--suite", str(suite_path))
-    steps["plan"] = {"exit_code": plan_code, "ok": _step_ok(plan_code, plan)}
-    if not steps["plan"]["ok"]:
-        failures.append("fake suite 预算预览失败")
-
-    run_code, run = _run(
-        "se_run.py",
-        "--suite",
-        str(suite_path),
-        "--work-root",
-        str(work_dir / "runs"),
-        "--run-id",
-        run_id,
-        "--output",
-        str(run_copy),
-    )
-    steps["run"] = {"exit_code": run_code, "ok": _step_ok(run_code, run)}
-    if not steps["run"]["ok"] or run.get("data", {}).get("status") != "PASS":
-        failures.append("fake paired run 未通过")
-
-    grade_code, grade = _run("se_grade.py", "--run", str(run_copy), "--output", str(grade_path))
-    steps["grade"] = {"exit_code": grade_code, "ok": _step_ok(grade_code, grade)}
-    if not steps["grade"]["ok"]:
-        failures.append("fake run 确定性评分失败")
-
-    report_code, report = _run(
-        "se_report.py",
-        "--grade",
-        str(grade_path),
-        "--json-output",
-        str(report_path),
-        "--markdown-output",
-        str(markdown_path),
-    )
-    steps["report"] = {"exit_code": report_code, "ok": _step_ok(report_code, report)}
-    report_data = report.get("data", {})
-    if not steps["report"]["ok"]:
-        failures.append("fake grade 报告生成失败")
-    elif report_data.get("paired_delta", {}).get("n_pairs") != 1:
-        failures.append("fake behavior pair 未进入兼容 paired delta")
-    elif not report_data.get("uncertainty", {}).get("paired_low_information"):
-        failures.append("单个 tie pair 未标记低信息")
-    elif not report_data.get("gate_decisions", {}).get("all_required_passed"):
-        failures.append("fake suite 的 required gates 未闭环")
-    elif not report_data.get("uncertainty", {}).get("duration_available"):
-        failures.append("fake runner 耗时未进入报告")
-    elif report_data.get("trigger", {}).get("confusion_matrix", {}).get("true_negative") != 1:
-        failures.append("fake trigger truth 未进入 confusion matrix")
-    elif report_data.get("provenance", {}).get("lab_identity", {}).get(
-        "tree_sha256"
-    ) != report_data.get("provenance", {}).get("grader_identity", {}).get("tree_sha256"):
-        failures.append("run 与 grader implementation identity 不一致")
-
+def _synthetic_bundle(packet: dict[str, Any], fixture: dict[str, Any]) -> dict[str, Any]:
     return {
-        "ok": not failures,
-        "suite": "offline",
-        "steps": steps,
-        "pipeline": {
-            "fingerprint": plan.get("data", {}).get("fingerprint"),
-            "agent_run_count": plan.get("data", {}).get("agent_run_count"),
-            "run_status": run.get("data", {}).get("status"),
-            "record_count": len(grade.get("data", {}).get("records", [])),
-            "paired_count": report_data.get("paired_delta", {}).get("n_pairs"),
-            "paired_ties": report_data.get("paired_delta", {}).get("ties"),
-            "low_information": report_data.get("uncertainty", {}).get("paired_low_information"),
-            "all_required_gates_passed": report_data.get("gate_decisions", {}).get(
-                "all_required_passed"
-            ),
-            "duration_available": report_data.get("uncertainty", {}).get("duration_available"),
-            "trigger_confusion": report_data.get("trigger", {}).get("confusion_matrix"),
-            "lab_tree_sha256": report_data.get("provenance", {})
-            .get("lab_identity", {})
-            .get("tree_sha256"),
-            "grader_tree_sha256": report_data.get("provenance", {})
-            .get("grader_identity", {})
-            .get("tree_sha256"),
-        },
-        "artifacts": {
-            "run": str(run_copy.relative_to(work_dir)).replace("\\", "/"),
-            "grade": str(grade_path.relative_to(work_dir)).replace("\\", "/"),
-            "report_json": str(report_path.relative_to(work_dir)).replace("\\", "/"),
-            "report_markdown": str(markdown_path.relative_to(work_dir)).replace("\\", "/"),
-        },
-        "model_calls": 0,
-        "failures": failures,
+        "schema_version": SCHEMA_VERSION,
+        "packet_fingerprint": packet["packet_fingerprint"],
+        "declared_by": fixture["declared_by"],
+        "sessions": [
+            {
+                "case_id": case["case_id"],
+                "variant": case["variant"],
+                "session_ref": f"{fixture['session_ref_prefix']}-{index + 1}",
+                "status": fixture["status"],
+                "notes": fixture["notes"],
+                "artifacts": [],
+            }
+            for index, case in enumerate(packet["cases"])
+        ],
     }
 
 
-def _safe_work_dir(raw: Path) -> Path:
-    resolved = raw.resolve()
-    if resolved == REPO_ROOT or REPO_ROOT not in resolved.parents:
-        raise ValueError("--work-dir 必须位于仓库内部且不能是仓库根目录")
-    return resolved
+def _check_status(static: dict[str, Any], check_id: str) -> str:
+    return next(item["status"] for item in static["checks"] if item["id"] == check_id)
+
+
+def _static_eval(work_dir: Path) -> dict[str, Any]:
+    fixtures = REPO_ROOT / "evals" / "skill-evaluation-lab" / "fixtures"
+    candidate = fixtures / "candidate-skill"
+    baseline = fixtures / "baseline-skill"
+    invalid = fixtures / "invalid-skill"
+    static = evaluate_skill(REPO_ROOT, candidate, baseline=baseline, evaluation_id="static-self-eval")
+    invalid_static = evaluate_skill(REPO_ROOT, invalid, evaluation_id="invalid-self-eval")
+    suite = load_suite(fixtures / "suite.json")
+    receipt = suite_receipt(REPO_ROOT, suite)
+    packet, _ = build_packet(REPO_ROOT, suite)
+    packet_result = write_packet(work_dir / "packet", packet)
+    session_fixture = load_json_document(fixtures / "synthetic-session-fixture.json")
+    imported = import_observations(REPO_ROOT, packet, _synthetic_bundle(packet, session_fixture))
+    review_fixture = load_json_document(fixtures / "synthetic-review-fixture.json")
+    review = _synthetic_review(static, review_fixture)
+    verify_current_sources(REPO_ROOT, static)
+    report = build_report(static, review, imported)
+    assertions = [
+        _assertion(
+            "candidate-mechanical-validity",
+            static["summary"]["fail"] == 0,
+            f"candidate static fail count={static['summary']['fail']}",
+        ),
+        _assertion(
+            "invalid-fixture-detected",
+            _check_status(invalid_static, "skill.metadata") == "fail"
+            and _check_status(invalid_static, "skill.references") == "fail",
+            "invalid fixture 必须触发 metadata 与 reference fail",
+        ),
+        _assertion(
+            "baseline-delta",
+            static["delta"] is not None and bool(static["delta"]["changed_files"]),
+            "candidate/baseline 必须形成确定性文件差异",
+        ),
+        _assertion(
+            "manual-packet-only",
+            packet_result["execution_mode"] == "user_operated_independent_session"
+            and packet_result["agent_calls"] == 0,
+            "packet 只能进入用户独立会话分支",
+        ),
+        _assertion(
+            "synthetic-import-complete",
+            imported["coverage"]["status"] == "complete" and len(imported["sessions"]) == 6,
+            "synthetic fixture 必须覆盖 3 cases x 2 variants",
+        ),
+        _assertion(
+            "layered-report",
+            report["completion"]["conclusion_owner"] == "current_agent"
+            and "overall_score" not in report
+            and not report["runtime_claims_allowed"],
+            "synthetic report 不得生成总分、脚本结论或运行时质量许可",
+        ),
+        _assertion(
+            "zero-derived-calls",
+            static["checker"]["agent_calls"] == 0
+            and static["checker"]["network_calls"] == 0
+            and imported["provenance"]["agent_calls"] == 0,
+            "静态 self-eval 必须保持零 Agent 与网络调用",
+        ),
+    ]
+    write_new_json(work_dir / "static-evidence.json", static)
+    write_new_json(work_dir / "invalid-static-evidence.json", invalid_static)
+    write_new_json(work_dir / "suite-receipt.json", receipt)
+    write_new_json(work_dir / "semantic-review.fixture.json", review)
+    write_new_json(work_dir / "imported-observation.json", imported)
+    write_new_json(work_dir / "report.json", report)
+    write_new_text(work_dir / "report.md", render_markdown(report))
+    result = {
+        "schema_version": SCHEMA_VERSION,
+        "suite": "static",
+        "passed": all(item["passed"] for item in assertions),
+        "assertions": assertions,
+        "synthetic_contract_fixture": True,
+        "runtime_quality_claims": False,
+        "agent_calls": 0,
+        "network_calls": 0,
+    }
+    write_new_json(work_dir / "static-self-evals.json", result)
+    _require_passed(assertions)
+    return result
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="运行 Skill Evaluation Lab 离线自评测")
-    parser.add_argument("--suite", choices=["inventory", "offline"], default="offline")
-    parser.add_argument("--work-dir", required=True, type=Path)
+    parser = argparse.ArgumentParser(description="运行 Skill Evaluation Lab 的纯静态 self-eval")
+    parser.add_argument("--suite", choices=("inventory", "static"), required=True)
+    parser.add_argument("--work-dir", type=Path, required=True, help="必须尚不存在的 workspace 内输出目录")
     args = parser.parse_args()
-    try:
-        work_dir = _safe_work_dir(args.work_dir)
-        work_dir.mkdir(parents=True, exist_ok=True)
-        result = inventory_suite() if args.suite == "inventory" else offline_suite(work_dir)
-        output_name = "inventory-evals.json" if args.suite == "inventory" else "self-evals.json"
-        (work_dir / output_name).write_text(
-            json.dumps(result, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-    except (OSError, ValueError) as exc:
-        result = {"ok": False, "suite": args.suite, "failures": [str(exc)]}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["ok"] else 1
+
+    def handler() -> object:
+        workspace = resolve_workspace(REPO_ROOT)
+        work_dir = resolve_output(workspace, args.work_dir, label="self-eval work directory")
+        work_dir.mkdir(parents=True, exist_ok=False)
+        return _inventory_eval(work_dir) if args.suite == "inventory" else _static_eval(work_dir)
+
+    return run_cli(f"self_eval.{args.suite}", handler, pretty=True)
 
 
 if __name__ == "__main__":

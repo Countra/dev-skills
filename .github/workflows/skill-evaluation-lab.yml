@@ -1,4 +1,4 @@
-name: Skill Evaluation Lab Offline
+name: Skill Evaluation Lab Static
 
 on:
   push:
@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  offline-evaluation:
-    name: ${{ matrix.os }} offline contract and self-eval
+  static-evaluation:
+    name: ${{ matrix.os }} static contract and self-eval
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -44,23 +44,24 @@ jobs:
           --suite inventory
           --work-dir .ci-artifacts/skill-evaluation-lab/inventory
 
-      - name: Run offline full-pipeline self-eval
+      - name: Run static workflow self-eval
         run: >-
           python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
-          --suite offline
-          --work-dir .ci-artifacts/skill-evaluation-lab/offline
+          --suite static
+          --work-dir .ci-artifacts/skill-evaluation-lab/static
 
-      - name: Upload offline evidence
+      - name: Upload static evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}-skill-evaluation-lab-evidence
+          name: ${{ matrix.os }}-skill-evaluation-lab-evidence
           path: |
             .ci-artifacts/skill-evaluation-lab/inventory/inventory-evals.json
-            .ci-artifacts/skill-evaluation-lab/offline/self-evals.json
-            .ci-artifacts/skill-evaluation-lab/offline/run.json
-            .ci-artifacts/skill-evaluation-lab/offline/grade.json
-            .ci-artifacts/skill-evaluation-lab/offline/report.json
-            .ci-artifacts/skill-evaluation-lab/offline/report.md
-          if-no-files-found: warn
+            .ci-artifacts/skill-evaluation-lab/static/static-self-evals.json
+            .ci-artifacts/skill-evaluation-lab/static/static-evidence.json
+            .ci-artifacts/skill-evaluation-lab/static/imported-observation.json
+            .ci-artifacts/skill-evaluation-lab/static/report.json
+            .ci-artifacts/skill-evaluation-lab/static/report.md
+            .ci-artifacts/skill-evaluation-lab/static/packet/packet.json
+          if-no-files-found: error
           retention-days: 14

@@ -1,4 +1,4 @@
-"""Skill Evaluation Lab 测试辅助。"""
+"""Skill Evaluation Lab 当前协议的测试辅助。"""
 
 from __future__ import annotations
 
@@ -43,49 +43,98 @@ def temporary_workspace() -> Any:
 
 
 def _remove_readonly(function: Any, path: str, _error: Any) -> None:
-    """清理测试创建的只读快照文件。"""
+    """清理测试创建的只读文件。"""
     Path(path).chmod(stat.S_IWRITE)
     function(path)
 
 
-def valid_suite(root: Path) -> dict[str, Any]:
-    skill = root / "candidate"
-    skill.mkdir(parents=True)
-    (skill / "SKILL.md").write_text(
-        "---\nname: candidate\ndescription: Test skill.\n---\n\n# Candidate\n",
+def write_skill(
+    workspace: Path,
+    name: str = "candidate-skill",
+    *,
+    description: str = "用于测试静态契约和明确触发边界的示例 Skill。",
+    body: str = "# Candidate Skill\n\n按步骤检查输入，并返回可验证的结果。\n",
+) -> Path:
+    source = workspace / "skills" / name
+    source.mkdir(parents=True)
+    (source / "SKILL.md").write_text(
+        f"---\nname: {name}\ndescription: {description}\n---\n\n{body}",
         encoding="utf-8",
     )
+    (source / "scripts").mkdir()
+    (source / "scripts" / "check.py").write_text(
+        '"""测试用只读检查。"""\n\nfrom pathlib import Path\n\n\ndef inspect(path: Path) -> bool:\n'
+        "    return path.is_file()\n",
+        encoding="utf-8",
+    )
+    (source / "tests").mkdir()
+    (source / "tests" / "test_check.py").write_text("# 测试占位由外部测试驱动。\n", encoding="utf-8")
+    (workspace / "evals" / name).mkdir(parents=True)
+    workflow = workspace / ".github" / "workflows" / f"{name}.yml"
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    workflow.write_text(f"name: {name}\n", encoding="utf-8")
+    return source
+
+
+def valid_suite(
+    *,
+    candidate: str = "skills/candidate-skill",
+    baseline: str | None = None,
+) -> dict[str, Any]:
+    variants = ["candidate"] + (["baseline"] if baseline else [])
     return {
-        "suite_id": "test-suite",
-        "skill_path": "candidate",
-        "baseline": {"mode": "none"},
-        "runner": {
-            "adapter": "fake",
-            "model": "fake",
-            "sandbox": "workspace-write",
-            "timeout_seconds": 30,
-            "repetitions": 1,
-            "concurrency": 1,
-            "network_access": False,
+        "schema_version": 1,
+        "suite_id": "contract-suite",
+        "candidate": candidate,
+        "baseline": baseline,
+        "decision_question": "该 Skill 的触发边界和工作流是否足够清晰？",
+        "observation_policy": {
+            "required_variants": variants,
+            "require_independent_session": True,
         },
-        "budgets": {"max_agent_runs": 4, "max_judge_runs": 1, "max_wall_seconds": 120},
-        "gates": {"trigger_threshold": 0.5, "required_case_pass_rate": 1.0, "judge_required": False},
         "cases": [
             {
-                "id": "trigger-case",
-                "mode": "trigger",
-                "split": "validation",
-                "prompt": "Use the candidate skill.",
+                "id": "positive-case",
+                "kind": "trigger-positive",
+                "prompt": "请使用该 Skill 评估一个 Skill。",
+                "expected_observation": "应触发并遵循完整评估工作流。",
                 "inputs": [],
-                "should_trigger": True,
+            },
+            {
+                "id": "near-miss-case",
+                "kind": "trigger-near-miss",
+                "prompt": "请运行普通项目单元测试。",
+                "expected_observation": "不应仅因普通测试任务而触发。",
+                "inputs": [],
             },
             {
                 "id": "behavior-case",
-                "mode": "behavior",
-                "split": "train",
-                "prompt": "Create outputs/result.json.",
+                "kind": "behavior",
+                "prompt": "请静态审查给定 Skill 并说明证据边界。",
+                "expected_observation": "应区分静态事实、语义判断和未观察行为。",
                 "inputs": [],
-                "assertions": [{"id": "result-exists", "type": "file_exists", "path": "outputs/result.json"}],
             },
         ],
+    }
+
+
+def valid_semantic_review(evaluation_id: str, tree_sha256: str) -> dict[str, Any]:
+    from skill_evaluation_lab.contracts import SEMANTIC_DIMENSIONS
+
+    return {
+        "schema_version": 1,
+        "evaluation_id": evaluation_id,
+        "candidate_tree_sha256": tree_sha256,
+        "dimensions": [
+            {
+                "dimension": dimension,
+                "status": "pass",
+                "summary": f"{dimension} 已依据静态 source 完成审查。",
+                "evidence": [{"path": "SKILL.md", "detail": "工作流包含可检查的边界。"}],
+            }
+            for dimension in SEMANTIC_DIMENSIONS
+        ],
+        "assumptions": [],
+        "limitations": ["未导入用户独立会话观察，不能声明真实触发率。"],
+        "observation_decision": "not_requested",
     }

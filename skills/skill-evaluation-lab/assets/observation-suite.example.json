@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "suite_id": "skill-evaluation-lab-manual",
+  "candidate": "skills/skill-evaluation-lab",
+  "baseline": null,
+  "decision_question": "该 Skill 是否在正确边界触发，并完整区分静态事实、语义判断和用户观察？",
+  "observation_policy": {
+    "required_variants": ["candidate"],
+    "require_independent_session": true
+  },
+  "cases": [
+    {
+      "id": "trigger-positive",
+      "kind": "trigger-positive",
+      "prompt": "请评估这个 Agent Skill 的触发边界、工作流和验证证据。",
+      "expected_observation": "应使用 skill-evaluation-lab，并先形成静态和语义证据。",
+      "inputs": []
+    },
+    {
+      "id": "trigger-near-miss",
+      "kind": "trigger-near-miss",
+      "prompt": "请运行这个 Python 项目的普通单元测试。",
+      "expected_observation": "不应仅因普通测试任务而触发 Skill 评估工作流。",
+      "inputs": []
+    },
+    {
+      "id": "behavior-evidence-boundary",
+      "kind": "behavior",
+      "prompt": "请静态评估给定 Skill；没有真实会话观察时说明结论边界。",
+      "expected_observation": "不得推断触发率或真实行为提升，并应明确 not_observed。",
+      "inputs": []
+    }
+  ]
+}
