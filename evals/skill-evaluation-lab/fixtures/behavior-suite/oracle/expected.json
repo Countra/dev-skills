@@ -1,0 +1,13 @@
+{
+  "source": "deployment-checklist",
+  "service": "billing-api",
+  "decision": "blocked",
+  "blockers": [
+    "rollback-plan"
+  ],
+  "checks": {
+    "tests": "pass",
+    "rollback-plan": "missing",
+    "monitoring": "ready"
+  }
+}

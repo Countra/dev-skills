@@ -1,0 +1,83 @@
+{
+  "suite_id": "synthetic-readiness-behavior",
+  "skill_path": "../behavior-skill",
+  "baseline": {
+    "mode": "none"
+  },
+  "runner": {
+    "adapter": "codex-cli",
+    "model": "gpt-5.4",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 180,
+    "repetitions": 1,
+    "concurrency": 1,
+    "network_access": false
+  },
+  "budgets": {
+    "max_agent_runs": 2,
+    "max_judge_runs": 1,
+    "max_wall_seconds": 420
+  },
+  "gates": {
+    "trigger_threshold": 1.0,
+    "required_case_pass_rate": 1.0,
+    "judge_required": false
+  },
+  "cases": [
+    {
+      "id": "record-blocked-release",
+      "mode": "behavior",
+      "split": "validation",
+      "prompt": "The isolated workspace is writable. Assess the deployment checklist, follow the applicable specialized workflow, and use a write-capable tool to create its standard artifact. Do not substitute a chat explanation for the artifact, and do not claim the workspace is read-only unless an actual write attempt is rejected.",
+      "inputs": [
+        "inputs/deployment-checklist.txt"
+      ],
+      "assertions": [
+        {
+          "id": "artifact-exists",
+          "type": "file_exists",
+          "path": "outputs/readiness.json"
+        },
+        {
+          "id": "artifact-valid-json",
+          "type": "json_valid",
+          "path": "outputs/readiness.json"
+        },
+        {
+          "id": "source-contract",
+          "type": "json_field_equals",
+          "path": "outputs/readiness.json",
+          "value": {
+            "field": "/source",
+            "equals": "deployment-checklist"
+          }
+        },
+        {
+          "id": "decision-contract",
+          "type": "json_field_equals",
+          "path": "outputs/readiness.json",
+          "value": {
+            "field": "/decision",
+            "equals": "blocked"
+          }
+        },
+        {
+          "id": "blocker-contract",
+          "type": "json_field_equals",
+          "path": "outputs/readiness.json",
+          "value": {
+            "field": "/blockers/0",
+            "equals": "rollback-plan"
+          }
+        },
+        {
+          "id": "diff-contract",
+          "type": "diff_allows_only",
+          "allow": [
+            "outputs/**"
+          ]
+        }
+      ]
+    }
+  ]
+}

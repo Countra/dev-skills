@@ -88,6 +88,22 @@
 - knowledge 使用 approved canonical JSON 和可重建 SQLite index；只有 exact fingerprint 批准后才持久化。
 - Electron GUI 不由 process-manager 托管；verifier service 使用统一 manager 生命周期并验证 owner-empty cleanup。
 
+### skill-evaluation-lab
+
+位置：`skills/skill-evaluation-lab/`
+
+用途：为 Agent Skill 设计并执行离线优先、可重复的 trigger/behavior 评测，比较 candidate 与无 skill 或旧快照 baseline，并报告质量、成本、不确定性和回归风险。
+
+核心约束：
+
+- inventory 只读扫描现有 skill、测试、eval 与 CI coverage，不批量迁移或自动修改被评估 skill。
+- suite 使用闭合契约，显式声明 baseline、runner、预算、gate、train/validation/holdout case 和 typed assertion。
+- `se_plan.py` 在模型调用前展开矩阵并绑定 source/lab implementation hash；真实 Codex run 必须获得用户对当前 fingerprint 和有限预算的明确授权。
+- trigger 使用临时 snapshot nonce observation；behavior 在独立 Git workspace 中成对执行，oracle/assertion 不进入 agent prompt。
+- deterministic grade 优先；human feedback 独立，blind/swap judge 未校准时仅 advisory，位置冲突为 inconclusive。
+- JSON/Markdown 报告逐项执行 gate，并公开样本量、Wilson 区间、paired delta、token/duration 可用性、failure taxonomy 与 provenance，不生成不透明总分。
+- ordinary CI 只运行 fake/offline pipeline；live model smoke 是显式、独立且有预算的入口。
+
 ## Repository Layout
 
 ```text
@@ -114,6 +130,14 @@ skills/
 │   ├── tests/
 │   └── references/
 ├── electron-ui-verifier/
+├── skill-evaluation-lab/
+│   ├── SKILL.md
+│   ├── agents/
+│   ├── assets/
+│   ├── references/
+│   ├── schemas/
+│   ├── scripts/
+│   └── tests/
 └── process-manager/
     ├── SKILL.md
     ├── agents/
@@ -133,7 +157,8 @@ evals/
 ├── complex-coding-executor/
 ├── gitlab-pat-ops/
 ├── electron-ui-verifier/
-└── process-manager/
+├── process-manager/
+└── skill-evaluation-lab/
 ```
 
 ## Install

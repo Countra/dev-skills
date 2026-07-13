@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Evaluation Lab"
+  short_description: "评估 Agent Skill 的触发、行为、质量、成本与回归风险"
+  default_prompt: "Use $skill-evaluation-lab to design an offline-first, evidence-backed evaluation for this skill, and require explicit authorization before any live model run."

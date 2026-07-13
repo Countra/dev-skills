@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-13
+
+### Feature: Skill Evaluation Lab
+
+- 新增 `skill-evaluation-lab`，以闭合 suite、source-aware fingerprint、硬预算和隔离快照评估 skill 的 trigger、paired behavior、质量与成本。
+- 新增只读 inventory、suite validate/plan、fake/Codex runner、typed assertion、deterministic grade 和透明 JSON/Markdown report 原子入口。
+- trigger 使用临时 nonce observation；behavior 隔离 candidate/baseline 与 grader oracle，并保留 JSONL、usage、diff、source integrity 和 provenance 证据。
+- blind/swap judge 去除 variant 身份，位置冲突为 inconclusive，未校准时仅 advisory；human feedback 与机械结论保持独立。
+- 主说明采用 progressive disclosure，补充 workflow、suite contract、Codex runner、grading 和 security reference，以及 live/judge/human 示例资产。
+- 新增完整 fake self-eval、synthetic live fixtures、单元/组件/安全/统计回归与三平台 ordinary offline CI；现有五套 eval 命令保持不变。
+- Commit: current commit
+- Commit message: `feat(skill-evaluation): 新增可审计的 skill 评测实验室`
+
 ## 2026-07-11
 
 ### Breaking: Electron UI Verifier 可靠性与知识召回升级

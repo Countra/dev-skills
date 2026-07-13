@@ -9,6 +9,7 @@
 .harness/tasks/**/status*.json
 .harness/sessions/
 .harness/electron-ui-verifier/
+.harness/skill-evaluation-lab/
 .harness/process-manager/config.json
 .harness/process-manager/token
 .harness/process-manager/manager.json
@@ -41,6 +42,7 @@ __pycache__/
 .coverage
 htmlcov/
 .tmp/
+.ci-artifacts/
 
 # Node 和通用工具缓存
 node_modules/

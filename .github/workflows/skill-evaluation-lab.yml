@@ -1,0 +1,66 @@
+name: Skill Evaluation Lab Offline
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skill-evaluation-lab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-evaluation:
+    name: ${{ matrix.os }} offline contract and self-eval
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit and component tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p "test_*.py" -v
+
+      - name: Run read-only inventory eval
+        run: >-
+          python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
+          --suite inventory
+          --work-dir .ci-artifacts/skill-evaluation-lab/inventory
+
+      - name: Run offline full-pipeline self-eval
+        run: >-
+          python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
+          --suite offline
+          --work-dir .ci-artifacts/skill-evaluation-lab/offline
+
+      - name: Upload offline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ runner.os }}-skill-evaluation-lab-evidence
+          path: |
+            .ci-artifacts/skill-evaluation-lab/inventory/inventory-evals.json
+            .ci-artifacts/skill-evaluation-lab/offline/self-evals.json
+            .ci-artifacts/skill-evaluation-lab/offline/run.json
+            .ci-artifacts/skill-evaluation-lab/offline/grade.json
+            .ci-artifacts/skill-evaluation-lab/offline/report.json
+            .ci-artifacts/skill-evaluation-lab/offline/report.md
+          if-no-files-found: warn
+          retention-days: 14

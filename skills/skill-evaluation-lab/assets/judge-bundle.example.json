@@ -1,0 +1,30 @@
+{
+  "judgments": [
+    {
+      "task_id": "pair-001-forward",
+      "winner": "A",
+      "confidence": 0.82,
+      "rationale": "Output A satisfies more rubric requirements with direct evidence."
+    },
+    {
+      "task_id": "pair-001-swap",
+      "winner": "B",
+      "confidence": 0.79,
+      "rationale": "Output B satisfies more rubric requirements after the position swap."
+    }
+  ],
+  "private_mappings": {
+    "pair-001-forward": {
+      "A": "candidate",
+      "B": "baseline"
+    },
+    "pair-001-swap": {
+      "A": "baseline",
+      "B": "candidate"
+    }
+  },
+  "calibration": {
+    "sample_count": 5,
+    "agreement_rate": 0.8
+  }
+}

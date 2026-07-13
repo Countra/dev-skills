@@ -1,0 +1,482 @@
+{
+  "task_id": "skill-evaluation-lab-20260713",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "交付一个安全、可重复、可审计的 skill-evaluation-lab，用离线检查和显式授权的真实 Codex 对照实验测量 Agent Skill 的可发现性、触发准确性、行为增益、质量与成本。"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "定义 closed JSON suite、case、assertion、budget 和 run artifact 契约，并对未知字段、断链引用、不安全路径和无上限实验 fail closed。"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "提供只读 inventory 和静态校验，识别 skill metadata、脚本、测试、eval coverage、CI coverage 与明显规范缺口。"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "为 candidate、no-skill 或 old-snapshot baseline 建立不可变快照和独立 Git workspace，保证 source repo、oracle 与 grader 数据不暴露给被测代理。"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "支持 should-trigger、should-not-trigger、near-miss、重复运行、固定 train/validation/holdout split 和真实 body-load observation。"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "支持 candidate/baseline 成对 behavior run、有限 typed assertions 和显式 trusted verifier，并保存逐项证据。"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "实现 Codex CLI runner，使用结构化 JSONL、output schema、usage、ephemeral session、最小 sandbox 与 session skill override。"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "实现 deterministic-first grading、可选 blind pairwise judge、swapped-order 冲突处理和人工 feedback 校准入口。"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "生成 provenance、trigger confusion matrix、质量 delta、置信区间、token/time 成本、failure taxonomy 和残余风险报告。"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "所有 live run 先生成实验矩阵、硬预算和 fingerprint，完整确认后才能执行；剥离业务秘密、关闭 case 网络并禁止隐式重试。"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "以薄 public scripts、内聚内部包、精简 SKILL.md 和按需 references 提供可组合、非交互、结构化的 skill 使用体验。"
+    },
+    {
+      "id": "REQ-11",
+      "priority": "must",
+      "summary": "提供 unit、component、mutation、self-eval、live synthetic smoke 和 Windows/Linux/macOS offline CI 证据。"
+    },
+    {
+      "id": "REQ-12",
+      "priority": "must",
+      "summary": "保持现有 eval runner 契约不变，提供 inventory 与转换指引，使新协议可渐进用于当前仓库 skill。"
+    },
+    {
+      "id": "REQ-13",
+      "priority": "must",
+      "summary": "runner、skill isolation、activation observation 或 judge 不受支持时返回明确 unsupported/inconclusive，不用 self-report 或猜测伪造通过。"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "给定合法与 mutation suites，当运行 se_validate.py 时，合法 suite 通过，非法结构、引用、路径、assertion 和 budget 返回稳定 JSON path、错误码与非零退出码。"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02"],
+      "summary": "给定当前仓库，当运行 se_inventory.py 时，报告全部 skill、Agent Skills 校验、脚本/测试/eval/CI coverage，且不读取业务 secret 或调用模型。"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-03"],
+      "summary": "给定 candidate、baseline 和 fixture，当准备实验时，生成带 SHA-256 的独立快照/workspace，agent workspace 不含 suite oracle，source before/after hash 完全一致。"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-04", "REQ-06", "REQ-13"],
+      "summary": "给定 synthetic trigger suite，当以 Codex runner 重复执行时，只用 instrumented body nonce 判定 activation，输出正负例 trigger rate/confusion matrix；机制探针失败则明确 unsupported。"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-05"],
+      "summary": "给定 paired behavior suite，当执行和评分时，candidate/baseline 使用相同输入与 runner，typed assertions/trusted verifier 给出逐项 PASS/FAIL/ERROR 和真实证据。"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-06", "REQ-09"],
+      "summary": "给定获准 live run，当 Codex CLI 执行时，artifact 包含可解析 JSONL、schema-valid final、usage、CLI/model/config 指纹，且不保存可恢复 rollout、不开放 case 网络或源仓库写权限。"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-07"],
+      "summary": "给定 candidate/baseline outputs，当 grading 时，机械项优先确定性检查；可选 judge 去标识化、随机 A/B 并交换顺序，冲突为 inconclusive，未经人工校准只标 advisory。"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-08"],
+      "summary": "给定完整或部分 run artifacts，当生成报告时，JSON/Markdown 同时展示 provenance、逐 case 证据、质量与成本 delta、区间、low-information、unsupported、inconclusive 和 failure taxonomy。"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-09"],
+      "summary": "给定 live suite，当未提供匹配 fingerprint、预算越界、环境含业务 secret 或上一 attempt outcome unknown 时，runner 在模型调用前拒绝执行并给出恢复动作。"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-10"],
+      "summary": "给定已安装 skill，当 Codex 需要设计、运行或分析 skill eval 时，SKILL.md 能选择最小脚本组合，所有 se_*.py 的 --help 无认证可用且 stdout/stderr/退出码契约一致。"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-11"],
+      "summary": "给定仓库 CI，当 push 或 pull request 时，三平台完成 lab offline unit/component/self-eval 和 skill validation；live 模型任务只由显式授权入口运行。"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-12"],
+      "summary": "给定当前五个 skill 与既有 evals，当升级完成时，原有 runner 仍按原命令通过，inventory 能指出可转换场景，新 lab self-suite 提供可复制示例而不强制迁移。"
+    },
+    {
+      "id": "AC-13",
+      "requirement_ids": ["REQ-13"],
+      "summary": "给定未知 runner event、activation probe failure、judge 分歧或 provenance 不兼容，当聚合时，结果为 unsupported/inconclusive/error 且不会被计入 passed 或跨指纹合并。"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "核心 runtime 仅依赖 Python 3.12 标准库，不使用后台服务，并在 Windows、Linux、macOS 暴露同一公共 CLI。"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "默认最小权限、网络关闭、source 只读、路径 containment、secret env redaction，任何边界不确定时 fail closed。"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "评测有效性优先：agent-visible input 与 grader oracle 分离，case 与测试对齐，重复运行并保留人工校准和污染风险说明。"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "每个结果可追踪到 suite、snapshot、model、CLI、config、case、attempt、trace 和 grader hash；不兼容 provenance 不聚合。"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "命令有硬 timeout、调用数/并发上限和有界 stdout；大 trace 落盘，报告不会因单个 case 无限增长。"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "入口、契约、runner、security、grading、metrics 和 report 高内聚低耦合，未知类型 closed validation，避免巨型脚本和模式驱动过度设计。"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "遵循 Agent Skills 与当前 Codex CLI 官方契约，不绑定退役中的托管 Evals API；CLI capability 漂移通过 doctor/probe 显式处理。"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research-findings.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "validation",
+      "path": "artifacts/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "review",
+      "path": "artifacts/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "other",
+      "path": "artifacts/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "other",
+      "path": "artifacts/traceability.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "建立评测协议、CLI 骨架与仓库 inventory",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-10"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-10"],
+      "nonfunctional_ids": ["NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03"],
+      "allowed_changes": ["skills/skill-evaluation-lab/", "evals/skill-evaluation-lab/"],
+      "forbidden_changes": ["existing skill runtime behavior", "existing eval runner contracts", "external systems"],
+      "entry_conditions": ["approved plan and executor attestation exist", "workspace remains on harness/feature with known clean or reconciled changes"],
+      "exit_conditions": ["suite validator and inventory return stable JSON contracts", "all public CLI help paths work without live credentials", "valid and mutation fixtures pass"],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-02",
+      "title": "实现快照、隔离、安全策略与预算指纹",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-03", "REQ-09"],
+      "acceptance_ids": ["AC-03", "AC-09"],
+      "nonfunctional_ids": ["NFR-02", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-04", "VAL-05"],
+      "allowed_changes": ["skills/skill-evaluation-lab/scripts/skill_evaluation_lab/", "skills/skill-evaluation-lab/tests/", "skills/skill-evaluation-lab/schemas/"],
+      "forbidden_changes": ["source skill contents during a run", "secret files or secret values", "danger-full-access execution"],
+      "entry_conditions": ["STG-01 contract and fixtures pass", "snapshot exclusions and work-dir ownership are defined"],
+      "exit_conditions": ["source hashes remain unchanged across fake runs", "path escape and secret inheritance mutations fail closed", "fingerprint changes on every material matrix or snapshot change"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-03",
+      "title": "实现 Codex CLI adapter 与真实 trigger observation",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-04", "REQ-06", "REQ-09", "REQ-13"],
+      "acceptance_ids": ["AC-04", "AC-06", "AC-09", "AC-13"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-07"],
+      "validation_ids": ["VAL-06", "VAL-07"],
+      "allowed_changes": ["skills/skill-evaluation-lab/scripts/skill_evaluation_lab/codex_runner.py", "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/runners.py", "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/traces.py", "skills/skill-evaluation-lab/tests/", "evals/skill-evaluation-lab/fixtures/"],
+      "forbidden_changes": ["Codex authentication material", "production skills for instrumentation", "model self-report as activation truth"],
+      "entry_conditions": ["STG-02 security and budget tests pass", "user explicitly authorizes finite live Codex model calls before VAL-07"],
+      "exit_conditions": ["debug prompt-input proves candidate visible and baseline hidden", "synthetic nonce positive and near-miss negative meet recorded threshold", "unsupported capability returns stable fail-closed result"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-04",
+      "title": "实现 paired behavior runner 与确定性断言",
+      "depends_on": ["STG-02", "STG-03"],
+      "requirement_ids": ["REQ-03", "REQ-05", "REQ-06", "REQ-13"],
+      "acceptance_ids": ["AC-03", "AC-05", "AC-06", "AC-13"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-04", "NFR-06"],
+      "validation_ids": ["VAL-08", "VAL-09"],
+      "allowed_changes": ["skills/skill-evaluation-lab/scripts/skill_evaluation_lab/assertions.py", "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/isolation.py", "skills/skill-evaluation-lab/scripts/se_run.py", "skills/skill-evaluation-lab/tests/", "evals/skill-evaluation-lab/fixtures/"],
+      "forbidden_changes": ["arbitrary shell verifier strings", "network-enabled behavior cases", "writes outside isolated case workspace"],
+      "entry_conditions": ["STG-02 isolated workspace is proven", "STG-03 runner produces valid trace/final/usage or explicit unsupported"],
+      "exit_conditions": ["fake and live paired cases keep all variables except skill snapshot constant", "typed assertions and trusted verifier emit concrete evidence", "oracle leakage fixture is rejected"],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-05",
+      "title": "实现 grading、统计聚合与可信报告",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-07", "REQ-08", "REQ-13"],
+      "acceptance_ids": ["AC-07", "AC-08", "AC-13"],
+      "nonfunctional_ids": ["NFR-03", "NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-10", "VAL-11"],
+      "allowed_changes": ["skills/skill-evaluation-lab/scripts/skill_evaluation_lab/grading.py", "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/metrics.py", "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/reports.py", "skills/skill-evaluation-lab/scripts/se_grade.py", "skills/skill-evaluation-lab/scripts/se_report.py", "skills/skill-evaluation-lab/tests/"],
+      "forbidden_changes": ["single opaque overall score", "unblinded candidate labels for judge", "aggregation across incompatible provenance"],
+      "entry_conditions": ["STG-04 run artifacts and assertion evidence are stable", "judge remains optional and separately budgeted"],
+      "exit_conditions": ["metrics handle small samples and incompatible provenance correctly", "swap conflict is inconclusive", "JSON and Markdown reports expose quality, cost, uncertainty and failure taxonomy"],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-06",
+      "title": "完成 skill 工作流、self-eval 与现有 eval 衔接",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-02", "REQ-10", "REQ-12"],
+      "acceptance_ids": ["AC-02", "AC-10", "AC-12"],
+      "nonfunctional_ids": ["NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-03", "VAL-12", "VAL-13"],
+      "allowed_changes": ["skills/skill-evaluation-lab/SKILL.md", "skills/skill-evaluation-lab/agents/openai.yaml", "skills/skill-evaluation-lab/references/", "skills/skill-evaluation-lab/assets/", "evals/skill-evaluation-lab/", "README.md", "CHANGELOG.md"],
+      "forbidden_changes": ["bulk migration of existing evals", "automatic modification of evaluated skills", "duplicate user-facing documentation inside the skill"],
+      "entry_conditions": ["STG-05 public behavior and report schema are stable", "self-eval fixtures do not contain real credentials or private data"],
+      "exit_conditions": ["SKILL.md remains lean and routes to atomic scripts/references", "self-eval demonstrates full fake pipeline and synthetic live path", "existing eval commands remain unchanged and pass"],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-07",
+      "title": "完成三平台 CI、代码审查与最终交付证据",
+      "depends_on": ["STG-06"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-11", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-13", "VAL-14", "VAL-15"],
+      "allowed_changes": [".github/workflows/skill-evaluation-lab.yml", ".gitignore", "README.md", "CHANGELOG.md", "skills/skill-evaluation-lab/", "evals/skill-evaluation-lab/"],
+      "forbidden_changes": ["CI secrets in repository files", "live model calls on ordinary pull_request", "unrelated repository refactors"],
+      "entry_conditions": ["STG-06 self-eval and existing eval regression pass", "all required live evidence is present or task is explicitly blocked"],
+      "exit_conditions": ["Windows Linux and macOS offline CI contract is valid", "all required validations and development quality review pass", "diff check is clean and final evidence records actual results without overclaim"],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_contracts.py -v",
+      "evidence_path": "artifacts/validation/contract-tests.json"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-12"],
+      "command": "python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py --suite inventory --work-dir .harness/test-tmp/skill-evaluation-lab/inventory",
+      "evidence_path": "artifacts/validation/inventory-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-10", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_inventory.py --root . --require-valid-skill skill-evaluation-lab and run every se_*.py --help",
+      "evidence_path": "artifacts/validation/skill-and-cli-validation.json"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-03", "AC-09", "NFR-02", "NFR-04"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_isolation_security.py -v",
+      "evidence_path": "artifacts/validation/isolation-security.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-09", "NFR-04", "NFR-05"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_budgets.py -v",
+      "evidence_path": "artifacts/validation/budget-fingerprint.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-06", "AC-13", "NFR-01", "NFR-07"],
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_doctor.py --live --output .harness/test-tmp/skill-evaluation-lab/codex-probe.json",
+      "evidence_path": "artifacts/validation/codex-probe.json"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-04", "NFR-03", "NFR-04"],
+      "command": "after explicit model-run authorization execute the fingerprinted synthetic trigger suite with three positive and three near-miss attempts",
+      "evidence_path": "artifacts/validation/live-trigger.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-05", "NFR-03", "NFR-06"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_assertions.py -v",
+      "evidence_path": "artifacts/validation/assertion-tests.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-05", "AC-06", "NFR-03"],
+      "command": "after explicit model-run authorization execute the fingerprinted synthetic paired behavior suite and verify source hashes",
+      "evidence_path": "artifacts/validation/live-behavior.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-07", "AC-08", "NFR-03", "NFR-04", "NFR-05"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_grading_metrics_reports.py -v",
+      "evidence_path": "artifacts/validation/grading-metrics-report.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-07", "AC-13", "NFR-03"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_blind_judge_protocol.py -v",
+      "evidence_path": "artifacts/validation/blind-judge-protocol.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-08", "AC-10", "AC-12", "NFR-06"],
+      "command": "python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py --suite offline --work-dir .harness/test-tmp/skill-evaluation-lab/self-evals",
+      "evidence_path": "artifacts/validation/self-evals.json"
+    },
+    {
+      "id": "VAL-13",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-12", "NFR-07"],
+      "command": "run the existing planner executor gitlab process-manager and electron eval commands unchanged and record each exit code",
+      "evidence_path": "artifacts/validation/existing-evals-regression.json"
+    },
+    {
+      "id": "VAL-14",
+      "kind": "build",
+      "required": true,
+      "covers": ["AC-11", "NFR-01"],
+      "command": "validate and run .github/workflows/skill-evaluation-lab.yml offline matrix on windows-latest ubuntu-latest and macos-latest",
+      "evidence_path": "artifacts/validation/cross-platform-ci.md"
+    },
+    {
+      "id": "VAL-15",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "perform final code review for correctness security evaluation validity architecture and documentation then run git diff --check",
+      "evidence_path": "artifacts/validation/final-validation.md"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "skill-evaluation-lab 的公共脚本、suite contract、错误语义、runner 支持范围或默认安全边界发生实质变化",
+    "stage 数量、DAG、allowed/forbidden scope 或 required validation 发生变化",
+    "需要引入非标准库依赖、后台服务、数据库、危险 sandbox、默认网络或外部系统写入",
+    "Codex activation observation 无法由 nonce probe 证明且拟改用不同真相源",
+    "需要批量迁移或修改现有 skill/eval runtime，而不再只是新增 lab 与只读 inventory",
+    "live model 调用、提交、提权或外部写入授权范围发生变化"
+  ],
+  "stop_conditions": [
+    "用户请求暂停或撤销批准",
+    "计划或批准哈希不匹配并需要 amendment",
+    "required validation 在有界修复后仍失败",
+    "Codex CLI skill visibility 或 activation synthetic probe 无法可靠闭环",
+    "live model-run 未获得明确授权、认证不可用或预算 fingerprint 不匹配",
+    "检测到 source workspace 写入、secret 暴露、路径逃逸、网络开启或未知外部副作用",
+    "实现需要超出 approved scope、引入新依赖或弱化 fail-closed 安全策略"
+  ]
+}

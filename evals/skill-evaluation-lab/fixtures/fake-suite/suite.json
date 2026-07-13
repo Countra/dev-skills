@@ -1,0 +1,57 @@
+{
+  "suite_id": "offline-fake-pipeline",
+  "skill_path": "../fake-skill",
+  "baseline": {
+    "mode": "none"
+  },
+  "runner": {
+    "adapter": "fake",
+    "model": "fake-deterministic",
+    "sandbox": "workspace-write",
+    "timeout_seconds": 30,
+    "repetitions": 1,
+    "concurrency": 1,
+    "network_access": false
+  },
+  "budgets": {
+    "max_agent_runs": 3,
+    "max_judge_runs": 1,
+    "max_wall_seconds": 120
+  },
+  "gates": {
+    "trigger_threshold": 1.0,
+    "required_case_pass_rate": 1.0,
+    "judge_required": false
+  },
+  "cases": [
+    {
+      "id": "offline-near-miss",
+      "mode": "trigger",
+      "split": "validation",
+      "prompt": "运行普通 Python 单元测试。",
+      "inputs": [],
+      "should_trigger": false
+    },
+    {
+      "id": "offline-behavior-pair",
+      "mode": "behavior",
+      "split": "validation",
+      "prompt": "检查隔离工作区，不要创建未被任务要求的 unexpected artifact。",
+      "inputs": [],
+      "assertions": [
+        {
+          "id": "unexpected-artifact-absent",
+          "type": "file_absent",
+          "path": "outputs/unexpected.json"
+        },
+        {
+          "id": "workspace-unchanged",
+          "type": "diff_allows_only",
+          "allow": [
+            "outputs/**"
+          ]
+        }
+      ]
+    }
+  ]
+}
