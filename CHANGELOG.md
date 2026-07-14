@@ -9,9 +9,11 @@
 - knowledge 切换为 immutable objects + sealed decisions 激活模型，workflow 仅引用 action IDs；检索、组合和资产执行均由服务端重验 current compatibility。
 - 安装根与 workspace 解耦，复制安装保持只读；新增引用安全 retention preview/exact-fingerprint apply 和旧知识 direct reset 门禁。
 - 公共 fixture 通过复制安装、process-manager、CLI/HTTP 覆盖 attach、operation、pending、approve、search、compose、asset reuse、cancel、finalize 与 owner-empty cleanup。
+- Termous 真实应用 smoke 统一由 process-manager 托管 verifier 与隔离应用进程树，并覆盖连续截图质量、独立诊断、严格歧义定位、页面导航、stale session 和 profile 清理。
 - 三平台 Actions 同步公共契约、CLI/示例和 portability/retention，Ubuntu 额外保留召回质量与性能摘要。
-- Commit: pending
-- Commit message: pending
+- Public-contract stage commit: `03c9f13b566742f935b14b04aa4eba0ffe9a8b4a`
+- Final validation commit: current commit
+- Commit message: `test(electron-ui-verifier): 收口 Termous 真实验收`
 
 ## 2026-07-13
 

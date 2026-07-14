@@ -186,6 +186,48 @@ class ManagedVerifier:
         )
         return {"initialized": initialized, "started": started.get("data"), "ready": ready.get("data")}
 
+    def start_managed_service(self, service_file: Path, *, timeout: float = 90.0) -> dict[str, Any]:
+        """通过同一 manager 启动并等待一个额外的受管服务。"""
+        self._pm("pm_validate.py", "--service", str(service_file), "--pretty")
+        started = self._pm(
+            "pm_start.py",
+            "--config",
+            str(self.manager_config),
+            "--service",
+            str(service_file),
+            "--pretty",
+            timeout=timeout,
+        )
+        process_key = str(started["data"]["processKey"])
+        ready = self._pm(
+            "pm_ready.py",
+            "--config",
+            str(self.manager_config),
+            "--process-key",
+            process_key,
+            "--timeout",
+            str(int(timeout)),
+            "--pretty",
+            timeout=timeout + 15,
+        )
+        return {
+            "processKey": process_key,
+            "started": started.get("data", {}),
+            "ready": ready.get("data", {}),
+        }
+
+    def stop_managed_service(self, process_key: str) -> dict[str, Any]:
+        """通过公共 CLI 停止一个额外服务并返回清理证据。"""
+        stopped = self._pm(
+            "pm_stop.py",
+            "--config",
+            str(self.manager_config),
+            "--process-key",
+            process_key,
+            "--pretty",
+        )
+        return dict(stopped.get("data", {}))
+
     def cli(
         self,
         script: str,
@@ -277,3 +319,59 @@ class ManagedVerifier:
             except OSError as exc:
                 failures.append(f"复制安装完整性复核失败：{exc}")
         return checks, failures
+
+
+def operation_id(value: dict[str, Any]) -> str:
+    operation = value.get("operation")
+    if not isinstance(operation, dict) or not operation.get("operationId"):
+        raise RuntimeError(f"operation 响应缺少 operationId：{value}")
+    return str(operation["operationId"])
+
+
+def operation_state(value: dict[str, Any]) -> str:
+    operation = value.get("operation")
+    return str(operation.get("state")) if isinstance(operation, dict) else ""
+
+
+def wait_operation(
+    managed: ManagedVerifier,
+    submitted: dict[str, Any],
+    *,
+    timeout_seconds: int = 120,
+) -> dict[str, Any]:
+    identifier = operation_id(submitted)
+    observed = managed.cli(
+        "ev_operation.py",
+        "get",
+        "--operation-id",
+        identifier,
+        expected_codes=(0, 2),
+    )
+    completed = managed.cli(
+        "ev_operation.py",
+        "wait",
+        "--operation-id",
+        identifier,
+        "--timeout-seconds",
+        str(timeout_seconds),
+        timeout=timeout_seconds + 30,
+        expected_codes=(0, 2),
+    )
+    return {"operationId": identifier, "observed": observed, "completed": completed}
+
+
+def operation_response(
+    completed: dict[str, Any],
+    *,
+    expected_states: tuple[str, ...] = ("succeeded",),
+) -> dict[str, Any]:
+    operation = completed.get("operation")
+    if not isinstance(operation, dict):
+        raise RuntimeError("operation 终态响应缺少 operation object")
+    state = str(operation.get("state") or "")
+    if state not in expected_states:
+        raise RuntimeError(f"operation 终态不符合预期：state={state} expected={expected_states}")
+    response = operation.get("response")
+    if not isinstance(response, dict):
+        raise RuntimeError(f"operation {state} 缺少 response")
+    return response

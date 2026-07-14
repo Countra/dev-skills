@@ -321,6 +321,51 @@ def main() -> int:
         missing_support_markers = [marker for marker in required_support_markers if marker not in support_text]
         if missing_support_markers:
             failures.append(f"公共 fixture 支撑未闭合复制安装或进程生命周期：{missing_support_markers}")
+    termous_paths = (
+        SKILL / "tests" / "run_termous_smoke.py",
+        SKILL / "tests" / "termous_contract_support.py",
+    )
+    termous_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in termous_paths if path.exists()
+    )
+    missing_termous_files = [path.name for path in termous_paths if not path.exists()]
+    if missing_termous_files:
+        failures.append(f"Termous 公共契约模块缺失：{missing_termous_files}")
+    termous_internal_hits = [
+        marker
+        for marker in (
+            "subprocess.Popen",
+            "taskkill",
+            "VerifierApplication",
+            "_bind_server",
+            "electron_verifier.",
+            "threading.Thread",
+        )
+        if marker in termous_text
+    ]
+    if termous_internal_hits:
+        failures.append(f"Termous smoke 仍绕过统一公共生命周期：{termous_internal_hits}")
+    missing_termous_markers = [
+        marker
+        for marker in (
+            "ManagedVerifier",
+            "start_managed_service",
+            "stop_managed_service",
+            "guarded_harness_path",
+            "wait_operation",
+            "--no-learn",
+            '"processOwnership": "process-manager"',
+        )
+        if marker not in termous_text and marker not in support_text
+    ]
+    if missing_termous_markers:
+        failures.append(f"Termous smoke 未覆盖 current 公共契约：{missing_termous_markers}")
+    for termous_path in termous_paths:
+        if termous_path.exists():
+            try:
+                ast.parse(termous_path.read_text(encoding="utf-8"), filename=str(termous_path))
+            except SyntaxError as exc:
+                failures.append(f"Termous smoke 语法错误：{exc}")
     metrics["productionFiles"] = len(files)
     metrics["schemaFiles"] = len(schema_ids)
     metrics["oversized"] = oversized
@@ -336,6 +381,8 @@ def main() -> int:
     metrics["publicFixtureInternalHits"] = fixture_internal_hits if fixture_path.exists() else []
     metrics["missingFixtureMarkers"] = missing_fixture_markers if fixture_path.exists() else []
     metrics["missingFixtureSupportMarkers"] = missing_support_markers if fixture_support.exists() else []
+    metrics["termousInternalHits"] = termous_internal_hits
+    metrics["missingTermousMarkers"] = missing_termous_markers
     metrics["staleDocMarkers"] = stale_doc_markers
     metrics["missingDocMarkers"] = missing_doc_markers
     metrics["securityBoundaryModules"] = [path.name for path in required_security_modules if path.exists()]

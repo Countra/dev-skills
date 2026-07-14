@@ -20,8 +20,11 @@ from public_contract_support import (
     ROOT,
     ManagedVerifier,
     guarded_harness_path,
+    operation_id,
+    operation_state,
     python_command,
     select_service_python,
+    wait_operation,
     write_json,
 )
 
@@ -81,18 +84,6 @@ async def wait_cdp(endpoint: str) -> None:
     raise RuntimeError("fixture CDP endpoint 未就绪")
 
 
-def operation_id(value: dict[str, Any]) -> str:
-    operation = value.get("operation")
-    if not isinstance(operation, dict) or not operation.get("operationId"):
-        raise RuntimeError(f"operation submit 缺少 operationId：{value}")
-    return str(operation["operationId"])
-
-
-def operation_state(value: dict[str, Any]) -> str:
-    operation = value.get("operation")
-    return str(operation.get("state")) if isinstance(operation, dict) else ""
-
-
 def prepare_run(
     managed: ManagedVerifier,
     parameter_schema: Path,
@@ -134,17 +125,12 @@ def submit_action(
     if bindings is not None:
         arguments.extend(("--bindings", str(bindings)))
     submitted = managed.cli("ev_action.py", *arguments)
-    identifier = operation_id(submitted)
-    observed = managed.cli("ev_operation.py", "get", "--operation-id", identifier)
-    completed = managed.cli(
-        "ev_operation.py",
-        "wait",
-        "--operation-id",
-        identifier,
-        "--timeout-seconds",
-        "60",
-    )
-    return {"submitted": submitted, "observed": observed, "completed": completed}
+    waited = wait_operation(managed, submitted, timeout_seconds=60)
+    return {
+        "submitted": submitted,
+        "observed": waited["observed"],
+        "completed": waited["completed"],
+    }
 
 
 def prepare_files(work_dir: Path) -> dict[str, Path]:
@@ -277,7 +263,12 @@ async def run_contract(work_dir: Path) -> dict[str, Any]:
             "--note",
             "Approve isolated public fixture assets",
         )
-        action_ids = [str(item["assetId"]) for item in approved.get("actionAssets", [])]
+        action_by_goal = {
+            str(item.get("goal")): str(item["assetId"])
+            for item in approved.get("actionAssets", [])
+            if isinstance(item, dict) and item.get("assetId")
+        }
+        action_ids = [action_by_goal.get("fill-name", ""), action_by_goal.get("save-name", "")]
         workflow_asset = approved.get("workflowAsset")
         if not isinstance(workflow_asset, dict) or not workflow_asset.get("assetId"):
             raise RuntimeError("公共 approve 响应缺少 workflowAsset")
