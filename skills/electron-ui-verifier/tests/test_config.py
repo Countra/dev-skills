@@ -38,6 +38,7 @@ def config_value(workspace: Path) -> dict:
         "logsDir": str(state / "logs"),
         "tmpDir": str(state / "tmp"),
         "runsDir": str(state / "runs"),
+        "operationsDir": str(state / "operations"),
     }
 
 
@@ -58,6 +59,11 @@ class ConfigTests(unittest.TestCase):
             path.write_text(json.dumps(value), encoding="utf-8")
             self.assertEqual(workspace.resolve(), ServiceConfig.load(path).workspace_root.resolve())
             value["reportsDir"] = str(workspace.parent / "outside")
+            path.write_text(json.dumps(value), encoding="utf-8")
+            with self.assertRaisesRegex(VerifierError, "stateRoot"):
+                ServiceConfig.load(path)
+            value = config_value(workspace)
+            value["operationsDir"] = str(workspace.parent / "outside-operations")
             path.write_text(json.dumps(value), encoding="utf-8")
             with self.assertRaisesRegex(VerifierError, "stateRoot"):
                 ServiceConfig.load(path)

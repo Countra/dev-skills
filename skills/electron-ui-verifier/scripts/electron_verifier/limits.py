@@ -20,6 +20,10 @@ class RuntimeLimits:
     json_depth: int = 32
     action_timeout_ms: int = 30_000
     workflow_timeout_ms: int = 300_000
+    operation_deadline_max_ms: int = 600_000
+    operation_record_bytes: int = 4 * 1024 * 1024
+    operation_history_limit: int = 1_000
+    operation_cancel_grace_seconds: float = 2.0
     shutdown_grace_seconds: float = 8.0
 
 

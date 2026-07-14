@@ -14,6 +14,7 @@ from .canonical_store import CanonicalStore
 from .driver import PlaywrightCdpDriver
 from .errors import VerifierError
 from .limits import DEFAULT_LIMITS, RuntimeLimits
+from .operations import OperationContext, OperationService
 from .runs import RunService
 from .knowledge_reset import KnowledgeReset
 from .retrieval import DEFAULT_MIN_MARGIN, DEFAULT_MIN_SCORE, HybridRetriever
@@ -49,6 +50,11 @@ class AutomationRuntime:
         self.driver = driver_factory(config.artifacts_dir)
         self.sessions = SessionManager(config.sessions_file, self.driver)
         self.runs = RunService(config, self.sessions)
+        self.operations = OperationService(
+            config.operations_dir,
+            config.token().encode("utf-8"),
+            self._execute_operation,
+        )
         self.knowledge: CanonicalStore | None = None
         self.retriever: HybridRetriever | None = None
         self.approvals: ApprovalService | None = None
@@ -61,13 +67,17 @@ class AutomationRuntime:
         await self.driver.start()
         await self.sessions.load()
         await self.runs.recover()
+        self.operations.recover()
 
     async def stop(self) -> None:
         try:
             try:
-                await self.runs.abort_open()
+                await self.operations.shutdown()
             finally:
-                await self.sessions.shutdown()
+                try:
+                    await self.runs.abort_open()
+                finally:
+                    await self.sessions.shutdown()
         finally:
             try:
                 await self.driver.stop()
@@ -103,21 +113,13 @@ class AutomationRuntime:
                 prepared["knowledge"] = knowledge
             return prepared
         if operation == "run_action":
-            return await self.runs.append_action(
-                str(payload.get("runId") or ""),
-                payload.get("action"),
-                payload.get("bindings"),
-                payload.get("parameterSchema"),
-                str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
-            )
+            return self.operations.submit("action", payload)
         if operation == "run_workflow":
-            return await self.runs.execute_workflow(
-                str(payload.get("runId") or ""),
-                payload.get("workflow"),
-                auto_finalize=payload.get("autoFinalize", True) is not False,
-                bindings=payload.get("bindings"),
-                risk_receipts=payload.get("riskReceipts"),
-            )
+            return self.operations.submit("workflow", payload)
+        if operation == "operation_get":
+            return self.operations.get(str(payload.get("operationId") or ""))
+        if operation == "operation_cancel":
+            return await self.operations.cancel(str(payload.get("operationId") or ""))
         if operation == "risk_preview":
             return self.runs.preview_risk(
                 str(payload.get("runId") or ""),
@@ -197,6 +199,32 @@ class AutomationRuntime:
             assert self.retriever is not None
             return self.retriever.stats()
         raise VerifierError("operation_not_found", f"未知 automation operation：{operation}", status=404)
+
+    async def _execute_operation(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        context: OperationContext,
+    ) -> dict[str, Any]:
+        if kind == "action":
+            return await self.runs.append_action(
+                str(payload.get("runId") or ""),
+                payload.get("action"),
+                payload.get("bindings"),
+                payload.get("parameterSchema"),
+                str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
+                operation_context=context,
+            )
+        if kind == "workflow":
+            return await self.runs.execute_workflow(
+                str(payload.get("runId") or ""),
+                payload.get("workflow"),
+                auto_finalize=payload.get("autoFinalize", True) is not False,
+                bindings=payload.get("bindings"),
+                risk_receipts=payload.get("riskReceipts"),
+                operation_context=context,
+            )
+        raise VerifierError("operation_kind_invalid", f"不支持的 operation kind：{kind}")
 
 
 class AutomationWorker:

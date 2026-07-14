@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -9,12 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from .actions import DIAGNOSTIC_ACTIONS, execute_action
-from .atomic_io import atomic_write_json, atomic_write_text, resolve_under
+from .atomic_io import atomic_write_json, atomic_write_text
 from .config import ServiceConfig
 from .errors import VerifierError
 from .evidence import EvidenceStore
-from .models import ActionSpec, RunState, canonical_digest, monotonic_ms
+from .models import ActionSpec, MUTATING_ACTIONS, RunState, canonical_digest, monotonic_ms
+from .operations import OperationContext
 from .reports import build_pending, build_report, summary_markdown
+from .run_outputs import finalize_result, get_artifact, get_report, latest_report
 from .risk_authorization import (
     RiskAuthorizationService,
     authorization_risks,
@@ -220,7 +223,10 @@ class RunService:
         bindings: Any = None,
         parameter_schema: Any = None,
         risk_receipt: str | None = None,
+        operation_context: OperationContext | None = None,
     ) -> dict[str, Any]:
+        if operation_context is not None:
+            operation_context.checkpoint()
         journal = self.load(run_id)
         if journal.get("state") not in {RunState.PREPARED.value, RunState.RUNNING.value}:
             raise VerifierError("run_not_appendable", f"run 当前状态不可追加：{journal.get('state')}", status=409)
@@ -244,6 +250,8 @@ class RunService:
             transient_input_values(raw_action)
         )
         bound_action, bound_names = context.bind(raw_action)
+        if operation_context is not None:
+            bound_action = operation_context.constrain_action(bound_action)
         action = ActionSpec.decode(bound_action)
         risks = authorization_risks(action)
         risk_authorization = self.risk_authorizations.consume(
@@ -283,6 +291,9 @@ class RunService:
         journal["steps"].append(step)
         self._save(journal)
         started_ms = monotonic_ms()
+        mutating = action.action_type in MUTATING_ACTIONS
+        if operation_context is not None and mutating:
+            operation_context.begin_mutation()
         try:
             if screenshot_masks:
                 execution = await execute_action(live, action, sensitive_masks=screenshot_masks)
@@ -300,17 +311,35 @@ class RunService:
                     "artifacts": [item["artifactId"] for item in committed],
                 }
             )
+        except asyncio.CancelledError:
+            unknown = mutating
+            if operation_context is not None and unknown:
+                operation_context.mark_outcome_unknown()
+            step["status"] = "unknown" if unknown else "failed"
+            step["error"] = {"ok": False, "code": "operation_interrupted", **({"outcome": "unknown"} if unknown else {})}
+            journal["state"] = RunState.ABORTED.value
+            step["durationMs"] = max(0, monotonic_ms() - started_ms)
+            step["finishedAt"] = _now()
+            self._save(journal)
+            raise
         except VerifierError as exc:
             unknown = exc.code in {"action_outcome_unknown", "operation_timeout"} or exc.details.get("outcome") == "unknown"
+            if unknown and operation_context is not None:
+                operation_context.mark_outcome_unknown()
             step["status"] = "unknown" if unknown else "failed"
             step["error"] = context.project(exc.envelope())
             if unknown:
                 journal["state"] = RunState.ABORTED.value
         except Exception as exc:
-            step["status"] = "unknown" if action.action_type in {"click", "doubleClick", "fill", "select", "check", "uncheck", "press", "keyChord"} else "failed"
+            step["status"] = "unknown" if mutating else "failed"
             step["error"] = {"ok": False, "code": "internal_action_error", "error": type(exc).__name__}
             if step["status"] == "unknown":
+                if operation_context is not None:
+                    operation_context.mark_outcome_unknown()
                 journal["state"] = RunState.ABORTED.value
+        finally:
+            if operation_context is not None and mutating:
+                operation_context.end_mutation()
         step["durationMs"] = max(0, monotonic_ms() - started_ms)
         step["finishedAt"] = _now()
         self._save(journal)
@@ -330,7 +359,10 @@ class RunService:
         auto_finalize: bool = True,
         bindings: Any = None,
         risk_receipts: Any = None,
+        operation_context: OperationContext | None = None,
     ) -> dict[str, Any]:
+        if operation_context is not None:
+            operation_context.checkpoint()
         if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
             raise VerifierError("invalid_workflow", "workflow.steps 必须是数组")
         if not workflow["steps"] or len(workflow["steps"]) > 200:
@@ -361,11 +393,19 @@ class RunService:
             raise VerifierError("invalid_risk_receipts", "riskReceipts 必须是 object")
         results = []
         for index, raw_action in enumerate(workflow["steps"]):
+            if operation_context is not None:
+                operation_context.checkpoint()
             label = str(raw_action.get("id") or index) if isinstance(raw_action, dict) else str(index)
             receipt = receipt_map.get(label, receipt_map.get(str(index)))
             if receipt is not None and not isinstance(receipt, str):
                 raise VerifierError("invalid_risk_receipts", f"riskReceipts.{label} 必须是 receiptId 字符串")
-            result = await self.append_action(run_id, raw_action, bindings, risk_receipt=receipt)
+            result = await self.append_action(
+                run_id,
+                raw_action,
+                bindings,
+                risk_receipt=receipt,
+                operation_context=operation_context,
+            )
             results.append(result["step"])
             if not result["ok"]:
                 action_type = raw_action.get("type") if isinstance(raw_action, dict) else None
@@ -373,6 +413,8 @@ class RunService:
                 if not may_continue:
                     break
         if auto_finalize:
+            if operation_context is not None:
+                operation_context.checkpoint()
             return await self.finalize(run_id)
         return {"ok": all(step["status"] == "passed" for step in results), "runId": run_id, "steps": results}
 
@@ -383,7 +425,7 @@ class RunService:
         summary_path = run_dir / "summary.md"
         if report_path.exists() and journal.get("state") in {RunState.PASSED.value, RunState.FAILED.value, RunState.ABORTED.value}:
             report = json.loads(report_path.read_text(encoding="utf-8"))
-            return self._finalize_result(journal, report, report_path, summary_path)
+            return finalize_result(journal, report, report_path, summary_path)
         for step in journal.get("steps", []):
             if step.get("status") == "running":
                 step["status"] = "unknown"
@@ -411,48 +453,13 @@ class RunService:
         if journal.get("state") != RunState.ABORTED.value:
             journal["state"] = RunState.PASSED.value if report["status"] == "passed" else RunState.FAILED.value
         self._save(journal)
-        return self._finalize_result(journal, report, report_path, summary_path)
-
-    def _finalize_result(
-        self,
-        journal: dict[str, Any],
-        report: dict[str, Any],
-        report_path: Path,
-        summary_path: Path,
-    ) -> dict[str, Any]:
-        return {
-            "ok": report.get("status") == "passed",
-            "runId": journal["runId"],
-            "state": journal["state"],
-            "report": str(report_path),
-            "summary": str(summary_path),
-            "pending": journal.get("pending"),
-            "result": report,
-        }
+        return finalize_result(journal, report, report_path, summary_path)
 
     def latest_report(self, session: str) -> dict[str, Any]:
-        candidates = []
-        for path in self.config.runs_dir.glob("*/journal.json"):
-            try:
-                journal = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if session not in {journal.get("sessionId"), journal.get("sessionName")} or not journal.get("report"):
-                continue
-            candidates.append(journal)
-        if not candidates:
-            raise VerifierError("report_not_found", f"session 尚无 finalized report：{session}", status=404)
-        latest = max(candidates, key=lambda item: str(item.get("updatedAt") or ""))
-        return self.get_report(str(latest["report"]))
+        return latest_report(self.config.runs_dir, self.config.state_root, session)
 
     def get_report(self, value: str) -> dict[str, Any]:
-        path = resolve_under(self.config.state_root, Path(value), must_exist=True)
-        if path.name != "report.json":
-            raise VerifierError("invalid_report_path", "report path 必须指向 report.json")
-        return {"ok": True, "report": str(path), "result": json.loads(path.read_text(encoding="utf-8"))}
+        return get_report(self.config.state_root, value)
 
     def get_artifact(self, value: str) -> dict[str, Any]:
-        path = resolve_under(self.config.state_root, Path(value), must_exist=True)
-        if not path.is_file():
-            raise VerifierError("invalid_artifact_path", "artifact path 必须是文件")
-        return {"ok": True, "artifact": str(path), "bytes": path.stat().st_size}
+        return get_artifact(self.config.state_root, value)

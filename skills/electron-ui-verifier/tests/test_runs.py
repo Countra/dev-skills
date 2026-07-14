@@ -9,6 +9,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -21,6 +22,7 @@ from electron_verifier.actions import ActionExecution  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.evidence import PendingArtifact  # noqa: E402
 from electron_verifier.runs import RunService  # noqa: E402
+from electron_verifier.operations import OperationContext  # noqa: E402
 
 
 TEST_ROOT = Path(os.environ.get("EV_TEST_ROOT", Path.cwd() / ".harness" / "electron-ui-verifier-test-tmp"))
@@ -348,6 +350,56 @@ class RunTests(unittest.TestCase):
                     restarted_service.append_action(prepared["runId"], {"type": "screenshot"})
                 )
             self.assertTrue(result["ok"])
+
+    def test_operation_cancel_aborts_run_and_stops_later_mutations(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
+            mutation_count = 0
+
+            async def scenario() -> None:
+                nonlocal mutation_count
+                started = asyncio.Event()
+
+                async def blocking_execute(live, action):
+                    nonlocal mutation_count
+                    mutation_count += 1
+                    started.set()
+                    await asyncio.sleep(30)
+
+                workflow = {
+                    "steps": [
+                        {
+                            "type": "click",
+                            "locator": {"text": f"保存-{index}"},
+                            "postconditions": [{"type": "visible", "locator": {"text": "完成"}}],
+                        }
+                        for index in range(3)
+                    ]
+                }
+                context = OperationContext(str(uuid.uuid4()), 5_000)
+                with mock.patch("electron_verifier.runs.execute_action", side_effect=blocking_execute):
+                    task = asyncio.create_task(
+                        service.execute_workflow(
+                            prepared["runId"],
+                            workflow,
+                            auto_finalize=False,
+                            operation_context=context,
+                        )
+                    )
+                    await asyncio.wait_for(started.wait(), timeout=1)
+                    context.request_cancel()
+                    task.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await task
+
+            asyncio.run(scenario())
+            journal = service.load(prepared["runId"])
+            self.assertEqual(1, mutation_count)
+            self.assertEqual("aborted", journal["state"])
+            self.assertEqual("unknown", journal["steps"][0]["status"])
+            self.assertEqual(1, len(journal["steps"]))
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ from typing import Any
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18180
 SERVICE_NAME = "electron-ui-verifier"
+FINAL_OPERATION_STATES = {"succeeded", "failed", "cancelled", "deadline_exceeded", "unknown"}
 
 
 class EVError(RuntimeError):
@@ -41,6 +42,7 @@ class EVPaths:
     artifacts_dir: Path
     logs_dir: Path
     tmp_dir: Path
+    operations_dir: Path
     service_file: Path
 
 
@@ -61,6 +63,7 @@ class EVConfig:
     artifacts_dir: Path
     logs_dir: Path
     tmp_dir: Path
+    operations_dir: Path
 
     @property
     def base_url(self) -> str:
@@ -143,6 +146,7 @@ def paths_for_workspace(workspace_root: Path) -> EVPaths:
         artifacts_dir=state_root / "artifacts",
         logs_dir=state_root / "logs",
         tmp_dir=state_root / "tmp",
+        operations_dir=state_root / "operations",
         service_file=workspace_root / ".harness" / "process-manager" / "services" / f"{SERVICE_NAME}.json",
     )
 
@@ -195,7 +199,7 @@ def write_environment(paths: EVPaths, python_path: Path | None = None, port: int
 
 
 def ensure_runtime_dirs(paths: EVPaths) -> None:
-    for folder in (paths.state_root, paths.reports_dir, paths.pending_dir, paths.workflows_dir, paths.artifacts_dir, paths.logs_dir, paths.tmp_dir, paths.service_file.parent):
+    for folder in (paths.state_root, paths.reports_dir, paths.pending_dir, paths.workflows_dir, paths.artifacts_dir, paths.logs_dir, paths.tmp_dir, paths.operations_dir, paths.service_file.parent):
         folder.mkdir(parents=True, exist_ok=True)
 
 
@@ -232,6 +236,10 @@ def config_from_data(data: dict[str, Any]) -> EVConfig:
         artifacts_dir=require_absolute_path(data.get("artifactsDir"), "config.artifactsDir"),
         logs_dir=require_absolute_path(data.get("logsDir"), "config.logsDir"),
         tmp_dir=require_absolute_path(data.get("tmpDir"), "config.tmpDir"),
+        operations_dir=require_absolute_path(
+            data.get("operationsDir") or str(state_root / "operations"),
+            "config.operationsDir",
+        ),
     )
 
 
@@ -258,6 +266,7 @@ def config_to_data(paths: EVPaths, environment: dict[str, Any]) -> dict[str, Any
         "artifactsDir": str(paths.artifacts_dir),
         "logsDir": str(paths.logs_dir),
         "tmpDir": str(paths.tmp_dir),
+        "operationsDir": str(paths.operations_dir),
     }
 
 
@@ -297,6 +306,46 @@ def request_json(config: EVConfig, method: str, path: str, payload: Any | None =
 
 def result_exit_code(result: dict[str, Any]) -> int:
     return 0 if result.get("ok") is not False else 2
+
+
+def wait_for_operation(
+    config: EVConfig,
+    operation_id: str,
+    timeout_seconds: float,
+    poll_seconds: float = 0.2,
+) -> dict[str, Any]:
+    if timeout_seconds <= 0:
+        raise EVError("operation wait timeout must be greater than zero")
+    if poll_seconds <= 0 or poll_seconds > 5:
+        raise EVError("operation poll interval must be in (0, 5]")
+    deadline = time.monotonic() + timeout_seconds
+    last: dict[str, Any] | None = None
+    while True:
+        query = urllib.parse.urlencode({"operationId": operation_id})
+        last = request_json(config, "GET", f"/operations/get?{query}", timeout=min(30.0, timeout_seconds))
+        operation = last.get("operation")
+        if not isinstance(operation, dict):
+            raise EVError("operation response is missing operation object")
+        if operation.get("state") in FINAL_OPERATION_STATES:
+            return last
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return {
+                "ok": False,
+                "code": "operation_wait_timeout",
+                "error": "client wait timeout；operation 仍可继续查询或取消",
+                "operation": operation,
+            }
+        time.sleep(min(poll_seconds, remaining))
+
+
+def operation_exit_code(result: dict[str, Any]) -> int:
+    operation = result.get("operation")
+    if result.get("ok") is False:
+        return 2
+    if not isinstance(operation, dict) or operation.get("state") not in FINAL_OPERATION_STATES:
+        return 0
+    return 0 if operation.get("state") == "succeeded" else 2
 
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:

@@ -81,11 +81,13 @@ class VerifierApplication:
         if method == "GET" and path == "/runs/status":
             return 200, self.worker.submit("run_status", query, timeout=30)
         if method == "POST" and path == "/actions/run":
-            result = self.worker.submit("run_action", body, timeout=120)
-            return (200 if result.get("ok") else 409), result
+            return 202, self.worker.submit("run_action", body, timeout=30)
         if method == "POST" and path == "/workflows/run":
-            result = self.worker.submit("run_workflow", body, timeout=300)
-            return (200 if result.get("ok") else 409), result
+            return 202, self.worker.submit("run_workflow", body, timeout=30)
+        if method == "GET" and path == "/operations/get":
+            return 200, self.worker.submit("operation_get", query, timeout=30)
+        if method == "POST" and path == "/operations/cancel":
+            return 200, self.worker.submit("operation_cancel", body, timeout=30)
         if method == "POST" and path == "/risks/preview":
             return 200, self.worker.submit("risk_preview", body, timeout=30)
         if method == "POST" and path == "/risks/approve":

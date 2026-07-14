@@ -19,6 +19,7 @@ PUBLIC_SCRIPTS = (
     "ev_finalize.py", "ev_pending.py", "ev_persist.py", "ev_knowledge.py",
     "ev_suggest.py", "ev_assets.py", "ev_asset_extract.py", "ev_asset_runner.py",
     "ev_export_workflow.py", "ev_risk.py", "ev_server.py",
+    "ev_operation.py",
 )
 
 
@@ -117,10 +118,16 @@ def main() -> int:
         schema_ids.add(str(identifier))
     if len(schema_ids) < 7 or not (SCHEMAS / "risk-receipt.schema.json").exists():
         failures.append("当前契约 schema 数量不足")
-    required_security_modules = (PACKAGE / "sensitivity.py", PACKAGE / "risk_authorization.py")
+    required_security_modules = (
+        PACKAGE / "sensitivity.py",
+        PACKAGE / "risk_authorization.py",
+        PACKAGE / "operations.py",
+    )
     missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
     if missing_security_modules:
-        failures.append(f"敏感数据或风险授权模块缺失：{missing_security_modules}")
+        failures.append(f"安全或 operation 边界模块缺失：{missing_security_modules}")
+    if not (SCHEMAS / "operation.schema.json").exists():
+        failures.append("durable operation schema 缺失")
     forbidden_bypasses = ("allowWithoutPostcondition", "confirmRisk", "allowCoordinate", "riskConfirmed")
     bypass_hits = [marker for marker in forbidden_bypasses if marker in package_text]
     action_schema_text = (SCHEMAS / "action.schema.json").read_text(encoding="utf-8")
