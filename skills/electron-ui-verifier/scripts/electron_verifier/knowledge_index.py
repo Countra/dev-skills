@@ -183,6 +183,10 @@ class KnowledgeIndex:
         assert self.connection is not None
         return int(self.connection.execute("SELECT COUNT(*) FROM assets").fetchone()[0])
 
+    def asset_ids(self) -> list[str]:
+        assert self.connection is not None
+        return [str(row[0]) for row in self.connection.execute("SELECT asset_id FROM assets ORDER BY asset_id")]
+
     def verify(self) -> dict[str, Any]:
         assert self.connection is not None
         integrity = str(self.connection.execute("PRAGMA integrity_check").fetchone()[0])

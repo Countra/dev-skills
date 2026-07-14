@@ -52,7 +52,7 @@ class KnowledgeResetTests(unittest.TestCase):
             result = KnowledgeReset(state).ensure()
             self.assertEqual("initialized", result["status"])
             verification = CanonicalStore(state).verify()
-            self.assertEqual(0, verification["canonicalAssetCount"])
+            self.assertEqual(0, verification["activeAssetCount"])
             self.assertEqual("delete", verification["derived"]["journalMode"])
 
     def test_legacy_layout_requires_exact_fingerprint_and_is_retired_without_reading(self) -> None:
@@ -85,7 +85,7 @@ class KnowledgeResetTests(unittest.TestCase):
             retired = state / "retired" / "crash-snapshot"
             retired.parent.mkdir()
             os.replace(state / "knowledge", retired)
-            (retired / "canonical" / "untrusted.json").write_text("{broken", encoding="utf-8")
+            (retired / "objects" / "untrusted.json").write_text("{broken", encoding="utf-8")
             result = reset.ensure()
             self.assertEqual("initialized", result["status"])
             self.assertEqual([], CanonicalStore(state).list_assets())
@@ -95,12 +95,27 @@ class KnowledgeResetTests(unittest.TestCase):
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)
-            store.persist([sample_asset()])
+            store.activate([sample_asset()])
             store.paths["index"].write_bytes(b"corrupt-derived-index")
             verification = CanonicalStore(state).verify()
-            self.assertEqual(1, verification["canonicalAssetCount"])
+            self.assertEqual(1, verification["activeAssetCount"])
             self.assertEqual(1, verification["derived"]["assetCount"])
             self.assertTrue(verification["derived"].get("quarantined"))
+
+    def test_rebuild_quarantines_stale_rollback_journal(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            state = Path(folder) / "state"
+            KnowledgeReset(state).ensure()
+            store = CanonicalStore(state)
+            store.activate([sample_asset()])
+            stale_journal = Path(str(store.paths["index"]) + "-journal")
+            stale_journal.write_bytes(b"stale-derived-journal")
+
+            rebuilt = store.rebuild_index()
+
+            self.assertEqual(1, rebuilt["activeAssetCount"])
+            self.assertFalse(stale_journal.exists())
+            self.assertEqual(1, len(list(store.paths["derived"].glob("index.stale-*.sqlite3-journal"))))
 
     def test_wal_index_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
@@ -115,7 +130,7 @@ class KnowledgeResetTests(unittest.TestCase):
                 KnowledgeIndex(path)
             self.assertEqual("wal_not_allowed", caught.exception.code)
 
-    def test_canonical_first_write_survives_index_failure_and_retry(self) -> None:
+    def test_decision_survives_index_failure_and_rebuilds_without_reactivation(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
@@ -126,12 +141,33 @@ class KnowledgeResetTests(unittest.TestCase):
                 side_effect=VerifierError("simulated_index_failure", "simulated"),
             ):
                 with self.assertRaises(VerifierError):
-                    store.persist([asset])
-            canonical_path = store.paths["canonical"] / f"{asset.asset_id}.json"
-            self.assertTrue(canonical_path.exists())
-            self.assertEqual(0, store.manifest["assetCount"])
-            CanonicalStore(state).persist([asset])
-            self.assertEqual(1, CanonicalStore(state).verify()["canonicalAssetCount"])
+                    store.activate([asset])
+            object_path = store.paths["objects"] / f"{asset.asset_id}.json"
+            self.assertTrue(object_path.exists())
+            self.assertEqual(1, len(store.list_decisions()))
+            recovered = CanonicalStore(state).verify()
+            self.assertEqual(1, recovered["activeAssetCount"])
+            retried = CanonicalStore(state).activate([asset])
+            self.assertFalse(retried["decisionCreated"])
+
+    def test_orphan_object_is_never_activated_or_indexed(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            state = Path(folder) / "state"
+            KnowledgeReset(state).ensure()
+            store = CanonicalStore(state)
+            asset = sample_asset()
+
+            def fail_after_objects(phase: str) -> None:
+                if phase == "after_objects":
+                    raise RuntimeError("simulated object phase failure")
+
+            with self.assertRaises(RuntimeError):
+                store.activate([asset], fault_injector=fail_after_objects)
+            verification = CanonicalStore(state).verify()
+            self.assertEqual(0, verification["activeAssetCount"])
+            self.assertEqual(1, verification["orphanObjectCount"])
+            with KnowledgeIndex(store.paths["index"]) as index:
+                self.assertEqual([], index.asset_ids())
 
 
 if __name__ == "__main__":

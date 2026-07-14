@@ -105,7 +105,7 @@ def main() -> int:
     KnowledgeReset(state).ensure()
     store = CanonicalStore(state)
     assets, positives = build_assets()
-    store.persist(assets)
+    store.activate(assets)
     hits = 0
     reciprocal = 0.0
     false_positives = 0

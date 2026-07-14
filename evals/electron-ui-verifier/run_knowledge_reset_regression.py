@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""验证 fresh/current/legacy direct reset 与 canonical rebuild。"""
+"""验证 fresh/current/legacy direct reset 与 sealed rebuild。"""
 
 from __future__ import annotations
 
@@ -42,6 +42,7 @@ def asset() -> CanonicalAsset:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", required=True)
+    parser.add_argument("--output", required=True)
     parser.add_argument("--deny-unconfirmed-live-reset", action="store_true")
     args = parser.parse_args()
     work_dir = Path(args.work_dir).resolve()
@@ -60,7 +61,7 @@ def main() -> int:
         fresh_verify = CanonicalStore(fresh_state).verify()
         checks["freshInit"] = {
             "status": fresh["status"],
-            "assetCount": fresh_verify["canonicalAssetCount"],
+            "assetCount": fresh_verify["activeAssetCount"],
             "journalMode": fresh_verify["derived"]["journalMode"],
         }
 
@@ -106,14 +107,15 @@ def main() -> int:
         rebuild_state = work_dir / "rebuild" / "state"
         KnowledgeReset(rebuild_state).ensure()
         store = CanonicalStore(rebuild_state)
-        persisted = store.persist([asset()])[0]
+        activation = store.activate([asset()])
+        persisted = activation["assets"][0]
         store.paths["index"].write_bytes(b"corrupt-derived-only")
         rebuilt = CanonicalStore(rebuild_state).verify()
         preview_only = KnowledgeReset(rebuild_state).preview()
         still_present = len(CanonicalStore(rebuild_state).list_assets()) == 1
         checks["canonicalRebuild"] = {
             "assetId": persisted["assetId"],
-            "assetCount": rebuilt["canonicalAssetCount"],
+            "assetCount": rebuilt["activeAssetCount"],
             "indexAssetCount": rebuilt["derived"]["assetCount"],
             "quarantined": bool(rebuilt["derived"].get("quarantined")),
             "journalMode": rebuilt["derived"]["journalMode"],
@@ -135,8 +137,7 @@ def main() -> int:
     }
     failures.extend(name for name, passed in required.items() if not passed)
     result = {"ok": not failures, "checks": checks, "required": required, "failures": failures}
-    task_dir = work_dir.parent.parent
-    write_json(task_dir / "artifacts" / "validation" / "knowledge-reset.json", result)
+    write_json(Path(args.output).resolve(), result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1
 

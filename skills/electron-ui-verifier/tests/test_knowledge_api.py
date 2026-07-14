@@ -50,8 +50,8 @@ class KnowledgeApiTests(unittest.TestCase):
                         created_at="2026-07-11T00:00:00Z",
                     )
                 )
-            store.persist(assets)
-            store.persist([assets[0], assets[0]])
+            store.activate(assets)
+            store.activate([assets[0], assets[0]])
             with HybridRetriever(store) as retriever:
                 result = retriever.search("Please open panel 3", {"appId": "demo"})
                 detail = retriever.get_asset(assets[3].asset_id)

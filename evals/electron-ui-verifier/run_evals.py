@@ -68,7 +68,7 @@ def compact_retrieval(work_dir: Path) -> dict[str, Any]:
                 created_at="2026-07-11T00:00:00Z",
             )
         )
-    store.persist(assets)
+    store.activate(assets)
     with HybridRetriever(store) as retriever:
         result = retriever.search("Please open settings panel 3", {"appId": "eval-app"})
     return {

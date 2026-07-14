@@ -5,9 +5,9 @@ from __future__ import annotations
 import hmac
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
-from .atomic_io import exclusive_write_json, resolve_under
+from .atomic_io import resolve_under
 from .canonical_store import CanonicalStore
 from .errors import VerifierError
 from .evidence import EvidenceStore
@@ -24,20 +24,15 @@ def _contains_redacted_input(value: Any) -> bool:
 
 
 class ApprovalService:
-    def __init__(self, store: CanonicalStore, runs: Any) -> None:
+    def __init__(
+        self,
+        store: CanonicalStore,
+        runs: Any,
+        fault_injector: Callable[[str], None] | None = None,
+    ) -> None:
         self.store = store
         self.runs = runs
-
-    def _decision(self, path: Path) -> dict[str, Any] | None:
-        if not path.exists():
-            return None
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
-            raise VerifierError("decision_invalid", f"无法读取 sealed decision：{exc}", status=500) from exc
-        if not isinstance(value, dict):
-            raise VerifierError("decision_invalid", "sealed decision 必须是 object", status=500)
-        return value
+        self.fault_injector = fault_injector
 
     def _pending(self, run_id: str) -> tuple[dict[str, Any], dict[str, Any], Path]:
         journal = self.runs.load(run_id)
@@ -129,8 +124,7 @@ class ApprovalService:
         for risk in pending.get("risks", []):
             if isinstance(risk, dict) and risk.get("learnable") is False and risk.get("confirmed") is not True:
                 issues.append({"code": "risk_confirmation_required", "risk": risk.get("code"), "stepId": risk.get("stepId")})
-        decision_path = path.parent / "decision.json"
-        decision = self._decision(decision_path)
+        decision = self.store.get_decision(fingerprint)
         return {
             "runId": run_id,
             "pending": str(path),
@@ -153,12 +147,13 @@ class ApprovalService:
             raise VerifierError("approval_note_required", "approve 需要非空 note")
         preview = self.validate(run_id)
         self._confirm(preview, fingerprint)
-        journal, pending, path = self._pending(run_id)
-        decision_path = path.parent / "decision.json"
-        if decision_path.exists():
-            decision = self._decision(decision_path) or {}
+        journal, pending, _ = self._pending(run_id)
+        decision = preview.get("decision")
+        if isinstance(decision, dict):
             if decision.get("status") == "approved" and decision.get("bundleFingerprint") == fingerprint:
-                return {"ok": True, "alreadyApproved": True, "decision": decision}
+                rebuilt = self.store.rebuild_index()
+                asset = self.store.get_asset(str(decision["assetIds"][0])).to_dict()
+                return {"ok": True, "alreadyApproved": True, "decision": decision, "asset": asset, "index": rebuilt}
             raise VerifierError("pending_already_sealed", "pending 已由其它决定 sealed", status=409)
         if preview["issues"]:
             raise VerifierError("pending_not_approvable", "pending bundle 未通过批准完整性检查", status=409, details={"issues": preview["issues"]})
@@ -189,36 +184,36 @@ class ApprovalService:
             evidence=evidence,
             created_at=str(report.get("finalizedAt") or journal.get("updatedAt")),
         )
-        persisted = self.store.persist([asset])[0]
-        decision = {
-            "schemaVersion": 1,
-            "status": "approved",
-            "runId": run_id,
-            "bundleFingerprint": fingerprint,
-            "assetId": asset.asset_id,
-            "note": note[:1000],
+        activation = self.store.activate(
+            [asset],
+            bundle_fingerprint=fingerprint,
+            run_id=run_id,
+            message=note,
+            fault_injector=self.fault_injector,
+        )
+        return {
+            "ok": True,
+            "alreadyApproved": not activation["decisionCreated"],
+            "decision": activation["decision"],
+            "asset": activation["assets"][0],
+            "index": activation["index"],
         }
-        if not exclusive_write_json(decision_path, decision):
-            raise VerifierError("pending_already_sealed", "pending 在提交期间被其它决定 sealed", status=409)
-        return {"ok": True, "alreadyApproved": False, "decision": decision, "asset": persisted}
 
     def reject(self, run_id: str, fingerprint: str, reason: str) -> dict[str, Any]:
         if not reason.strip():
             raise VerifierError("rejection_reason_required", "reject 需要非空 reason")
         preview = self.validate(run_id)
         self._confirm(preview, fingerprint)
-        _, _, path = self._pending(run_id)
-        decision_path = path.parent / "decision.json"
-        decision = {
-            "schemaVersion": 1,
-            "status": "rejected",
-            "runId": run_id,
-            "bundleFingerprint": fingerprint,
-            "reason": reason[:1000],
-        }
-        if not exclusive_write_json(decision_path, decision):
-            existing = self._decision(decision_path) or {}
-            if existing == decision:
-                return {"ok": True, "alreadyRejected": True, "decision": existing}
-            raise VerifierError("pending_already_sealed", "pending 已由其它决定 sealed", status=409)
-        return {"ok": True, "alreadyRejected": False, "decision": decision}
+        try:
+            decision, created = self.store.seal_decision(
+                status="rejected",
+                bundle_fingerprint=fingerprint,
+                run_id=run_id,
+                asset_ids=[],
+                message=reason,
+            )
+        except VerifierError as exc:
+            if exc.code == "decision_conflict":
+                raise VerifierError("pending_already_sealed", "pending 已由其它决定 sealed", status=409) from exc
+            raise
+        return {"ok": True, "alreadyRejected": not created, "decision": decision}

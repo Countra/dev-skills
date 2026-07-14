@@ -76,7 +76,7 @@ class RetrievalTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_exact_alias_cjk_and_negative_abstain(self) -> None:
-        self.store.persist(
+        self.store.activate(
             [
                 action_asset("保存设置", ["保存配置", "Save preferences"]),
                 action_asset("导出报告", ["下载报告"]),
@@ -96,7 +96,7 @@ class RetrievalTests(unittest.TestCase):
     def test_app_state_and_risk_are_hard_filters(self) -> None:
         high_risk = action_asset("删除环境", [], risk="high")
         other_app = action_asset("保存设置", [], app_id="other")
-        self.store.persist([high_risk, other_app])
+        self.store.activate([high_risk, other_app])
         with HybridRetriever(self.store) as retriever:
             risk = retriever.search("删除环境", {"appId": "demo", "preState": "home"}, explain=True)
             state = retriever.search(
@@ -112,7 +112,7 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual("abstain", app["decision"])
 
     def test_duplicate_exact_alias_abstains_on_margin(self) -> None:
-        self.store.persist(
+        self.store.activate(
             [
                 action_asset("保存编辑器", ["Save changes"]),
                 action_asset("保存配置", ["Save changes"]),
@@ -124,7 +124,7 @@ class RetrievalTests(unittest.TestCase):
         self.assertEqual("ambiguous_margin", result["abstain"]["reason"])
 
     def test_query_and_context_budgets_fail_closed(self) -> None:
-        self.store.persist([action_asset("保存设置", [])])
+        self.store.activate([action_asset("保存设置", [])])
         with HybridRetriever(self.store) as retriever:
             with self.assertRaises(VerifierError) as query_error:
                 retriever.search("x" * 501, {"appId": "demo"})
@@ -143,7 +143,7 @@ class RetrievalTests(unittest.TestCase):
             value="${name}",
             parameter_schema={"name": {"type": "string", "required": True}},
         )
-        self.store.persist([open_settings, set_name])
+        self.store.activate([open_settings, set_name])
         with HybridRetriever(self.store) as retriever:
             result = retriever.compose(
                 {

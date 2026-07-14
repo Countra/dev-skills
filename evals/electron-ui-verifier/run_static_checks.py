@@ -116,8 +116,19 @@ def main() -> int:
         if not identifier or identifier in schema_ids:
             failures.append(f"Schema $id 缺失或重复：{path}")
         schema_ids.add(str(identifier))
-    if len(schema_ids) < 7 or not (SCHEMAS / "risk-receipt.schema.json").exists():
+    required_schemas = {
+        "risk-receipt.schema.json",
+        "operation.schema.json",
+        "knowledge-decision.schema.json",
+    }
+    missing_schemas = sorted(name for name in required_schemas if not (SCHEMAS / name).exists())
+    if len(schema_ids) < 9 or missing_schemas:
         failures.append("当前契约 schema 数量不足")
+    knowledge_schema = json.loads((SCHEMAS / "knowledge.schema.json").read_text(encoding="utf-8"))
+    knowledge_properties = knowledge_schema.get("properties", {})
+    sealed_format = knowledge_properties.get("format", {}).get("const")
+    if sealed_format != "electron-verifier-sealed":
+        failures.append("knowledge schema 未固定 sealed direct-cutover format")
     required_security_modules = (
         PACKAGE / "sensitivity.py",
         PACKAGE / "risk_authorization.py",
@@ -126,8 +137,15 @@ def main() -> int:
     missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
     if missing_security_modules:
         failures.append(f"安全或 operation 边界模块缺失：{missing_security_modules}")
-    if not (SCHEMAS / "operation.schema.json").exists():
-        failures.append("durable operation schema 缺失")
+    legacy_knowledge_markers = (
+        '"canonicalDir"',
+        "electron-verifier-canonical",
+        'paths["canonical"]',
+        "def persist(",
+    )
+    legacy_knowledge_hits = [marker for marker in legacy_knowledge_markers if marker in package_text]
+    if legacy_knowledge_hits:
+        failures.append(f"生产代码仍包含旧 canonical truth 路径：{legacy_knowledge_hits}")
     forbidden_bypasses = ("allowWithoutPostcondition", "confirmRisk", "allowCoordinate", "riskConfirmed")
     bypass_hits = [marker for marker in forbidden_bypasses if marker in package_text]
     action_schema_text = (SCHEMAS / "action.schema.json").read_text(encoding="utf-8")
@@ -211,6 +229,14 @@ def main() -> int:
     metrics["platformMatrixDefined"] = bool(matrix_text)
     metrics["securityBoundaryModules"] = [path.name for path in required_security_modules if path.exists()]
     metrics["mutationBypassHits"] = bypass_hits
+    metrics["missingRequiredSchemas"] = missing_schemas
+    metrics["knowledgeFormat"] = sealed_format
+    metrics["legacyKnowledgeMarkers"] = legacy_knowledge_hits
+    metrics["knowledgeLayoutModules"] = [
+        name
+        for name in ("canonical_store.py", "knowledge_index.py", "knowledge_reset.py")
+        if (PACKAGE / name).exists()
+    ]
     result = {"ok": not failures, "failures": failures, "metrics": metrics}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

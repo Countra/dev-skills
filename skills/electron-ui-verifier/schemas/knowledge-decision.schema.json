@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/knowledge-decision.schema.json",
+  "title": "Sealed knowledge activation decision",
+  "type": "object",
+  "required": [
+    "schemaVersion", "format", "status", "bundleFingerprint", "runId",
+    "assetIds", "message", "createdAt", "decisionDigest"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "format": {"const": "electron-verifier-sealed"},
+    "status": {"enum": ["approved", "rejected"]},
+    "bundleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runId": {"type": "string", "format": "uuid"},
+    "assetIds": {
+      "type": "array",
+      "items": {"type": "string", "pattern": "^(action|workflow)-[0-9a-f]{40}$"},
+      "uniqueItems": true
+    },
+    "message": {"type": "string", "maxLength": 1000},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "decisionDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "approved"}}},
+      "then": {"properties": {"assetIds": {"minItems": 1}}},
+      "else": {"properties": {"assetIds": {"maxItems": 0}}}
+    }
+  ],
+  "additionalProperties": false
+}

@@ -146,11 +146,19 @@ class AutomationRuntime:
             return {"ok": True, **self.approvals.validate(str(payload.get("runId") or ""))}
         if operation == "pending_approve":
             assert self.approvals is not None
-            return self.approvals.approve(
-                str(payload.get("runId") or ""),
-                str(payload.get("fingerprint") or ""),
-                str(payload.get("note") or ""),
-            )
+            assert self.knowledge is not None
+            if self.retriever is not None:
+                self.retriever.close()
+                self.retriever = None
+            try:
+                return self.approvals.approve(
+                    str(payload.get("runId") or ""),
+                    str(payload.get("fingerprint") or ""),
+                    str(payload.get("note") or ""),
+                )
+            finally:
+                self.knowledge.verify()
+                self.retriever = HybridRetriever(self.knowledge)
         if operation == "pending_reject":
             assert self.approvals is not None
             return self.approvals.reject(

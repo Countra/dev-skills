@@ -79,7 +79,7 @@ def knowledge_performance(work_dir: Path) -> tuple[dict[str, Any], list[str]]:
         assets.append(asset)
         cases.append((app_id, alias, asset.asset_id))
     started = time.perf_counter()
-    store.persist(assets)
+    store.activate(assets)
     ingest_ms = (time.perf_counter() - started) * 1000
     timings: list[float] = []
     query_failures = 0

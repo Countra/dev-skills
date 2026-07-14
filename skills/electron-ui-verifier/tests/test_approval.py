@@ -107,9 +107,40 @@ class ApprovalTests(unittest.TestCase):
             second = approvals.approve(run_id, preview["bundleFingerprint"], "用户确认")
             self.assertFalse(first["alreadyApproved"])
             self.assertTrue(second["alreadyApproved"])
-            self.assertEqual(first["decision"]["assetId"], second["decision"]["assetId"])
+            self.assertEqual(first["decision"]["assetIds"], second["decision"]["assetIds"])
             verification = CanonicalStore(root).verify()
-            self.assertEqual(1, verification["canonicalAssetCount"])
+            self.assertEqual(1, verification["activeAssetCount"])
+
+    def test_restart_repairs_index_after_decision_and_retry_returns_same_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder) / "state"
+            KnowledgeReset(root).ensure()
+            runs, run_id, _ = self._parameterized_run(root)
+
+            def fail_after_decision(phase: str) -> None:
+                if phase == "after_decision":
+                    raise RuntimeError("injected approval interruption")
+
+            approvals = ApprovalService(CanonicalStore(root), runs, fail_after_decision)
+            fingerprint = approvals.validate(run_id)["bundleFingerprint"]
+            with self.assertRaisesRegex(RuntimeError, "injected approval interruption"):
+                approvals.approve(run_id, fingerprint, "用户确认")
+
+            interrupted = CanonicalStore(root)
+            decision = interrupted.get_decision(fingerprint)
+            self.assertIsNotNone(decision)
+            self.assertEqual("approved", decision["status"])
+            with self.assertRaises(VerifierError) as stale:
+                interrupted.verify(repair_index=False)
+            self.assertEqual("knowledge_index_activation_mismatch", stale.exception.code)
+
+            restarted = CanonicalStore(root)
+            recovered = restarted.verify()
+            retry = ApprovalService(restarted, runs).approve(run_id, fingerprint, "用户确认")
+            self.assertEqual(1, recovered["activeAssetCount"])
+            self.assertTrue(retry["alreadyApproved"])
+            self.assertEqual(decision["decisionDigest"], retry["decision"]["decisionDigest"])
+            self.assertEqual(decision["assetIds"], retry["decision"]["assetIds"])
 
     def test_modified_pending_invalidates_fingerprint(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:

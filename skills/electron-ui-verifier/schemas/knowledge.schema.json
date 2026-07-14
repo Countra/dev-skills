@@ -5,8 +5,8 @@
   "type": "object",
   "required": ["schemaVersion", "format", "assetId", "kind", "appId", "goal", "aliases", "status", "payload", "evidence"],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "format": {"const": "electron-verifier-canonical"},
+    "schemaVersion": {"const": 2},
+    "format": {"const": "electron-verifier-sealed"},
     "assetId": {"type": "string", "pattern": "^[a-z]+-[0-9a-f]{24,64}$"},
     "kind": {"enum": ["action", "workflow"]},
     "appId": {"type": "string", "minLength": 1},
