@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "complex-coding-planner-20260714",
+  "candidate_tree_sha256": "27cf83e0b02d96d5ff282903f53897bf35792d9409e2fb39d31ec5669aaf313d",
+  "dimensions": [
+    {
+      "dimension": "invocation_boundary",
+      "status": "pass",
+      "summary": "触发条件、direct/managed/blocked 路由和禁止实施边界清楚，能把小任务、复杂规划与真正阻塞的问题区分开。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "frontmatter 同时说明复杂任务适用条件、规划请求入口、不得实现代码以及 executor 交接边界。"
+        },
+        {
+          "path": "references/planning-workflow.md",
+          "detail": "任务路由明确 direct、managed、blocked，并要求可自主消歧的问题先调查而不是过早询问用户。"
+        }
+      ]
+    },
+    {
+      "dimension": "workflow_completeness",
+      "status": "warn",
+      "summary": "从研究、规范、质量、契约、审批到 amendment 的主流程完整，但写 active pointer 前没有定义已有活动任务的冲突、复用或切换策略。",
+      "evidence": [
+        {
+          "path": "references/planning-workflow.md",
+          "detail": "流程要求开始时读取 active pointer，Readiness 后写入 pointer，但未规定 pointer 已指向另一未完成任务时应 fail closed、恢复还是切换。"
+        },
+        {
+          "path": "references/task-contract.md",
+          "detail": "契约定义了 pointer 的封闭字段和终态删除规则，但没有定义 planner 写入时的占用冲突状态转换。"
+        }
+      ],
+      "recommendation": "补充 active pointer collision gate：同 task 进入恢复或复查，不同未终结 task 默认拒绝覆盖并要求显式切换；最好提供原子 pointer 操作或确定性校验。"
+    },
+    {
+      "dimension": "information_architecture",
+      "status": "pass",
+      "summary": "入口文件保持精炼，工作流、唯一任务契约、模板和校验实现分层明确，核心规则可以渐进读取。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "SKILL.md 只保留核心规则、文件入口和 executor 交接，复杂细节下沉到两份 reference。"
+        },
+        {
+          "path": "references/task-contract.md",
+          "detail": "任务字段、所有权、运行状态和事件语义被声明为 planner/executor 唯一契约定义。"
+        },
+        {
+          "path": "templates/execution-plan.md",
+          "detail": "人类审批计划模板将研究、规范、质量、阶段、验证、授权和交接组织为稳定章节。"
+        }
+      ]
+    },
+    {
+      "dimension": "tool_contract",
+      "status": "warn",
+      "summary": "plan-contract 的闭合字段、ID、DAG、覆盖和 artifact 校验较强，但 approval checker 对研究与就绪门禁主要检查关键词和 URL 存在，无法阻止内容空洞但形式通过的计划。",
+      "evidence": [
+        {
+          "path": "scripts/harness_contract_rules.py",
+          "detail": "校验器能够确定性验证闭合对象、引用、DAG、must requirement、AC/NFR、required VAL 和 stage 归属。"
+        },
+        {
+          "path": "scripts/harness_plan_check.py",
+          "detail": "approval 模式主要拒绝 pending、检查候选方案标题数量，并以任意 http(s) URL 作为 online-required 来源存在性证据。"
+        },
+        {
+          "path": "references/planning-workflow.md",
+          "detail": "文字契约要求官方或一手来源、来源矩阵、可信度、适用限制和方案影响，强度高于当前 checker 的机器约束。"
+        }
+      ],
+      "recommendation": "把关键 gate 结果改为封闭、可验证字段或批准 artifact receipt；approval checker 至少要求 passed 状态、非空 evidence、来源类型与 claim 映射，并增加 failed/空白 gate 和无效来源的回归用例。"
+    },
+    {
+      "dimension": "safety_and_permissions",
+      "status": "pass",
+      "summary": "规划与实施所有权分离清楚，实施、提交、外部写入和提权均有独立授权门禁，Git、秘密与长期进程边界也较完整。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "planner 明确不得实现、不得创建运行状态或提交，批准后由 executor 接管。"
+        },
+        {
+          "path": "references/task-contract.md",
+          "detail": "plan、attestation、run-state、ledger 和 active pointer 的创建者、批准后 writer 与权威内容被明确分离。"
+        },
+        {
+          "path": "references/planning-workflow.md",
+          "detail": "Git 不自动 stash/reset/rebase，秘密不得落盘，长期进程要求统一 manager 和可验证清理证据。"
+        }
+      ]
+    },
+    {
+      "dimension": "verification_and_delivery",
+      "status": "warn",
+      "summary": "已有较完整的 checker 单元测试和确定性 eval 设计，但仓库没有为 planner 配置可发现的 CI，现有验证重点仍是结构契约而非真实规划行为。",
+      "evidence": [
+        {
+          "path": "tests/test_harness_plan_check.py",
+          "detail": "测试覆盖未知字段、断链引用、DAG 环、artifact、ID 漂移、授权策略、profile 和 open decision 等结构回归。"
+        },
+        {
+          "path": "scripts/harness_plan_check.py",
+          "detail": "公共 checker 提供 draft/approval 与 JSON/text 输出，但自身不验证 Agent 是否真实完成了高质量调研和方案推理。"
+        },
+        {
+          "path": "SKILL.md",
+          "detail": "完成门禁依赖 checker、自查和可选 critique；缺少 CI 时这些回归不会在每次提交自动执行。"
+        }
+      ],
+      "recommendation": "增加三平台或至少主平台 CI，运行 planner 单元测试与确定性 eval；补充空洞 gate、伪官方 URL、pointer 冲突和批准后不可变性用例，真实触发质量继续留给用户独立会话观察。"
+    },
+    {
+      "dimension": "scope_and_composability",
+      "status": "pass",
+      "summary": "direct/managed 路由、lite/standard/full profile、原子 artifacts 和唯一 executor handoff 使复杂度可按风险伸缩，且没有强迫低风险任务承担完整 harness 成本。",
+      "evidence": [
+        {
+          "path": "references/planning-workflow.md",
+          "detail": "路由、profile、artifact 策略和 discovery-first 分支允许按风险组合能力，并明确 direct 任务不创建 bundle。"
+        },
+        {
+          "path": "references/task-contract.md",
+          "detail": "稳定 ID、Stage DAG、validations、artifacts 和 approval policy 构成可由 executor 消费的模块化机器契约。"
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "本次目标是评估当前源码设计与静态契约，不评估某次具体规划产物的内容质量。",
+    "complex-coding-executor 继续以 references/task-contract.md 为唯一共享契约，并与 planner 同仓演进。"
+  ],
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本增退化结论。",
+    "按静态评估契约未执行目标 checker、单元测试或 eval，仅阅读其实现与测试设计。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、规划质量或长任务恢复效果。",
+    "process-manager 细节直接嵌入 planning workflow，跨 Skill 契约仍需依赖共同回归避免漂移。"
+  ],
+  "observation_decision": "not_requested"
+}

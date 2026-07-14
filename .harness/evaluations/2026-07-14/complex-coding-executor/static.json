@@ -1,0 +1,389 @@
+{
+  "baseline": null,
+  "candidate": {
+    "file_count": 23,
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "f7f0c1d2cd121e3763dc805c15d8e02b66670c31b84d67bd432b4d8124774299",
+        "size": 4215
+      },
+      {
+        "path": "agents/openai.yaml",
+        "sha256": "c576a4fdf9137c103fc772f5a3b16de00aeaf4d633832608d4acf2e9d7ff74ef",
+        "size": 295
+      },
+      {
+        "path": "references/execution-workflow.md",
+        "sha256": "792d9cce8831c800ba37769e305846c165e8268e86d7c4db306905449441bda3",
+        "size": 10774
+      },
+      {
+        "path": "references/troubleshooting.md",
+        "sha256": "55735970c3350662f4e701fb49ab04417d061db148b99191b8fc9648b9d37105",
+        "size": 5410
+      },
+      {
+        "path": "scripts/harness_amendment.py",
+        "sha256": "8074ee6dac034c0f36d5fa9ad6642edd94a527b3171def00df376ae3feb9d7da",
+        "size": 17436
+      },
+      {
+        "path": "scripts/harness_attest_plan.py",
+        "sha256": "56d084bf8ccb8d33c298e163b68f1e5cf042676a6553b1c60184034cf010fbc7",
+        "size": 5909
+      },
+      {
+        "path": "scripts/harness_attestation.py",
+        "sha256": "010af8213bb851f58808af12d474c15bd51b7e69536f5578ac23a06e1dfc9f51",
+        "size": 9808
+      },
+      {
+        "path": "scripts/harness_cli.py",
+        "sha256": "6ec3538eadb2f3574ca18748739965fa8fcee4906718678cce9b0b20b9937097",
+        "size": 2613
+      },
+      {
+        "path": "scripts/harness_event_writer.py",
+        "sha256": "970d31c6445d595905ec479dc0eb0a468ac1413bca18e1eeec090703d969f412",
+        "size": 4249
+      },
+      {
+        "path": "scripts/harness_exec_check.py",
+        "sha256": "dd88ff890962f5803cec236c9349f9966489ab74577f7780342f20c0f82ba1c4",
+        "size": 2538
+      },
+      {
+        "path": "scripts/harness_execution.py",
+        "sha256": "db93ab0d06a6bbe857ff6c296eb2ef4a45d4bf71ab8126784dd6b682c48343b2",
+        "size": 10349
+      },
+      {
+        "path": "scripts/harness_ledger_append.py",
+        "sha256": "83a7f0f13d628175b894115e64298d1a406d142dc032e947afb4cf037bc046eb",
+        "size": 1847
+      },
+      {
+        "path": "scripts/harness_ledger_summary.py",
+        "sha256": "c96ee74db7c87c135ce5067e6c56cc4421a3e9de7908e0967a8bf59f61481123",
+        "size": 930
+      },
+      {
+        "path": "scripts/harness_state.py",
+        "sha256": "062fc690739f0929bd30ca0eb0d9f91393918682001e047dfc68db7b5e31ed3f",
+        "size": 18880
+      },
+      {
+        "path": "scripts/harness_state_io.py",
+        "sha256": "e277c8a96f5a92f1f6f62b56be3f9838c7df27ee5f73cbc149be3822ff220dec",
+        "size": 6430
+      },
+      {
+        "path": "scripts/harness_state_schema.py",
+        "sha256": "90487f225fc0551d72a6c0dc3b914d399c4cea35ee983a61b1c22a5f14e299e0",
+        "size": 6073
+      },
+      {
+        "path": "scripts/harness_task_bundle.py",
+        "sha256": "3c9925418020fad8a846455a58c75df8830c976a9b1759cd5aa0e8452efeac70",
+        "size": 8168
+      },
+      {
+        "path": "scripts/harness_task_resolver.py",
+        "sha256": "7d395b326e39a84389224442e5da336b7094379a7743ee5b3d031fd74f49f4c1",
+        "size": 1553
+      },
+      {
+        "path": "scripts/harness_time.py",
+        "sha256": "6e8cd21111579b69ebfc65fb5fb658024f73d4ba5f9e509631325f848db2bb21",
+        "size": 666
+      },
+      {
+        "path": "templates/run-state.json",
+        "sha256": "c786ee6821c169961318c417418ce3eb6c42a891e32ab8d6bf4157c126a44b8d",
+        "size": 362
+      },
+      {
+        "path": "tests/test_amendment.py",
+        "sha256": "9dc8761fead3c43f27ee84a02c87ba29b6894030826853c1e19da75fcecb1003",
+        "size": 10687
+      },
+      {
+        "path": "tests/test_attestation_and_recovery.py",
+        "sha256": "4f265987cca0c9d99e8cf99f61644998888cb3122fc3b159dbcae6687335bbf4",
+        "size": 8893
+      },
+      {
+        "path": "tests/test_task_bundle_and_state.py",
+        "sha256": "12a176e21d595b5e176b704cd7d9ca5cba3bdfc9fb2eea56b00510f2d6385bed",
+        "size": 11293
+      }
+    ],
+    "path": "skills/complex-coding-executor",
+    "total_bytes": 149378,
+    "tree_sha256": "18a72fb877806b6792d8febcc971a5d190527d6d009327355d935248ae62ed25"
+  },
+  "capabilities": [
+    {
+      "detail": "os.environ",
+      "kind": "environment_read",
+      "line": 158,
+      "path": "scripts/harness_task_bundle.py"
+    },
+    {
+      "detail": "os.environ.get",
+      "kind": "environment_read",
+      "line": 158,
+      "path": "scripts/harness_task_bundle.py"
+    },
+    {
+      "detail": "target.parent.mkdir",
+      "kind": "file_write",
+      "line": 71,
+      "path": "scripts/harness_amendment.py"
+    },
+    {
+      "detail": "target.write_bytes",
+      "kind": "file_write",
+      "line": 75,
+      "path": "scripts/harness_amendment.py"
+    },
+    {
+      "detail": "archive_root.mkdir",
+      "kind": "file_write",
+      "line": 128,
+      "path": "scripts/harness_amendment.py"
+    },
+    {
+      "detail": "current_path.unlink",
+      "kind": "file_write",
+      "line": 464,
+      "path": "scripts/harness_amendment.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 98,
+      "path": "scripts/harness_state_io.py"
+    },
+    {
+      "detail": "os.replace",
+      "kind": "file_write",
+      "line": 106,
+      "path": "scripts/harness_state_io.py"
+    },
+    {
+      "detail": "temp_path.unlink",
+      "kind": "file_write",
+      "line": 109,
+      "path": "scripts/harness_state_io.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 128,
+      "path": "scripts/harness_state_io.py"
+    },
+    {
+      "detail": "value.replace",
+      "kind": "file_write",
+      "line": 20,
+      "path": "scripts/harness_time.py"
+    },
+    {
+      "detail": "import subprocess",
+      "kind": "process",
+      "line": 7,
+      "path": "scripts/harness_execution.py"
+    },
+    {
+      "detail": "subprocess.run",
+      "kind": "process",
+      "line": 65,
+      "path": "scripts/harness_execution.py"
+    }
+  ],
+  "checker": {
+    "agent_calls": 0,
+    "contract": "deterministic-static-only",
+    "name": "skill-evaluation-lab",
+    "network_calls": 0,
+    "target_imports": 0
+  },
+  "checks": [
+    {
+      "dimension": "metadata",
+      "evidence": [
+        {
+          "detail": "name=complex-coding-executor; description_chars=236",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.metadata",
+      "severity": "info",
+      "status": "pass",
+      "summary": "frontmatter、目录名和 description 机械约束有效"
+    },
+    {
+      "dimension": "structure",
+      "evidence": [
+        {
+          "detail": "files=23; total_bytes=149378",
+          "path": "."
+        },
+        {
+          "detail": "非标准顶层资源：templates",
+          "path": "."
+        }
+      ],
+      "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+      "id": "skill.structure",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "非标准顶层资源：templates"
+    },
+    {
+      "dimension": "references",
+      "evidence": [
+        {
+          "detail": "local_links=0; total_links=12",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.references",
+      "severity": "info",
+      "status": "pass",
+      "summary": "Markdown 相对引用均可解析且未越界"
+    },
+    {
+      "dimension": "information_architecture",
+      "evidence": [
+        {
+          "detail": "lines=51; references=2",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.disclosure",
+      "severity": "info",
+      "status": "pass",
+      "summary": "核心说明规模适中，并具备可接受的渐进披露结构"
+    },
+    {
+      "dimension": "syntax",
+      "evidence": [
+        {
+          "detail": "parsed_files=20; imported_files=0",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.syntax",
+      "severity": "info",
+      "status": "pass",
+      "summary": "支持的代码与数据文件通过只读语法解析"
+    },
+    {
+      "dimension": "capabilities",
+      "evidence": [
+        {
+          "detail": "line=158; environment_read: os.environ",
+          "path": "scripts/harness_task_bundle.py"
+        },
+        {
+          "detail": "line=158; environment_read: os.environ.get",
+          "path": "scripts/harness_task_bundle.py"
+        },
+        {
+          "detail": "line=71; file_write: target.parent.mkdir",
+          "path": "scripts/harness_amendment.py"
+        },
+        {
+          "detail": "line=75; file_write: target.write_bytes",
+          "path": "scripts/harness_amendment.py"
+        },
+        {
+          "detail": "line=128; file_write: archive_root.mkdir",
+          "path": "scripts/harness_amendment.py"
+        },
+        {
+          "detail": "line=464; file_write: current_path.unlink",
+          "path": "scripts/harness_amendment.py"
+        },
+        {
+          "detail": "line=98; file_write: path.parent.mkdir",
+          "path": "scripts/harness_state_io.py"
+        },
+        {
+          "detail": "line=106; file_write: os.replace",
+          "path": "scripts/harness_state_io.py"
+        },
+        {
+          "detail": "line=109; file_write: temp_path.unlink",
+          "path": "scripts/harness_state_io.py"
+        },
+        {
+          "detail": "line=128; file_write: path.parent.mkdir",
+          "path": "scripts/harness_state_io.py"
+        },
+        {
+          "detail": "line=20; file_write: value.replace",
+          "path": "scripts/harness_time.py"
+        },
+        {
+          "detail": "line=7; process: import subprocess",
+          "path": "scripts/harness_execution.py"
+        },
+        {
+          "detail": "line=65; process: subprocess.run",
+          "path": "scripts/harness_execution.py"
+        }
+      ],
+      "guidance": "这些仅是静态信号，不代表能力实际执行；由安全与权限语义审查确认。",
+      "id": "skill.capabilities",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "发现需要人工确认的静态能力信号：environment_read=2, file_write=9, process=2"
+    },
+    {
+      "dimension": "validation",
+      "evidence": [
+        {
+          "detail": "tests=true; evals=true; ci=false",
+          "path": "."
+        }
+      ],
+      "guidance": "按 Skill 风险补充可重复验证资产。",
+      "id": "skill.validation_assets",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "缺少可发现的验证资产：ci"
+    },
+    {
+      "dimension": "baseline",
+      "evidence": [
+        {
+          "detail": "baseline=not_provided",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.baseline_delta",
+      "severity": "info",
+      "status": "not_applicable",
+      "summary": "未提供 baseline，不生成比较结论"
+    }
+  ],
+  "delta": null,
+  "evaluation_id": "complex-coding-executor-20260714",
+  "generated_at": "2026-07-14T03:16:46.469322Z",
+  "schema_version": 1,
+  "summary": {
+    "fail": 0,
+    "not_applicable": 1,
+    "pass": 4,
+    "warn": 3
+  }
+}

@@ -1,0 +1,156 @@
+{
+  "assumptions": [
+    "本次目标是评估当前源码设计与静态契约，不评估某次具体规划产物的内容质量。",
+    "complex-coding-executor 继续以 references/task-contract.md 为唯一共享契约，并与 planner 同仓演进。"
+  ],
+  "claim_boundaries": [
+    "静态检查只证明 source-bound 机械事实和能力信号，不证明真实运行行为。",
+    "七维语义审查是当前 Agent 的设计判断，必须保留 assumptions 与 limitations。",
+    "缺少完整、结论明确的用户观察，不得声明真实触发率或行为提升。"
+  ],
+  "completion": {
+    "conclusion_owner": "current_agent",
+    "ready_for_agent_conclusion": true,
+    "script_generated_conclusion": false
+  },
+  "evaluation_id": "complex-coding-planner-20260714",
+  "evidence_coverage": {
+    "observed": {
+      "expected": 0,
+      "missing": 0,
+      "observed": 0,
+      "session_statuses": {
+        "fail": 0,
+        "inconclusive": 0,
+        "pass": 0
+      },
+      "status": "not_requested"
+    },
+    "semantic": {
+      "dimension_statuses": {
+        "fail": 0,
+        "not_applicable": 0,
+        "pass": 4,
+        "warn": 3
+      },
+      "status": "complete"
+    },
+    "static": {
+      "check_statuses": {
+        "fail": 0,
+        "not_applicable": 1,
+        "pass": 5,
+        "warn": 2
+      },
+      "status": "complete"
+    }
+  },
+  "findings": {
+    "observed": [],
+    "semantic": [
+      {
+        "dimension": "workflow_completeness",
+        "evidence": [
+          {
+            "detail": "流程要求开始时读取 active pointer，Readiness 后写入 pointer，但未规定 pointer 已指向另一未完成任务时应 fail closed、恢复还是切换。",
+            "path": "references/planning-workflow.md"
+          },
+          {
+            "detail": "契约定义了 pointer 的封闭字段和终态删除规则，但没有定义 planner 写入时的占用冲突状态转换。",
+            "path": "references/task-contract.md"
+          }
+        ],
+        "recommendation": "补充 active pointer collision gate：同 task 进入恢复或复查，不同未终结 task 默认拒绝覆盖并要求显式切换；最好提供原子 pointer 操作或确定性校验。",
+        "status": "warn",
+        "summary": "从研究、规范、质量、契约、审批到 amendment 的主流程完整，但写 active pointer 前没有定义已有活动任务的冲突、复用或切换策略。"
+      },
+      {
+        "dimension": "tool_contract",
+        "evidence": [
+          {
+            "detail": "校验器能够确定性验证闭合对象、引用、DAG、must requirement、AC/NFR、required VAL 和 stage 归属。",
+            "path": "scripts/harness_contract_rules.py"
+          },
+          {
+            "detail": "approval 模式主要拒绝 pending、检查候选方案标题数量，并以任意 http(s) URL 作为 online-required 来源存在性证据。",
+            "path": "scripts/harness_plan_check.py"
+          },
+          {
+            "detail": "文字契约要求官方或一手来源、来源矩阵、可信度、适用限制和方案影响，强度高于当前 checker 的机器约束。",
+            "path": "references/planning-workflow.md"
+          }
+        ],
+        "recommendation": "把关键 gate 结果改为封闭、可验证字段或批准 artifact receipt；approval checker 至少要求 passed 状态、非空 evidence、来源类型与 claim 映射，并增加 failed/空白 gate 和无效来源的回归用例。",
+        "status": "warn",
+        "summary": "plan-contract 的闭合字段、ID、DAG、覆盖和 artifact 校验较强，但 approval checker 对研究与就绪门禁主要检查关键词和 URL 存在，无法阻止内容空洞但形式通过的计划。"
+      },
+      {
+        "dimension": "verification_and_delivery",
+        "evidence": [
+          {
+            "detail": "测试覆盖未知字段、断链引用、DAG 环、artifact、ID 漂移、授权策略、profile 和 open decision 等结构回归。",
+            "path": "tests/test_harness_plan_check.py"
+          },
+          {
+            "detail": "公共 checker 提供 draft/approval 与 JSON/text 输出，但自身不验证 Agent 是否真实完成了高质量调研和方案推理。",
+            "path": "scripts/harness_plan_check.py"
+          },
+          {
+            "detail": "完成门禁依赖 checker、自查和可选 critique；缺少 CI 时这些回归不会在每次提交自动执行。",
+            "path": "SKILL.md"
+          }
+        ],
+        "recommendation": "增加三平台或至少主平台 CI，运行 planner 单元测试与确定性 eval；补充空洞 gate、伪官方 URL、pointer 冲突和批准后不可变性用例，真实触发质量继续留给用户独立会话观察。",
+        "status": "warn",
+        "summary": "已有较完整的 checker 单元测试和确定性 eval 设计，但仓库没有为 planner 配置可发现的 CI，现有验证重点仍是结构契约而非真实规划行为。"
+      }
+    ],
+    "static": [
+      {
+        "dimension": "structure",
+        "evidence": [
+          {
+            "detail": "files=20; total_bytes=114030",
+            "path": "."
+          },
+          {
+            "detail": "非标准顶层资源：templates",
+            "path": "."
+          }
+        ],
+        "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+        "id": "skill.structure",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "非标准顶层资源：templates"
+      },
+      {
+        "dimension": "validation",
+        "evidence": [
+          {
+            "detail": "tests=true; evals=true; ci=false",
+            "path": "."
+          }
+        ],
+        "guidance": "按 Skill 风险补充可重复验证资产。",
+        "id": "skill.validation_assets",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "缺少可发现的验证资产：ci"
+      }
+    ]
+  },
+  "generated_at": "2026-07-14T03:06:41.912029Z",
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本增退化结论。",
+    "按静态评估契约未执行目标 checker、单元测试或 eval，仅阅读其实现与测试设计。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、规划质量或长任务恢复效果。",
+    "process-manager 细节直接嵌入 planning workflow，跨 Skill 契约仍需依赖共同回归避免漂移。"
+  ],
+  "runtime_claims_allowed": false,
+  "schema_version": 1,
+  "target": {
+    "path": "skills/complex-coding-planner",
+    "tree_sha256": "27cf83e0b02d96d5ff282903f53897bf35792d9409e2fb39d31ec5669aaf313d"
+  }
+}

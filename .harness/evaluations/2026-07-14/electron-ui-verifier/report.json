@@ -1,0 +1,404 @@
+{
+  "assumptions": [
+    "本次目标是评估 electron-ui-verifier 当前源码设计、公开工作流和验证资产，不评估某一次 Termous 操作结果。",
+    "process-manager 的统一跨平台 service contract 按当前仓库版本成立，electron-ui-verifier 不需要自行暴露平台 backend。",
+    "知识资产的 app/version/screen/state/risk 硬过滤和 action compose 是当前 SKILL 声明的生产能力，而不是仅供未来使用的实验接口。",
+    "workspace 应可以与 skill 安装目录分离；否则需要在 SKILL 中明确仓库内运行这一限制。"
+  ],
+  "claim_boundaries": [
+    "静态检查只证明 source-bound 机械事实和能力信号，不证明真实运行行为。",
+    "七维语义审查是当前 Agent 的设计判断，必须保留 assumptions 与 limitations。",
+    "缺少完整、结论明确的用户观察，不得声明真实触发率或行为提升。"
+  ],
+  "completion": {
+    "conclusion_owner": "current_agent",
+    "ready_for_agent_conclusion": true,
+    "script_generated_conclusion": false
+  },
+  "evaluation_id": "electron-ui-verifier-20260714",
+  "evidence_coverage": {
+    "observed": {
+      "expected": 0,
+      "missing": 0,
+      "observed": 0,
+      "session_statuses": {
+        "fail": 0,
+        "inconclusive": 0,
+        "pass": 0
+      },
+      "status": "not_requested"
+    },
+    "semantic": {
+      "dimension_statuses": {
+        "fail": 2,
+        "not_applicable": 0,
+        "pass": 2,
+        "warn": 3
+      },
+      "status": "complete"
+    },
+    "static": {
+      "check_statuses": {
+        "fail": 0,
+        "not_applicable": 1,
+        "pass": 5,
+        "warn": 2
+      },
+      "status": "complete"
+    }
+  },
+  "findings": {
+    "observed": [],
+    "semantic": [
+      {
+        "dimension": "workflow_completeness",
+        "evidence": [
+          {
+            "detail": "submit 超时后调用 future.cancel()，而 _consume 中已进入 runtime.dispatch 的 coroutine 不会被取消，完成结果只因 future cancelled 被丢弃。",
+            "path": "scripts/electron_verifier/automation.py"
+          },
+          {
+            "detail": "action 与 workflow HTTP route 分别使用 120 秒和 300 秒固定等待窗口；超时后 service 返回 operation_timeout，但 worker 仍串行执行当前 dispatch。",
+            "path": "scripts/electron_verifier/service.py"
+          },
+          {
+            "detail": "workflow client 等待 600 秒，长于 service 的 300 秒 deadline；最多 200 步的合法 workflow 很容易跨越 service deadline。",
+            "path": "scripts/ev_workflow.py"
+          },
+          {
+            "detail": "approval 先写 canonical/index，再 exclusive-create sealed decision；两步之间崩溃会留下没有 approved decision 的 canonical asset，并在重启 verify 时成为可检索 truth。",
+            "path": "scripts/electron_verifier/approval.py"
+          }
+        ],
+        "recommendation": "引入 operationId 与持久化 command receipt，把 deadline/cancellation token 传入 workflow，并在每一步前检查；超时后停止后续 mutation、将 inflight step/run 标记 unknown/aborted，并允许查询最终状态。知识批准改为可恢复的 staged transaction：先写 staging，再封存用户 decision，最后原子激活 canonical/index；重启依据 transaction journal 完成或回滚。",
+        "status": "warn",
+        "summary": "prepare、action/workflow、finalize、pending、approval 和 recovery 主流程完整，但 HTTP 超时只取消返回 future，不会停止已经开始的自动化，长 workflow 可能在调用方收到 unknown 后继续执行后续 mutation。"
+      },
+      {
+        "dimension": "tool_contract",
+        "evidence": [
+          {
+            "detail": "build_pending 只生成 workflow、空或 journal aliases、parameterSchema、steps、evidence 与 risks；没有保留 appVersion、screenDigest、preState、postState、compatibility 或 stats。",
+            "path": "scripts/electron_verifier/reports.py"
+          },
+          {
+            "detail": "唯一生产 persist 调用固定创建 kind=workflow，payload 仅包含 workflow、parameterSchema 和 risks，因此没有生产入口创建 action asset。",
+            "path": "scripts/electron_verifier/approval.py"
+          },
+          {
+            "detail": "兼容过滤和 compose 依赖 payload.compatibility、stats、pre/post state 以及 kind=action；这些能力在测试构造的 synthetic asset 上有效，但与批准写入契约断开。",
+            "path": "scripts/electron_verifier/retrieval.py"
+          },
+          {
+            "detail": "prepare 接收的 appVersion、screenDigest、preState 和 maxRisk 只用于当次 retrieval，没有写入 run journal；后续按 assetId 执行也无法重新校验准备时上下文。",
+            "path": "scripts/electron_verifier/runs.py"
+          },
+          {
+            "detail": "按 assetId 读取时会返回 compatibility usage，但 action/workflow CLI 不把它作为执行门禁，直接 ID 可以绕开 prepare 的兼容性和 maxRisk 选择。",
+            "path": "scripts/ev_asset_runner.py"
+          }
+        ],
+        "recommendation": "定义一个闭合且唯一的 canonical payload contract，并让 prepare→run→pending→approve→retrieve→execute 全链携带 app/version/screen/preState/postState/risk/aliases/stats。批准时按可复用粒度生成 action assets，再生成引用这些 action 的 workflow asset；assetId 执行必须与当前 run context 重新做 compatibility/risk check。新增真实批准资产后搜索、compose、复用的端到端契约测试。",
+        "status": "fail",
+        "summary": "知识检索器具备 action、alias、compatibility、state edge、risk 和 reliability 契约，但正常 pending→approve 写入路径无法生成这些数据，导致文档宣称的硬过滤、action compose 和多通道召回无法端到端成立。"
+      },
+      {
+        "dimension": "safety_and_permissions",
+        "evidence": [
+          {
+            "detail": "bind_parameters 会把完整 ${name} 占位符替换为真实 binding value 后再交给 ActionSpec 和 assertion 执行。",
+            "path": "scripts/electron_verifier/knowledge_models.py"
+          },
+          {
+            "detail": "text/value postcondition 把实际值和期望值原样放入 result 或失败 details。",
+            "path": "scripts/electron_verifier/assertions.py"
+          },
+          {
+            "detail": "append_action 将 execution.result 或 VerifierError envelope 直接写入 step，再把完整 steps 写入 journal 和 final report；_safe_action 只保护 raw action，不能清理已绑定 assertion result。",
+            "path": "scripts/electron_verifier/runs.py"
+          },
+          {
+            "detail": "options.allowWithoutPostcondition=true 可以绕过所有 mutating action 必须有 postcondition 的硬门禁，但该旁路未在 SKILL 或 reference 中声明授权条件。",
+            "path": "scripts/electron_verifier/models.py"
+          },
+          {
+            "detail": "coordinate action 由 action 自带 allowCoordinate 执行，confirmRisk=true 也由同一 action 自行声明；没有独立用户 approval receipt。",
+            "path": "scripts/electron_verifier/actions.py"
+          },
+          {
+            "detail": "session intent 持久化原始 target URL，而通用 redact 只按敏感 key 脱敏；含 query/fragment secret 的页面 URL 不会像 run page state 那样被安全规范化。",
+            "path": "scripts/electron_verifier/sessions.py"
+          }
+        ],
+        "recommendation": "立即移除 allowWithoutPostcondition 生产旁路；坐标、nth 和其它不可学习风险使用独立、不可由 action 自签的用户 receipt。保留未绑定 action 作为持久化模型，执行时单独维护 ephemeral resolved values；assertion 只持久化 passed、placeholder 名、长度或摘要，不记录 actual/expected 明文，失败 envelope 同样清理。统一对 session URL、console/exception 文本和服务输出做数据最小化，并增加真实 binding value 不得出现在 response、journal、report、pending、canonical 和日志中的回归测试。",
+        "status": "fail",
+        "summary": "loopback、token、路径 containment、driver allowlist 和证据校验较强，但绑定值可能经 postcondition 结果写入 journal/report，且 mutation postcondition 与高风险操作存在调用方可自行设置的旁路。"
+      },
+      {
+        "dimension": "verification_and_delivery",
+        "evidence": [
+          {
+            "detail": "跨平台 fixture 使用真实 Playwright CDP，但直接调用 driver/session/run 模块，流程是 snapshot+screenshot 的只读路径，没有经过 HTTP service、CLI、mutation 或 approval/reuse。",
+            "path": "tests/run_fixture_cdp_smoke.py"
+          },
+          {
+            "detail": "timeout case 只断言返回 operation_timeout/unknown，没有断言 dispatch 停止、后续 mutation 不执行或 run 被标记 aborted。",
+            "path": "tests/test_automation_worker.py"
+          },
+          {
+            "detail": "binding 不落盘测试 mock 了 execute_action，并返回不含 actual/expected 的简化 postcondition，因此没有覆盖真实 assertion serialization。",
+            "path": "tests/test_runs.py"
+          },
+          {
+            "detail": "compatibility、state compose 和 reliability 测试直接创建带完整 payload 的 CanonicalAsset，没有从 pending approval 生成资产。",
+            "path": "tests/test_retrieval.py"
+          },
+          {
+            "detail": "覆盖 fingerprint、artifact、risk 和 decision 幂等，但没有覆盖 canonical persist 与 sealed decision 之间的崩溃恢复。",
+            "path": "tests/test_approval.py"
+          }
+        ],
+        "recommendation": "保留三平台 fixture，并新增通过公共 CLI/HTTP 的 disposable Electron E2E：真实 fill binding+value postcondition、long workflow deadline、unknown outcome 停止、pending approve 后 search/compose/reuse、approval 每个事务断点重启。把 retrieval benchmark、知识回归和核心 eval 纳入 CI 的独立 job，并为安全不变量增加负向测试。",
+        "status": "warn",
+        "summary": "测试数量、三平台 CI、Playwright fixture、截图质量和恢复测试都较强，但关键测试在模块或 synthetic asset 层完成，尚未覆盖真实 HTTP mutation、超时后的继续执行、批准后检索闭环和真实 binding 泄漏。"
+      },
+      {
+        "dimension": "scope_and_composability",
+        "evidence": [
+          {
+            "detail": "service_config 和 dependency check 从 workspaceRoot/skills/electron-ui-verifier 解析 ev_server.py、ev_check_env.py 与 requirements.txt，而不是从当前脚本的真实 skill root 解析。",
+            "path": "scripts/ev_init.py"
+          },
+          {
+            "detail": "workspace 被定义为状态与 process-manager 配置根目录，理论上应与 skill 安装目录独立；其余 CLI 也允许通过绝对 config 在任意 workspace 调用。",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "run、report 和 artifact 持续按 UUID 累积，没有 quota、retention、prune 或用户确认的清理入口，长期使用会扩大扫描和磁盘成本。",
+            "path": "scripts/electron_verifier/runs.py"
+          }
+        ],
+        "recommendation": "把 skill_root 从 __file__ 派生并写入 service launcher，workspace 只承载 .harness 状态和 process-manager 配置；新增外部临时 workspace 初始化测试。再提供统一、默认 dry-run、按 run terminal/age/size 筛选且保护 pending/canonical evidence 的 retention/prune 原子入口。",
+        "status": "warn",
+        "summary": "公共 CLI 足够原子且与 process-manager 接口分离，但 init 把 skill 安装位置等同于目标 workspace，影响作为可安装 Skill 在任意项目中的复用；run/artifact 也没有保留策略。"
+      }
+    ],
+    "static": [
+      {
+        "dimension": "structure",
+        "evidence": [
+          {
+            "detail": "files=92; total_bytes=407976",
+            "path": "."
+          },
+          {
+            "detail": "非标准顶层资源：requirements.txt",
+            "path": "."
+          }
+        ],
+        "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+        "id": "skill.structure",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "非标准顶层资源：requirements.txt"
+      },
+      {
+        "dimension": "capabilities",
+        "evidence": [
+          {
+            "detail": "line=137; file_write: key.replace",
+            "path": "scripts/electron_verifier/actions.py"
+          },
+          {
+            "detail": "line=64; file_write: path.parent.mkdir",
+            "path": "scripts/electron_verifier/atomic_io.py"
+          },
+          {
+            "detail": "line=81; file_write: os.replace",
+            "path": "scripts/electron_verifier/atomic_io.py"
+          },
+          {
+            "detail": "line=95; file_write: temp_path.unlink",
+            "path": "scripts/electron_verifier/atomic_io.py"
+          },
+          {
+            "detail": "line=129; file_write: path.parent.mkdir",
+            "path": "scripts/electron_verifier/atomic_io.py"
+          },
+          {
+            "detail": "line=145; file_write: path.unlink",
+            "path": "scripts/electron_verifier/atomic_io.py"
+          },
+          {
+            "detail": "line=28; file_write: replace",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=62; file_write: os.replace",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=76; file_write: root.parent.mkdir",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=79; file_write: mkdir",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=80; file_write: mkdir",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=217; file_write: os.replace",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=219; file_write: temporary.unlink",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=220; file_write: unlink",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=251; file_write: os.replace",
+            "path": "scripts/electron_verifier/canonical_store.py"
+          },
+          {
+            "detail": "line=114; file_write: path.mkdir",
+            "path": "scripts/electron_verifier/config.py"
+          },
+          {
+            "detail": "line=144; file_write: self.artifacts_dir.mkdir",
+            "path": "scripts/electron_verifier/evidence.py"
+          },
+          {
+            "detail": "line=22; file_write: path.parent.mkdir",
+            "path": "scripts/electron_verifier/knowledge_index.py"
+          },
+          {
+            "detail": "line=227; file_write: term.replace",
+            "path": "scripts/electron_verifier/knowledge_index.py"
+          },
+          {
+            "detail": "line=93; file_write: replace",
+            "path": "scripts/electron_verifier/knowledge_models.py"
+          },
+          {
+            "detail": "line=95; file_write: replace",
+            "path": "scripts/electron_verifier/knowledge_models.py"
+          },
+          {
+            "detail": "line=99; file_write: replace",
+            "path": "scripts/electron_verifier/knowledge_models.py"
+          },
+          {
+            "detail": "line=91; file_write: self.root.rmdir",
+            "path": "scripts/electron_verifier/knowledge_reset.py"
+          },
+          {
+            "detail": "line=117; file_write: retired_root.mkdir",
+            "path": "scripts/electron_verifier/knowledge_reset.py"
+          },
+          {
+            "detail": "line=121; file_write: self.root.rmdir",
+            "path": "scripts/electron_verifier/knowledge_reset.py"
+          },
+          {
+            "detail": "line=24; file_write: replace",
+            "path": "scripts/electron_verifier/runs.py"
+          },
+          {
+            "detail": "line=81; file_write: self.config.runs_dir.mkdir",
+            "path": "scripts/electron_verifier/runs.py"
+          },
+          {
+            "detail": "line=140; file_write: run_dir.mkdir",
+            "path": "scripts/electron_verifier/runs.py"
+          },
+          {
+            "detail": "line=26; file_write: replace",
+            "path": "scripts/electron_verifier/service.py"
+          },
+          {
+            "detail": "line=20; file_write: replace",
+            "path": "scripts/electron_verifier/sessions.py"
+          },
+          {
+            "detail": "line=102; file_write: replace",
+            "path": "scripts/ev_check_env.py"
+          },
+          {
+            "detail": "line=107; file_write: replace",
+            "path": "scripts/ev_check_env.py"
+          },
+          {
+            "detail": "line=110; file_write: package_name.replace",
+            "path": "scripts/ev_check_env.py"
+          },
+          {
+            "detail": "line=99; file_write: path.parent.mkdir",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "line=104; file_write: temp.replace",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "line=199; file_write: folder.mkdir",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "line=208; file_write: paths.token_file.parent.mkdir",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "line=209; file_write: paths.token_file.write_text",
+            "path": "scripts/ev_common.py"
+          },
+          {
+            "detail": "line=9; process: import subprocess",
+            "path": "scripts/electron_verifier/security.py"
+          },
+          {
+            "detail": "line=104; process: subprocess.run",
+            "path": "scripts/electron_verifier/security.py"
+          },
+          {
+            "detail": "line=115; process: subprocess.run",
+            "path": "scripts/electron_verifier/security.py"
+          },
+          {
+            "detail": "line=8; process: import subprocess",
+            "path": "scripts/ev_init.py"
+          },
+          {
+            "detail": "line=106; process: subprocess.run",
+            "path": "scripts/ev_init.py"
+          }
+        ],
+        "guidance": "这些仅是静态信号，不代表能力实际执行；由安全与权限语义审查确认。",
+        "id": "skill.capabilities",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "发现需要人工确认的静态能力信号：file_write=38, process=5"
+      }
+    ]
+  },
+  "generated_at": "2026-07-14T03:47:21.551148Z",
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本间提升或退化结论。",
+    "按 skill-evaluation-lab 契约未启动 Termous、Electron、verifier service、process-manager、目标脚本、单元测试或 eval。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、UI 操作成功率、性能或召回指标。",
+    "本次只阅读 GitHub Actions 定义，没有执行或查询远程 CI；静态证据仅证明 CI 文件可发现。",
+    "Playwright connect_over_cdp 和 Electron 版本兼容性未做运行时验证。",
+    "关于 target URL 与 console 文本的敏感性取决于被测应用内容，但当前数据最小化不足是源码可直接确认的风险。"
+  ],
+  "runtime_claims_allowed": false,
+  "schema_version": 1,
+  "target": {
+    "path": "skills/electron-ui-verifier",
+    "tree_sha256": "3bd161d2738fbec48f11d7b73c5f25f113def4c96c99113a104255f9bcac5d2b"
+  }
+}

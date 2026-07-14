@@ -1,0 +1,1034 @@
+{
+  "baseline": null,
+  "candidate": {
+    "file_count": 92,
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "dcc418aff9f18277424787a0fa8a0e6ef669a90cc5bf04dec4e14f26cbc4eb09",
+        "size": 5091
+      },
+      {
+        "path": "agents/openai.yaml",
+        "sha256": "5569294d690413a44deffbc43ffaeedd8e9ca0fbac5127c20ada2b4ac40ab284",
+        "size": 253
+      },
+      {
+        "path": "assets/diagnostics.workflow.example.json",
+        "sha256": "22f136e926d48f09908ea18907b1e77db020b14fa50bb344cbc9ff02c051a521",
+        "size": 757
+      },
+      {
+        "path": "assets/exported-asset.workflow.example.json",
+        "sha256": "70fc79206f41e26a154bbc1fb1ae1cb026c6e7160f7be0364b97d710f4bd7003",
+        "size": 562
+      },
+      {
+        "path": "assets/knowledge.workflow.example.json",
+        "sha256": "07abb29ee4f412e6fe833e4577a5a7120f761af3b861e07fa1ae76b88e8487c0",
+        "size": 702
+      },
+      {
+        "path": "assets/workflow.example.json",
+        "sha256": "be0d22ed8dfa2ef4a61919a5dbde52d1cfbee942992532badcaa273ad0cc8a71",
+        "size": 484
+      },
+      {
+        "path": "references/actions.md",
+        "sha256": "4036585c13e50de9e6643d730858c7b25fd96df7982145da942bbd0c89f66c51",
+        "size": 2370
+      },
+      {
+        "path": "references/knowledge.md",
+        "sha256": "9008ec9767263ff4e6de8354f4f01d9b8cd291c5e16d2e0fe4ff7802961f907b",
+        "size": 3274
+      },
+      {
+        "path": "references/server.md",
+        "sha256": "dc26425641b73da5d39a7e4dde55260f3eb6a49a7e566f07ebb5474b40b39f3b",
+        "size": 2938
+      },
+      {
+        "path": "references/troubleshooting.md",
+        "sha256": "cd24a47df5bea71003604e7326aaa53cdcbbcf9cbac0abfef1dfc0b3154f9867",
+        "size": 2215
+      },
+      {
+        "path": "references/workflow.md",
+        "sha256": "0e1ceaa4efa0d6fd2879aa2141d24d24b60294f096a505c92179a6643708c682",
+        "size": 2434
+      },
+      {
+        "path": "requirements.txt",
+        "sha256": "41e5f554cdd90c89d7d02a3f43524e406c30dae1bc9025e1fdbbd73d0deae7b8",
+        "size": 151
+      },
+      {
+        "path": "schemas/action.schema.json",
+        "sha256": "a6ab568c50e1263d17cc93711cf5e79d401e441c7ea51d60ed870e178c248edd",
+        "size": 1460
+      },
+      {
+        "path": "schemas/knowledge.schema.json",
+        "sha256": "d06ebf9b032d8cf9cf2345b76ccc808c60a46afd1986ee87afaca66efcbafaf6",
+        "size": 990
+      },
+      {
+        "path": "schemas/locator.schema.json",
+        "sha256": "119cfbcad98951c3d204a5430c066c609e39e6f5db850d2137b24edace7619cb",
+        "size": 988
+      },
+      {
+        "path": "schemas/pending.schema.json",
+        "sha256": "1fe0fc25f341c2a52328ad0d9f80eb1f637be7ca6760bbdd2a3528747f1d153b",
+        "size": 1021
+      },
+      {
+        "path": "schemas/run.schema.json",
+        "sha256": "2aff3e6bcb0136e7ba01dcdf9e05808eea913640f497a8c42cb185e447ee686e",
+        "size": 1417
+      },
+      {
+        "path": "schemas/workflow.schema.json",
+        "sha256": "fc2cdc27593f02fd9cb98f261395dde3f2e9697ffd0f60eb747ec2b92d92baed",
+        "size": 750
+      },
+      {
+        "path": "scripts/electron_verifier/__init__.py",
+        "sha256": "4e78399cfb5eb8d5d68abd91142bb92cb01e3d37b57325a83df1c9f5b33d0936",
+        "size": 230
+      },
+      {
+        "path": "scripts/electron_verifier/actions.py",
+        "sha256": "4291f18b894786e2424dad4cab7e9ff09145df39cc23ddff163ba0f70bedf9d7",
+        "size": 13158
+      },
+      {
+        "path": "scripts/electron_verifier/approval.py",
+        "sha256": "04c69868448d69b036ef2e9cadb2c4de97fb4bc0fd4df16df54c9b6024bdf725",
+        "size": 11479
+      },
+      {
+        "path": "scripts/electron_verifier/assertions.py",
+        "sha256": "98c2d7f5180d8f9cba9e913ba59ec67a537e71800de53ac6dc963545f7c2034b",
+        "size": 3386
+      },
+      {
+        "path": "scripts/electron_verifier/atomic_io.py",
+        "sha256": "946ee75d5d0f73bc32e9e545fc797ef9a879514923a1dddd32175675d2d27628",
+        "size": 4978
+      },
+      {
+        "path": "scripts/electron_verifier/automation.py",
+        "sha256": "47c43832b9582fc84a84b5fd4ef7a770403e7d516f1a52c4574b56db9687172f",
+        "size": 14849
+      },
+      {
+        "path": "scripts/electron_verifier/canonical_store.py",
+        "sha256": "ab8ee4ae71a334fc120725976c6f5a4f74a08f2958e6993bf58eba77c90faf80",
+        "size": 11643
+      },
+      {
+        "path": "scripts/electron_verifier/config.py",
+        "sha256": "4df8ceab29429560644a5da32c6372a2ca3cf64663bb8a47ae6500835c1bbfa3",
+        "size": 5279
+      },
+      {
+        "path": "scripts/electron_verifier/diagnostics.py",
+        "sha256": "195ec53d15a0d8e7526eefd650f02b2d361ab5c7e45abfecfa38b4cf183131b7",
+        "size": 3916
+      },
+      {
+        "path": "scripts/electron_verifier/driver.py",
+        "sha256": "f8ce87d92e62ab81c0793552bf81d6b9a378bce313138b3e745b1042a23e625f",
+        "size": 12473
+      },
+      {
+        "path": "scripts/electron_verifier/errors.py",
+        "sha256": "24cfcfbc2794b29d0b02c939ef3ddf3d1935be97debc64fea483b7b2df2b2231",
+        "size": 1011
+      },
+      {
+        "path": "scripts/electron_verifier/evidence.py",
+        "sha256": "fb6fd3c293025a512597afed029aaa3593c51ea38cc98a7a6600a5cb18f01626",
+        "size": 8703
+      },
+      {
+        "path": "scripts/electron_verifier/knowledge_index.py",
+        "sha256": "a54661f71778af403d352b673f269b14126c18257a6d678426cbf084b025b3fd",
+        "size": 14433
+      },
+      {
+        "path": "scripts/electron_verifier/knowledge_models.py",
+        "sha256": "d4a638dfcd82d2afadbbedecf63420a1c500fde21181947a163ea45e9f61a882",
+        "size": 7682
+      },
+      {
+        "path": "scripts/electron_verifier/knowledge_reset.py",
+        "sha256": "2332ab0b4050c566bc7af3745f309caedc8f3baae2b05be39d91efc6ebaa9fc0",
+        "size": 5318
+      },
+      {
+        "path": "scripts/electron_verifier/limits.py",
+        "sha256": "06a4ea22bdaa30601f4b494b5f664c5c4bf9e06f16b8f401e684626b2921784c",
+        "size": 722
+      },
+      {
+        "path": "scripts/electron_verifier/locators.py",
+        "sha256": "2455d99741afb5047e4d6fdae94574891d914bf09303369cfe66ebf2653a2ef8",
+        "size": 3770
+      },
+      {
+        "path": "scripts/electron_verifier/models.py",
+        "sha256": "0078346544d5a87d15f12412413cff8c1d6a2f4eb4ff0df1d10f3b64cc4e7cbe",
+        "size": 8645
+      },
+      {
+        "path": "scripts/electron_verifier/reports.py",
+        "sha256": "f6b35f9805adcf68c5abd9c9af0773475b55108407d9380853e61a82e304e173",
+        "size": 4697
+      },
+      {
+        "path": "scripts/electron_verifier/retrieval.py",
+        "sha256": "fb2bec93ac1673ac78a3eb5fd5c05255128d08c89d9291c9a4d4f25f7d0e73d2",
+        "size": 16912
+      },
+      {
+        "path": "scripts/electron_verifier/runs.py",
+        "sha256": "28d2aab8fb2a8923a7f830464e286edc0e1a43ab32965db58a3ccf584c620f5e",
+        "size": 18295
+      },
+      {
+        "path": "scripts/electron_verifier/schema.py",
+        "sha256": "b24fe1f856bed251a969d444902dd1d26a6881ef38c91449daa88bfa9d112e47",
+        "size": 2056
+      },
+      {
+        "path": "scripts/electron_verifier/security.py",
+        "sha256": "2636ab418f2371f84f541cc5527744b2733c6479115b7f6dcc02514ee3cca43b",
+        "size": 5322
+      },
+      {
+        "path": "scripts/electron_verifier/service.py",
+        "sha256": "7be687d63ade6486b86e530b16c9c13bf4cf4d79821747532de059542f7c1359",
+        "size": 11700
+      },
+      {
+        "path": "scripts/electron_verifier/sessions.py",
+        "sha256": "5c00ec2dfca14aad2dc281289811fc3cf9fb2e3f442156fe2adf3da50a2302b6",
+        "size": 8218
+      },
+      {
+        "path": "scripts/electron_verifier/text_normalization.py",
+        "sha256": "47c73770044ad4fd91bc3482aabf41936e4156233cf16cd380140453c7eff2ae",
+        "size": 1713
+      },
+      {
+        "path": "scripts/ev_action.py",
+        "sha256": "3e29d0cdd22d8713c444687cefa062a5c056767fc131e8b67f50b2de29a3c874",
+        "size": 2144
+      },
+      {
+        "path": "scripts/ev_artifact.py",
+        "sha256": "9e2cfad77a1dfa08cfa0b5de1462caf3b794449dae3c2028d64ec53b6167092d",
+        "size": 1081
+      },
+      {
+        "path": "scripts/ev_asset_extract.py",
+        "sha256": "621d35a90f77787c7fc6c6167692c48f073dc14b0d4960ca9b9c621e3f6b33bb",
+        "size": 2430
+      },
+      {
+        "path": "scripts/ev_asset_runner.py",
+        "sha256": "dd9a9f4288fbbf11118a823f55381294e2734f66e8f2ba6cb23562d5c8e835e4",
+        "size": 2255
+      },
+      {
+        "path": "scripts/ev_assets.py",
+        "sha256": "eebd456843908028bea711ab5a10c3c6f378496a4b409d20ffedbfca34b1aeb7",
+        "size": 1714
+      },
+      {
+        "path": "scripts/ev_attach.py",
+        "sha256": "ac81a7d3e169a5c979e8d94e83d80aef76c4ef4e49600915cc70be2ad78730f6",
+        "size": 2100
+      },
+      {
+        "path": "scripts/ev_check_env.py",
+        "sha256": "80d179dce5613730c7d89ec10a222387bae077466e4c3f18433aa2039db72d51",
+        "size": 7790
+      },
+      {
+        "path": "scripts/ev_common.py",
+        "sha256": "f9750c48768dc7bf87c859a7729b147de5ee0c996d99fedfe612a625caecf15f",
+        "size": 11565
+      },
+      {
+        "path": "scripts/ev_console.py",
+        "sha256": "56a39b32c16cfcae4ba08015c8a99890ab6e1d3f3b684b49189013022d81951e",
+        "size": 1406
+      },
+      {
+        "path": "scripts/ev_detach.py",
+        "sha256": "e47d796ec35808d5fc10c98fe7b0a34cb59ce990b3e5cee4bbf261f2aa8288b7",
+        "size": 992
+      },
+      {
+        "path": "scripts/ev_doctor.py",
+        "sha256": "80514aac5a8dfcb3c949fd6b223c0690920f73bd3123396940ef82be29e67026",
+        "size": 1940
+      },
+      {
+        "path": "scripts/ev_exceptions.py",
+        "sha256": "120b254b81bab446d5e115642f41803dae98b65895ecdb13c3904b0216cbade3",
+        "size": 1417
+      },
+      {
+        "path": "scripts/ev_export_workflow.py",
+        "sha256": "cb090c21f5c316b4f7273047470f45774107479a244b8fff994b0488b8658b6b",
+        "size": 2209
+      },
+      {
+        "path": "scripts/ev_finalize.py",
+        "sha256": "ab6a155a5a444e9e668f63f83fe553edf3bb0dc99e084ca9d6607c8aed0084ae",
+        "size": 993
+      },
+      {
+        "path": "scripts/ev_health.py",
+        "sha256": "a97d755afcaf5ca7b8ccae40f3e392a398389fa68743d014251e19b1e3c8b658",
+        "size": 831
+      },
+      {
+        "path": "scripts/ev_init.py",
+        "sha256": "c08458b464e3df2f4bf2de4def00d844b9cc96a471854fc05209afb85efe05f8",
+        "size": 8332
+      },
+      {
+        "path": "scripts/ev_knowledge.py",
+        "sha256": "670f0184f6a774d0fc9b669945aaab7b65f57605298ac0d53cd3e9c1877885d6",
+        "size": 3915
+      },
+      {
+        "path": "scripts/ev_network.py",
+        "sha256": "4d077523191f5609a2dba2e4338cc7b221958b2f7c86a7d4782a12510ff251d2",
+        "size": 1506
+      },
+      {
+        "path": "scripts/ev_pending.py",
+        "sha256": "81c8096d72aa987b7c1eeaf93a959ae8eb9f8dc6e064d2b03f1836a621567daa",
+        "size": 1099
+      },
+      {
+        "path": "scripts/ev_persist.py",
+        "sha256": "77d5e8e668bd820351128026a39de44282d7b5d54c83cf58cbd46c8c8ca638d4",
+        "size": 1722
+      },
+      {
+        "path": "scripts/ev_prepare.py",
+        "sha256": "40b8b3d5e4c9616f74bc4cf4f6b46315cdde8ed45bea576fe92731099f75ed94",
+        "size": 2762
+      },
+      {
+        "path": "scripts/ev_probe.py",
+        "sha256": "fa85505e931df781419d8fd3f1e3034b571fd59f9d94f0dd723c07e0b8889575",
+        "size": 1847
+      },
+      {
+        "path": "scripts/ev_report.py",
+        "sha256": "7815ff3009a35b8d646dfe06a7f32c5394cbfc92af68b0b814c232498852d1ff",
+        "size": 1883
+      },
+      {
+        "path": "scripts/ev_screenshot.py",
+        "sha256": "ec29c72ebf77579aa0a111ef24373faddfe00da1cc31d9edb87a9535bd74e4ec",
+        "size": 1193
+      },
+      {
+        "path": "scripts/ev_server.py",
+        "sha256": "e50ffc0b4c1eec6b1d4e3111599b034fa8f5da70a9180ea5546a7eee716f0756",
+        "size": 225
+      },
+      {
+        "path": "scripts/ev_sessions.py",
+        "sha256": "57ebbe0e80e53bb8ff56dcd86d2b49fbbcb0b9d910c73a8bbd4a5052bc15e2bb",
+        "size": 1103
+      },
+      {
+        "path": "scripts/ev_snapshot.py",
+        "sha256": "a02918e219c4b98878276af37e67f49a6dcacd3772e18ec220f91d9c3646c692",
+        "size": 1123
+      },
+      {
+        "path": "scripts/ev_suggest.py",
+        "sha256": "5e808353676dda20edc3de89f119bbced86b0f0b97c1ef01035a017708d25cd5",
+        "size": 2871
+      },
+      {
+        "path": "scripts/ev_workflow.py",
+        "sha256": "f17a2b55ce380261c5524820901b59af4f00389e5fa7fb3596fd68934e037544",
+        "size": 2173
+      },
+      {
+        "path": "tests/_helpers.py",
+        "sha256": "d77108f8a80a73e6e0d59b407d0a9208339b4bf535aff1ecfee36a600a80548b",
+        "size": 786
+      },
+      {
+        "path": "tests/run_fixture_cdp_smoke.py",
+        "sha256": "a27b256fec57891bcc72772a0eaefa09fff5f597a5608aad8a30698c3c6a6cf0",
+        "size": 5398
+      },
+      {
+        "path": "tests/run_process_manager_smoke.py",
+        "sha256": "169919b7980730889bfe25474403aaeb029e027cb29a7af9d82bf1863764033c",
+        "size": 9691
+      },
+      {
+        "path": "tests/run_termous_smoke.py",
+        "sha256": "fbfb1cb49b55f3cf354f41c8c5428ac7b29e23f02047f223af7faf6867f449a7",
+        "size": 27180
+      },
+      {
+        "path": "tests/test_actions.py",
+        "sha256": "aad8f0a58898a6f102e734fb7ba823f62cb0d6032315fb44290a3592d5174c5e",
+        "size": 5074
+      },
+      {
+        "path": "tests/test_approval.py",
+        "sha256": "5ebc75388cca8b60cb58d23c503bfb7057b3ce9ba692f72daeb3c24d3a61c9de",
+        "size": 8603
+      },
+      {
+        "path": "tests/test_asset_runner.py",
+        "sha256": "36540a16d414c4b2e89ffdfa89de138a5e8e872ff4f73a0d5e42815dd63da7e3",
+        "size": 2413
+      },
+      {
+        "path": "tests/test_automation_worker.py",
+        "sha256": "def3de807011068996ae32376671328ae0c791efd12290a015f90866f78e6e71",
+        "size": 4793
+      },
+      {
+        "path": "tests/test_config.py",
+        "sha256": "e27104d6bda7be5a85c2acc329ab9e7dcfd43ba12eb9d5ff599b9e93dbc4e55c",
+        "size": 2272
+      },
+      {
+        "path": "tests/test_contracts.py",
+        "sha256": "e85b180021e9d2a0717efa13fadb4347416e8c29d8c97d528e0cc94e81de8905",
+        "size": 3139
+      },
+      {
+        "path": "tests/test_driver_selection.py",
+        "sha256": "ad48a4a65ccd786f4476b3607e5c3dd238635b17a46f89572ba219e48b5b72a0",
+        "size": 2151
+      },
+      {
+        "path": "tests/test_evidence.py",
+        "sha256": "cc4b3b582888142218df77aa9e9a4be2bc0352ef140fdd6f311a38728966b4dc",
+        "size": 2333
+      },
+      {
+        "path": "tests/test_foundation.py",
+        "sha256": "fd71a7279c05a4ae23716d529a8a08728b7ed656deab8115679c19ad8d4d66c9",
+        "size": 2281
+      },
+      {
+        "path": "tests/test_knowledge_api.py",
+        "sha256": "36ccf39a622c1240233c07f0b2e7d819b2d75c531f55297d62383dbec98eb3ab",
+        "size": 2753
+      },
+      {
+        "path": "tests/test_knowledge_reset.py",
+        "sha256": "ca7b22a51906a3928b877cdb95fcdaccfb4541f8862f67a793b42c0ae2f33dcf",
+        "size": 6316
+      },
+      {
+        "path": "tests/test_retrieval.py",
+        "sha256": "7179831ac8fd9534e82256097745099b7bcc1dd7d3272d3f171d7a6fb7ff934e",
+        "size": 7397
+      },
+      {
+        "path": "tests/test_runs.py",
+        "sha256": "f3aae59ec9325eae863635a774db1607454c96a3bf8b175679743e7a9b845afc",
+        "size": 9367
+      },
+      {
+        "path": "tests/test_schemas.py",
+        "sha256": "8450ea27aa952930ff6b87e7889495ab732a68b87fe1afed4ed32a3cf6f47d25",
+        "size": 606
+      },
+      {
+        "path": "tests/test_sessions.py",
+        "sha256": "3ef83a1f2de485217ca757269e3bd3069ff18d908f3f121b82d394b8af46a95c",
+        "size": 4357
+      }
+    ],
+    "path": "skills/electron-ui-verifier",
+    "total_bytes": 407976,
+    "tree_sha256": "3bd161d2738fbec48f11d7b73c5f25f113def4c96c99113a104255f9bcac5d2b"
+  },
+  "capabilities": [
+    {
+      "detail": "key.replace",
+      "kind": "file_write",
+      "line": 137,
+      "path": "scripts/electron_verifier/actions.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 64,
+      "path": "scripts/electron_verifier/atomic_io.py"
+    },
+    {
+      "detail": "os.replace",
+      "kind": "file_write",
+      "line": 81,
+      "path": "scripts/electron_verifier/atomic_io.py"
+    },
+    {
+      "detail": "temp_path.unlink",
+      "kind": "file_write",
+      "line": 95,
+      "path": "scripts/electron_verifier/atomic_io.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 129,
+      "path": "scripts/electron_verifier/atomic_io.py"
+    },
+    {
+      "detail": "path.unlink",
+      "kind": "file_write",
+      "line": 145,
+      "path": "scripts/electron_verifier/atomic_io.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 28,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "os.replace",
+      "kind": "file_write",
+      "line": 62,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "root.parent.mkdir",
+      "kind": "file_write",
+      "line": 76,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "mkdir",
+      "kind": "file_write",
+      "line": 79,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "mkdir",
+      "kind": "file_write",
+      "line": 80,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "os.replace",
+      "kind": "file_write",
+      "line": 217,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "temporary.unlink",
+      "kind": "file_write",
+      "line": 219,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "unlink",
+      "kind": "file_write",
+      "line": 220,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "os.replace",
+      "kind": "file_write",
+      "line": 251,
+      "path": "scripts/electron_verifier/canonical_store.py"
+    },
+    {
+      "detail": "path.mkdir",
+      "kind": "file_write",
+      "line": 114,
+      "path": "scripts/electron_verifier/config.py"
+    },
+    {
+      "detail": "self.artifacts_dir.mkdir",
+      "kind": "file_write",
+      "line": 144,
+      "path": "scripts/electron_verifier/evidence.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 22,
+      "path": "scripts/electron_verifier/knowledge_index.py"
+    },
+    {
+      "detail": "term.replace",
+      "kind": "file_write",
+      "line": 227,
+      "path": "scripts/electron_verifier/knowledge_index.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 93,
+      "path": "scripts/electron_verifier/knowledge_models.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 95,
+      "path": "scripts/electron_verifier/knowledge_models.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 99,
+      "path": "scripts/electron_verifier/knowledge_models.py"
+    },
+    {
+      "detail": "self.root.rmdir",
+      "kind": "file_write",
+      "line": 91,
+      "path": "scripts/electron_verifier/knowledge_reset.py"
+    },
+    {
+      "detail": "retired_root.mkdir",
+      "kind": "file_write",
+      "line": 117,
+      "path": "scripts/electron_verifier/knowledge_reset.py"
+    },
+    {
+      "detail": "self.root.rmdir",
+      "kind": "file_write",
+      "line": 121,
+      "path": "scripts/electron_verifier/knowledge_reset.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 24,
+      "path": "scripts/electron_verifier/runs.py"
+    },
+    {
+      "detail": "self.config.runs_dir.mkdir",
+      "kind": "file_write",
+      "line": 81,
+      "path": "scripts/electron_verifier/runs.py"
+    },
+    {
+      "detail": "run_dir.mkdir",
+      "kind": "file_write",
+      "line": 140,
+      "path": "scripts/electron_verifier/runs.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 26,
+      "path": "scripts/electron_verifier/service.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 20,
+      "path": "scripts/electron_verifier/sessions.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 102,
+      "path": "scripts/ev_check_env.py"
+    },
+    {
+      "detail": "replace",
+      "kind": "file_write",
+      "line": 107,
+      "path": "scripts/ev_check_env.py"
+    },
+    {
+      "detail": "package_name.replace",
+      "kind": "file_write",
+      "line": 110,
+      "path": "scripts/ev_check_env.py"
+    },
+    {
+      "detail": "path.parent.mkdir",
+      "kind": "file_write",
+      "line": 99,
+      "path": "scripts/ev_common.py"
+    },
+    {
+      "detail": "temp.replace",
+      "kind": "file_write",
+      "line": 104,
+      "path": "scripts/ev_common.py"
+    },
+    {
+      "detail": "folder.mkdir",
+      "kind": "file_write",
+      "line": 199,
+      "path": "scripts/ev_common.py"
+    },
+    {
+      "detail": "paths.token_file.parent.mkdir",
+      "kind": "file_write",
+      "line": 208,
+      "path": "scripts/ev_common.py"
+    },
+    {
+      "detail": "paths.token_file.write_text",
+      "kind": "file_write",
+      "line": 209,
+      "path": "scripts/ev_common.py"
+    },
+    {
+      "detail": "import subprocess",
+      "kind": "process",
+      "line": 9,
+      "path": "scripts/electron_verifier/security.py"
+    },
+    {
+      "detail": "subprocess.run",
+      "kind": "process",
+      "line": 104,
+      "path": "scripts/electron_verifier/security.py"
+    },
+    {
+      "detail": "subprocess.run",
+      "kind": "process",
+      "line": 115,
+      "path": "scripts/electron_verifier/security.py"
+    },
+    {
+      "detail": "import subprocess",
+      "kind": "process",
+      "line": 8,
+      "path": "scripts/ev_init.py"
+    },
+    {
+      "detail": "subprocess.run",
+      "kind": "process",
+      "line": 106,
+      "path": "scripts/ev_init.py"
+    }
+  ],
+  "checker": {
+    "agent_calls": 0,
+    "contract": "deterministic-static-only",
+    "name": "skill-evaluation-lab",
+    "network_calls": 0,
+    "target_imports": 0
+  },
+  "checks": [
+    {
+      "dimension": "metadata",
+      "evidence": [
+        {
+          "detail": "name=electron-ui-verifier; description_chars=204",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.metadata",
+      "severity": "info",
+      "status": "pass",
+      "summary": "frontmatter、目录名和 description 机械约束有效"
+    },
+    {
+      "dimension": "structure",
+      "evidence": [
+        {
+          "detail": "files=92; total_bytes=407976",
+          "path": "."
+        },
+        {
+          "detail": "非标准顶层资源：requirements.txt",
+          "path": "."
+        }
+      ],
+      "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+      "id": "skill.structure",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "非标准顶层资源：requirements.txt"
+    },
+    {
+      "dimension": "references",
+      "evidence": [
+        {
+          "detail": "local_links=5; total_links=5",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.references",
+      "severity": "info",
+      "status": "pass",
+      "summary": "Markdown 相对引用均可解析且未越界"
+    },
+    {
+      "dimension": "information_architecture",
+      "evidence": [
+        {
+          "detail": "lines=56; references=5",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.disclosure",
+      "severity": "info",
+      "status": "pass",
+      "summary": "核心说明规模适中，并具备可接受的渐进披露结构"
+    },
+    {
+      "dimension": "syntax",
+      "evidence": [
+        {
+          "detail": "parsed_files=85; imported_files=0",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.syntax",
+      "severity": "info",
+      "status": "pass",
+      "summary": "支持的代码与数据文件通过只读语法解析"
+    },
+    {
+      "dimension": "capabilities",
+      "evidence": [
+        {
+          "detail": "line=137; file_write: key.replace",
+          "path": "scripts/electron_verifier/actions.py"
+        },
+        {
+          "detail": "line=64; file_write: path.parent.mkdir",
+          "path": "scripts/electron_verifier/atomic_io.py"
+        },
+        {
+          "detail": "line=81; file_write: os.replace",
+          "path": "scripts/electron_verifier/atomic_io.py"
+        },
+        {
+          "detail": "line=95; file_write: temp_path.unlink",
+          "path": "scripts/electron_verifier/atomic_io.py"
+        },
+        {
+          "detail": "line=129; file_write: path.parent.mkdir",
+          "path": "scripts/electron_verifier/atomic_io.py"
+        },
+        {
+          "detail": "line=145; file_write: path.unlink",
+          "path": "scripts/electron_verifier/atomic_io.py"
+        },
+        {
+          "detail": "line=28; file_write: replace",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=62; file_write: os.replace",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=76; file_write: root.parent.mkdir",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=79; file_write: mkdir",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=80; file_write: mkdir",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=217; file_write: os.replace",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=219; file_write: temporary.unlink",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=220; file_write: unlink",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=251; file_write: os.replace",
+          "path": "scripts/electron_verifier/canonical_store.py"
+        },
+        {
+          "detail": "line=114; file_write: path.mkdir",
+          "path": "scripts/electron_verifier/config.py"
+        },
+        {
+          "detail": "line=144; file_write: self.artifacts_dir.mkdir",
+          "path": "scripts/electron_verifier/evidence.py"
+        },
+        {
+          "detail": "line=22; file_write: path.parent.mkdir",
+          "path": "scripts/electron_verifier/knowledge_index.py"
+        },
+        {
+          "detail": "line=227; file_write: term.replace",
+          "path": "scripts/electron_verifier/knowledge_index.py"
+        },
+        {
+          "detail": "line=93; file_write: replace",
+          "path": "scripts/electron_verifier/knowledge_models.py"
+        },
+        {
+          "detail": "line=95; file_write: replace",
+          "path": "scripts/electron_verifier/knowledge_models.py"
+        },
+        {
+          "detail": "line=99; file_write: replace",
+          "path": "scripts/electron_verifier/knowledge_models.py"
+        },
+        {
+          "detail": "line=91; file_write: self.root.rmdir",
+          "path": "scripts/electron_verifier/knowledge_reset.py"
+        },
+        {
+          "detail": "line=117; file_write: retired_root.mkdir",
+          "path": "scripts/electron_verifier/knowledge_reset.py"
+        },
+        {
+          "detail": "line=121; file_write: self.root.rmdir",
+          "path": "scripts/electron_verifier/knowledge_reset.py"
+        },
+        {
+          "detail": "line=24; file_write: replace",
+          "path": "scripts/electron_verifier/runs.py"
+        },
+        {
+          "detail": "line=81; file_write: self.config.runs_dir.mkdir",
+          "path": "scripts/electron_verifier/runs.py"
+        },
+        {
+          "detail": "line=140; file_write: run_dir.mkdir",
+          "path": "scripts/electron_verifier/runs.py"
+        },
+        {
+          "detail": "line=26; file_write: replace",
+          "path": "scripts/electron_verifier/service.py"
+        },
+        {
+          "detail": "line=20; file_write: replace",
+          "path": "scripts/electron_verifier/sessions.py"
+        },
+        {
+          "detail": "line=102; file_write: replace",
+          "path": "scripts/ev_check_env.py"
+        },
+        {
+          "detail": "line=107; file_write: replace",
+          "path": "scripts/ev_check_env.py"
+        },
+        {
+          "detail": "line=110; file_write: package_name.replace",
+          "path": "scripts/ev_check_env.py"
+        },
+        {
+          "detail": "line=99; file_write: path.parent.mkdir",
+          "path": "scripts/ev_common.py"
+        },
+        {
+          "detail": "line=104; file_write: temp.replace",
+          "path": "scripts/ev_common.py"
+        },
+        {
+          "detail": "line=199; file_write: folder.mkdir",
+          "path": "scripts/ev_common.py"
+        },
+        {
+          "detail": "line=208; file_write: paths.token_file.parent.mkdir",
+          "path": "scripts/ev_common.py"
+        },
+        {
+          "detail": "line=209; file_write: paths.token_file.write_text",
+          "path": "scripts/ev_common.py"
+        },
+        {
+          "detail": "line=9; process: import subprocess",
+          "path": "scripts/electron_verifier/security.py"
+        },
+        {
+          "detail": "line=104; process: subprocess.run",
+          "path": "scripts/electron_verifier/security.py"
+        },
+        {
+          "detail": "line=115; process: subprocess.run",
+          "path": "scripts/electron_verifier/security.py"
+        },
+        {
+          "detail": "line=8; process: import subprocess",
+          "path": "scripts/ev_init.py"
+        },
+        {
+          "detail": "line=106; process: subprocess.run",
+          "path": "scripts/ev_init.py"
+        }
+      ],
+      "guidance": "这些仅是静态信号，不代表能力实际执行；由安全与权限语义审查确认。",
+      "id": "skill.capabilities",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "发现需要人工确认的静态能力信号：file_write=38, process=5"
+    },
+    {
+      "dimension": "validation",
+      "evidence": [
+        {
+          "detail": "tests=true; evals=true; ci=true",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.validation_assets",
+      "severity": "info",
+      "status": "pass",
+      "summary": "tests、evals 与 CI coverage 均可发现"
+    },
+    {
+      "dimension": "baseline",
+      "evidence": [
+        {
+          "detail": "baseline=not_provided",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.baseline_delta",
+      "severity": "info",
+      "status": "not_applicable",
+      "summary": "未提供 baseline，不生成比较结论"
+    }
+  ],
+  "delta": null,
+  "evaluation_id": "electron-ui-verifier-20260714",
+  "generated_at": "2026-07-14T03:31:02.602662Z",
+  "schema_version": 1,
+  "summary": {
+    "fail": 0,
+    "not_applicable": 1,
+    "pass": 5,
+    "warn": 2
+  }
+}

@@ -1,0 +1,247 @@
+{
+  "baseline": null,
+  "candidate": {
+    "file_count": 20,
+    "files": [
+      {
+        "path": "SKILL.md",
+        "sha256": "47d3613620042a0bfedafd71db35325967228e7b4e291f37e8812231e42e2f07",
+        "size": 2836
+      },
+      {
+        "path": "agents/openai.yaml",
+        "sha256": "bd550b94e3def7beefbdff81ea2bc3db251f22eed19ac7735a6eadbb62a576b7",
+        "size": 289
+      },
+      {
+        "path": "references/planning-workflow.md",
+        "sha256": "476080118349598899d532567b02c7d1262751a24f7efd8ee6c46c27ba2a743e",
+        "size": 13928
+      },
+      {
+        "path": "references/task-contract.md",
+        "sha256": "0a4c94a4d91fc689ace6f67076abc78ac6e56c2307dcc1bcb709ba23c2e4756f",
+        "size": 11455
+      },
+      {
+        "path": "scripts/harness_contract.py",
+        "sha256": "756dc53bcf0ca3d372f21db3b7d53c9b8421cb29b3b735b7505ff122fa49bc78",
+        "size": 9991
+      },
+      {
+        "path": "scripts/harness_contract_artifacts.py",
+        "sha256": "b20ecb746d06984dca60a5e04f1f9913005df2e40c524f9d07d7b4770656253f",
+        "size": 5504
+      },
+      {
+        "path": "scripts/harness_contract_policy.py",
+        "sha256": "1603f9a3452266870659a4bb9f88966aeb50a922253cc2927e46dc24d2154b75",
+        "size": 5170
+      },
+      {
+        "path": "scripts/harness_contract_rules.py",
+        "sha256": "5f01b0a65875b43937a55030c893ca8da1edbe80dc5411f0986d3338e1826a7f",
+        "size": 13923
+      },
+      {
+        "path": "scripts/harness_plan_check.py",
+        "sha256": "f3a9ac200130a620b726e5953a2334e36643db111d525cda0114f9cf28506be1",
+        "size": 15187
+      },
+      {
+        "path": "templates/active-task.json",
+        "sha256": "e8de7bfb0898377c186642577c4da12953c0dc6c2890a5008968478591c0c220",
+        "size": 170
+      },
+      {
+        "path": "templates/artifacts/change-map.md",
+        "sha256": "d986a175e48f31bf71cafa30c9e65f8ac8711f5132241df106e64c829d7db7f2",
+        "size": 362
+      },
+      {
+        "path": "templates/artifacts/plan-critique.md",
+        "sha256": "f7b83fc2760344125de0945fc73652d06f3afb609e28e55e264470e5a6415b7f",
+        "size": 402
+      },
+      {
+        "path": "templates/artifacts/research-findings.md",
+        "sha256": "1b95dbbe155ad85ed6d5445c24e5e91c55bdf467cc3ad4290051a0b8fdd36f8b",
+        "size": 379
+      },
+      {
+        "path": "templates/artifacts/standards-index.md",
+        "sha256": "ff07dc722f3c0ca5985c066590aed3f1d6968aa937e24855ea5b57fb770c9152",
+        "size": 514
+      },
+      {
+        "path": "templates/artifacts/traceability.md",
+        "sha256": "3a0f2d810bfba9c031768e529b898cb781fb20787c7c9429fb460d0559cafeb5",
+        "size": 352
+      },
+      {
+        "path": "templates/environment.md",
+        "sha256": "c22b355ad8c174d9c754439326853d3792ca1ccb4474068acb819d17e8281405",
+        "size": 3452
+      },
+      {
+        "path": "templates/execution-plan.md",
+        "sha256": "0680a577ceb4c7260954946f840f1ade6357c8cbb17ae4aadef56cdcb2ad514e",
+        "size": 14846
+      },
+      {
+        "path": "templates/pending-decisions.md",
+        "sha256": "488d18b9d8a9d81cb4d949ad91fe07255b9bb4ea8c644fab41cdeb1b1d11a0ba",
+        "size": 1183
+      },
+      {
+        "path": "templates/plan-contract.json",
+        "sha256": "c9dd44464767e9e63969fa751c9a4bdd39af784cf1b39f39a80546dbde0ba3e4",
+        "size": 2117
+      },
+      {
+        "path": "tests/test_harness_plan_check.py",
+        "sha256": "a21f2f774b6b7a1bf8b096bd13d9e9f67250588db8ca98b5025dda5e25bb6b26",
+        "size": 11970
+      }
+    ],
+    "path": "skills/complex-coding-planner",
+    "total_bytes": 114030,
+    "tree_sha256": "27cf83e0b02d96d5ff282903f53897bf35792d9409e2fb39d31ec5669aaf313d"
+  },
+  "capabilities": [],
+  "checker": {
+    "agent_calls": 0,
+    "contract": "deterministic-static-only",
+    "name": "skill-evaluation-lab",
+    "network_calls": 0,
+    "target_imports": 0
+  },
+  "checks": [
+    {
+      "dimension": "metadata",
+      "evidence": [
+        {
+          "detail": "name=complex-coding-planner; description_chars=227",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.metadata",
+      "severity": "info",
+      "status": "pass",
+      "summary": "frontmatter、目录名和 description 机械约束有效"
+    },
+    {
+      "dimension": "structure",
+      "evidence": [
+        {
+          "detail": "files=20; total_bytes=114030",
+          "path": "."
+        },
+        {
+          "detail": "非标准顶层资源：templates",
+          "path": "."
+        }
+      ],
+      "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+      "id": "skill.structure",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "非标准顶层资源：templates"
+    },
+    {
+      "dimension": "references",
+      "evidence": [
+        {
+          "detail": "local_links=0; total_links=26",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.references",
+      "severity": "info",
+      "status": "pass",
+      "summary": "Markdown 相对引用均可解析且未越界"
+    },
+    {
+      "dimension": "information_architecture",
+      "evidence": [
+        {
+          "detail": "lines=35; references=2",
+          "path": "SKILL.md"
+        }
+      ],
+      "guidance": "",
+      "id": "skill.disclosure",
+      "severity": "info",
+      "status": "pass",
+      "summary": "核心说明规模适中，并具备可接受的渐进披露结构"
+    },
+    {
+      "dimension": "syntax",
+      "evidence": [
+        {
+          "detail": "parsed_files=9; imported_files=0",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.syntax",
+      "severity": "info",
+      "status": "pass",
+      "summary": "支持的代码与数据文件通过只读语法解析"
+    },
+    {
+      "dimension": "capabilities",
+      "evidence": [
+        {
+          "detail": "process/network/environment/file-write/agent signals=0",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.capabilities",
+      "severity": "info",
+      "status": "pass",
+      "summary": "未发现受关注的静态能力信号"
+    },
+    {
+      "dimension": "validation",
+      "evidence": [
+        {
+          "detail": "tests=true; evals=true; ci=false",
+          "path": "."
+        }
+      ],
+      "guidance": "按 Skill 风险补充可重复验证资产。",
+      "id": "skill.validation_assets",
+      "severity": "advisory",
+      "status": "warn",
+      "summary": "缺少可发现的验证资产：ci"
+    },
+    {
+      "dimension": "baseline",
+      "evidence": [
+        {
+          "detail": "baseline=not_provided",
+          "path": "."
+        }
+      ],
+      "guidance": "",
+      "id": "skill.baseline_delta",
+      "severity": "info",
+      "status": "not_applicable",
+      "summary": "未提供 baseline，不生成比较结论"
+    }
+  ],
+  "delta": null,
+  "evaluation_id": "complex-coding-planner-20260714",
+  "generated_at": "2026-07-14T02:57:59.962092Z",
+  "schema_version": 1,
+  "summary": {
+    "fail": 0,
+    "not_applicable": 1,
+    "pass": 5,
+    "warn": 2
+  }
+}
