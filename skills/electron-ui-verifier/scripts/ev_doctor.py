@@ -7,7 +7,16 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from ev_common import EVError, add_common_args, load_config, paths_for_workspace, print_json, request_json, resolve_config_path
+from ev_common import (
+    EVError,
+    add_common_args,
+    load_config,
+    paths_for_workspace,
+    print_json,
+    request_json,
+    resolve_config_path,
+)
+from electron_verifier.paths import inspect_skill_install, skill_paths
 
 
 def check_path(path: Path, must_exist: bool = True) -> dict[str, Any]:
@@ -23,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     checks: list[dict[str, Any]] = []
+    install = inspect_skill_install(skill_paths())
     try:
         config_path = resolve_config_path(args)
         workspace_root = Path(args.workspace).resolve() if args.workspace else Path.cwd().resolve()
@@ -34,11 +44,18 @@ def main(argv: list[str] | None = None) -> int:
         config = load_config(config_path)
         health = request_json(config, "GET", "/health", timeout=5.0)
         sessions = request_json(config, "GET", "/sessions", timeout=5.0)
-        result = {"ok": health.get("ok") is True, "checks": checks, "health": health, "sessions": sessions}
+        result = {
+            "ok": health.get("ok") is True and install["ok"] is True,
+            "roots": {"skill": install["skillRoot"], "workspace": str(workspace_root)},
+            "installCheck": install,
+            "checks": checks,
+            "health": health,
+            "sessions": sessions,
+        }
         print_json(result)
         return 0 if result["ok"] else 2
     except EVError as exc:
-        print_json({"ok": False, "checks": checks, "error": str(exc)})
+        print_json({"ok": False, "installCheck": install, "checks": checks, "error": str(exc)})
         return 2
 
 

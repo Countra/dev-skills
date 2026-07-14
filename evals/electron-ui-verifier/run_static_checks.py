@@ -18,7 +18,7 @@ PUBLIC_SCRIPTS = (
     "ev_init.py", "ev_probe.py", "ev_prepare.py", "ev_action.py", "ev_workflow.py",
     "ev_finalize.py", "ev_pending.py", "ev_persist.py", "ev_knowledge.py",
     "ev_suggest.py", "ev_assets.py", "ev_risk.py", "ev_server.py",
-    "ev_operation.py",
+    "ev_operation.py", "ev_prune.py",
 )
 
 
@@ -135,10 +135,13 @@ def main() -> int:
         PACKAGE / "compatibility.py",
         PACKAGE / "asset_execution.py",
         PACKAGE / "run_context.py",
+        PACKAGE / "paths.py",
+        PACKAGE / "retention.py",
+        PACKAGE / "retention_policy.py",
     )
     missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
     if missing_security_modules:
-        failures.append(f"安全或 operation 边界模块缺失：{missing_security_modules}")
+        failures.append(f"安全、安装或 operation 边界模块缺失：{missing_security_modules}")
     legacy_knowledge_markers = (
         '"canonicalDir"',
         "electron-verifier-canonical",

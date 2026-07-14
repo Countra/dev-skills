@@ -179,7 +179,12 @@ def load_environment(paths: EVPaths) -> dict[str, Any]:
     return ensure_object(read_json(paths.environment_file), "environment")
 
 
-def write_environment(paths: EVPaths, python_path: Path | None = None, port: int | None = None) -> dict[str, Any]:
+def write_environment(
+    paths: EVPaths,
+    python_path: Path | None = None,
+    port: int | None = None,
+    skill_root: Path | None = None,
+) -> dict[str, Any]:
     existing = load_environment(paths)
     selected_python = python_path or Path(str(existing.get("python") or sys.executable)).resolve()
     if not selected_python.is_absolute() or not selected_python.exists():
@@ -188,12 +193,15 @@ def write_environment(paths: EVPaths, python_path: Path | None = None, port: int
     environment = {
         "python": str(selected_python),
         "workspaceRoot": str(paths.workspace_root),
+        "skillRoot": str(skill_root.resolve()) if skill_root is not None else existing.get("skillRoot"),
         "server": {
             "host": normalize_host(server.get("host")),
             "port": normalize_port(port if port is not None else server.get("port")),
         },
         "updatedAt": iso_now(),
     }
+    if environment["skillRoot"] is None:
+        environment.pop("skillRoot")
     write_json(paths.environment_file, environment)
     return environment
 

@@ -4,9 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
-import secrets
 import shutil
 import subprocess
 import sys
@@ -16,8 +16,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
+HARNESS_ROOT = (ROOT / ".harness").resolve()
 PM_SCRIPTS = ROOT / "skills" / "process-manager" / "scripts"
-SERVER_SCRIPT = ROOT / "skills" / "electron-ui-verifier" / "scripts" / "ev_server.py"
+SOURCE_SKILL = ROOT / "skills" / "electron-ui-verifier"
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -25,10 +26,16 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def run_json(arguments: list[str], timeout: float = 60.0) -> dict[str, Any]:
+def run_json(
+    arguments: list[str],
+    timeout: float = 60.0,
+    *,
+    python_path: Path | None = None,
+    cwd: Path | None = None,
+) -> dict[str, Any]:
     completed = subprocess.run(
-        [sys.executable, "-X", "utf8", "-B", *arguments],
-        cwd=ROOT,
+        [str(python_path or Path(sys.executable)), "-X", "utf8", "-B", *arguments],
+        cwd=cwd or ROOT,
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -38,10 +45,10 @@ def run_json(arguments: list[str], timeout: float = 60.0) -> dict[str, Any]:
         value = json.loads(completed.stdout)
     except json.JSONDecodeError as exc:
         raise RuntimeError(
-            f"process-manager 未返回 JSON：rc={completed.returncode} stdout={completed.stdout[:500]} stderr={completed.stderr[:500]}"
+            f"命令未返回 JSON：rc={completed.returncode} stdout={completed.stdout[:500]} stderr={completed.stderr[:500]}"
         ) from exc
     if completed.returncode != 0 or value.get("ok") is not True:
-        raise RuntimeError(f"process-manager 命令失败：{arguments}: {value}")
+        raise RuntimeError(f"命令失败：{arguments}: {value}")
     return value
 
 
@@ -64,6 +71,7 @@ def service_python(workspace: Path) -> Path:
     executable = "python.exe" if os.name == "nt" else "python"
     folder = "Scripts" if os.name == "nt" else "bin"
     candidates.append(workspace.parent / "fresh-env" / folder / executable)
+    candidates.append(ROOT / ".harness" / "electron-ui-verifier" / "baseline-venv" / folder / executable)
     for candidate in candidates:
         if candidate.is_absolute() and candidate.exists() and python_has_playwright(candidate):
             return candidate
@@ -75,65 +83,44 @@ def http_health(port: int) -> dict[str, Any]:
         return json.loads(response.read().decode("utf-8"))
 
 
-def build_service(workspace: Path, python_path: Path) -> tuple[Path, Path]:
-    state = workspace / ".harness" / "electron-ui-verifier"
-    config = state / "config.json"
-    token = state / "token"
-    token.parent.mkdir(parents=True, exist_ok=True)
-    token.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
-    write_json(state / "sessions.json", {"schemaVersion": 1, "sessions": []})
-    write_json(
-        config,
-        {
-            "host": "127.0.0.1",
-            "port": 19380,
-            "portRetry": {"enabled": True, "maxSwitches": 10},
-            "workspaceRoot": str(workspace),
-            "stateRoot": str(state),
-            "tokenFile": str(token),
-            "serverFile": str(state / "server.json"),
-            "sessionsFile": str(state / "sessions.json"),
-            "reportsDir": str(state / "reports"),
-            "pendingDir": str(state / "pending"),
-            "workflowsDir": str(state / "workflows"),
-            "artifactsDir": str(state / "artifacts"),
-            "logsDir": str(state / "logs"),
-            "tmpDir": str(state / "tmp"),
-            "runsDir": str(state / "runs"),
-        },
+def install_digest(root: Path) -> str:
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def copy_skill(install_root: Path) -> None:
+    if install_root == ROOT or ROOT not in install_root.parents:
+        raise RuntimeError("复制安装目录必须位于当前仓库内")
+    if install_root.exists():
+        shutil.rmtree(install_root)
+    shutil.copytree(
+        SOURCE_SKILL,
+        install_root,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
     )
-    service = workspace / ".harness" / "process-manager" / "services" / "electron-ui-verifier.json"
-    write_json(
-        service,
-        {
-            "name": "electron-ui-verifier",
-            "kind": "long-running",
-            "cwd": str(workspace),
-            "launcher": {
-                "type": "script",
-                "interpreter": str(python_path),
-                "script": str(SERVER_SCRIPT),
-                "args": ["--config"],
-                "pathArgs": [str(config)],
-            },
-            "environment": {
-                "inherit": ["PATH", "HOME", "USERPROFILE", "SystemRoot", "WINDIR", "TEMP", "TMP", "LANG"],
-                "set": {"PYTHONUNBUFFERED": "1"},
-                "fromEnv": [],
-            },
-            "stop": {"graceSeconds": 8},
-            "readiness": {
-                "type": "log",
-                "stream": "stdout",
-                "pattern": "EV_READY\\s+(?P<url>http://127\\.0\\.0\\.1:\\d+/health)",
-                "extract": {"urls": ["url"]},
-                "scanBytes": 262144,
-                "timeoutSeconds": 30,
-            },
-            "logs": {"maxBytes": 1048576, "backups": 1},
-        },
+
+
+def initialize_service(workspace: Path, install_root: Path, python_path: Path) -> tuple[dict[str, Any], Path]:
+    initialized = run_json(
+        [
+            str(install_root / "scripts" / "ev_init.py"),
+            "--workspace",
+            str(workspace),
+            "--python",
+            str(python_path),
+        ],
+        timeout=90,
+        python_path=python_path,
+        cwd=workspace,
     )
-    return config, service
+    service = Path(str(initialized["service"])).resolve()
+    expected = workspace / ".harness" / "process-manager" / "services" / "electron-ui-verifier.json"
+    if service != expected.resolve():
+        raise RuntimeError(f"ev_init 返回了非预期服务路径：{service}")
+    return initialized, service
 
 
 def main() -> int:
@@ -143,20 +130,39 @@ def main() -> int:
     args = parser.parse_args()
     workspace = Path(args.workspace).resolve()
     output = Path(args.output).resolve()
-    if workspace == ROOT or ROOT not in workspace.parents:
-        raise SystemExit("--workspace 必须是仓库内的隔离子目录")
+    if workspace == HARNESS_ROOT or HARNESS_ROOT not in workspace.parents:
+        raise SystemExit("--workspace 必须是仓库 .harness 内的隔离子目录")
+    install_root = workspace.parent / f"{workspace.name}-skill-install"
     if workspace.exists():
         shutil.rmtree(workspace)
     workspace.mkdir(parents=True)
     manager_config = workspace / ".harness" / "process-manager" / "config.json"
     process_key = None
     manager_started = False
+    install_before: str | None = None
     checks: dict[str, Any] = {}
     failures: list[str] = []
     try:
         selected_python = service_python(workspace)
+        copy_skill(install_root)
+        install_before = install_digest(install_root)
         run_json([str(PM_SCRIPTS / "pm_init.py"), "--workspace", str(workspace), "--pretty"])
-        _, service = build_service(workspace, selected_python)
+        initialized, service = initialize_service(workspace, install_root, selected_python)
+        service_data = json.loads(service.read_text(encoding="utf-8"))
+        expected_server = (install_root / "scripts" / "ev_server.py").resolve()
+        launcher_server = Path(str(service_data.get("launcher", {}).get("script", ""))).resolve()
+        service_cwd = Path(str(service_data.get("cwd", ""))).resolve()
+        service_environment = service_data.get("environment", {}).get("set", {})
+        if launcher_server != expected_server:
+            failures.append("生成的 service 未指向复制安装内的 ev_server.py")
+        if service_cwd != workspace:
+            failures.append("生成的 service cwd 未指向独立 workspace")
+        if initialized.get("roots", {}).get("skill") != str(install_root.resolve()):
+            failures.append("ev_init 未报告复制安装根")
+        if initialized.get("installCheck", {}).get("ok") is not True:
+            failures.append("复制安装完整性检查未通过")
+        if service_environment.get("PYTHONDONTWRITEBYTECODE") != "1":
+            failures.append("生成的 service 未禁用安装目录字节码写入")
         run_json([str(PM_SCRIPTS / "pm_validate.py"), "--service", str(service), "--pretty"])
         run_json([str(PM_SCRIPTS / "pm_manager.py"), "start", "--config", str(manager_config), "--pretty"])
         manager_started = True
@@ -189,6 +195,14 @@ def main() -> int:
             "health": health,
             "server": server_state,
             "servicePython": str(selected_python),
+            "roots": initialized.get("roots"),
+            "installCheck": initialized.get("installCheck"),
+            "service": {
+                "path": str(service),
+                "cwd": str(service_cwd),
+                "serverScript": str(launcher_server),
+                "environment": service_environment,
+            },
         }
         if ready.get("data", {}).get("ready") is not True:
             failures.append("process-manager readiness 未通过")
@@ -227,10 +241,29 @@ def main() -> int:
                     timeout=60,
                 )
                 checks["managerStop"] = stopped.get("data")
-                if stopped.get("data", {}).get("managerStopped") is not True:
+                manager_stop = stopped.get("data", {})
+                if manager_stop.get("managerStopped") is not True:
                     failures.append("process-manager 未停止")
+                if manager_stop.get("bootstrapCleaned") is not True:
+                    failures.append("process-manager bootstrap 未清理")
+                if manager_stop.get("ownerEmpty") is not True:
+                    failures.append("process-manager owner 未清空")
+                if manager_stop.get("cleanupVerified") is not True:
+                    failures.append("process-manager cleanupVerified 不为 true")
             except Exception as exc:
                 failures.append(f"manager stop 失败：{exc}")
+        if install_root.exists() and install_before:
+            try:
+                install_after = install_digest(install_root)
+                checks["installImmutable"] = {
+                    "before": install_before,
+                    "after": install_after,
+                    "unchanged": install_before == install_after,
+                }
+                if install_before != install_after:
+                    failures.append("verifier 生命周期修改了复制安装目录")
+            except OSError as exc:
+                failures.append(f"复制安装目录摘要复查失败：{exc}")
     result = {"ok": not failures, "checks": checks, "failures": failures}
     write_json(output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
