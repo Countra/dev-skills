@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.electron-ui-verifier/schemas/risk-receipt.schema.json",
+  "title": "One-time risk authorization receipt",
+  "type": "object",
+  "required": [
+    "schemaVersion", "receiptId", "previewId", "runId", "actionDigest",
+    "targetIdentity", "risks", "approvedAt", "expireAt", "noteDigest"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "receiptId": {"type": "string", "format": "uuid"},
+    "previewId": {"type": "string", "format": "uuid"},
+    "runId": {"type": "string", "format": "uuid"},
+    "actionDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "targetIdentity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "learnable"],
+        "properties": {
+          "code": {"enum": ["coordinate_action", "explicit_nth"]},
+          "learnable": {"const": false},
+          "nth": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      },
+      "minItems": 1
+    },
+    "approvedAt": {"type": "string", "format": "date-time"},
+    "expireAt": {"type": "string", "format": "date-time"},
+    "noteDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  },
+  "additionalProperties": false
+}

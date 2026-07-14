@@ -13,10 +13,19 @@ from .atomic_io import atomic_write_json, atomic_write_text, resolve_under
 from .config import ServiceConfig
 from .errors import VerifierError
 from .evidence import EvidenceStore
-from .knowledge_models import bind_parameters, normalize_parameter_schema, placeholder_name
-from .models import ActionSpec, RunState, monotonic_ms
+from .models import ActionSpec, RunState, canonical_digest, monotonic_ms
 from .reports import build_pending, build_report, summary_markdown
-from .security import redact
+from .risk_authorization import (
+    RiskAuthorizationService,
+    authorization_risks,
+    target_identity,
+)
+from .sensitivity import (
+    BindingContext,
+    normalize_parameter_schema,
+    safe_action_template,
+    transient_input_values,
+)
 from .sessions import SessionManager
 
 
@@ -24,28 +33,63 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _safe_action(raw_action: Any) -> Any:
-    value = redact(raw_action)
-    if not isinstance(value, dict):
-        return value
-    if value.get("type") == "fill" and "value" in value:
-        text = value.get("value")
-        if placeholder_name(text) is None:
-            value["value"] = "[REDACTED_INPUT]"
-            value["inputCharacters"] = len(text) if isinstance(text, str) else None
-    postconditions = value.get("postconditions")
-    if isinstance(postconditions, list):
-        for assertion in postconditions:
-            if isinstance(assertion, dict) and assertion.get("type") == "value" and "expected" in assertion:
-                if placeholder_name(assertion.get("expected")) is None:
-                    assertion["expected"] = "[REDACTED_INPUT]"
-    return value
-
-
 class RunService:
-    def __init__(self, config: ServiceConfig, sessions: SessionManager) -> None:
+    def __init__(
+        self,
+        config: ServiceConfig,
+        sessions: SessionManager,
+        risk_authorizations: RiskAuthorizationService | None = None,
+    ) -> None:
         self.config = config
         self.sessions = sessions
+        self.risk_authorizations = risk_authorizations or RiskAuthorizationService(config.state_root)
+        self._sensitive_masks: dict[str, list[Any]] = {}
+
+    def _target_identity(self, journal: dict[str, Any]) -> str:
+        intent = self.sessions.intent(journal["sessionId"])
+        return target_identity(
+            intent.session_id,
+            getattr(intent, "target_id", None),
+            journal.get("appId") or getattr(intent, "app_id", None),
+        )
+
+    @staticmethod
+    def _action_digest(raw_action: Any) -> str:
+        if not isinstance(raw_action, dict):
+            raise VerifierError("invalid_action", "action 必须是 JSON object")
+        return canonical_digest(raw_action)
+
+    def preview_risk(self, run_id: str, raw_action: Any) -> dict[str, Any]:
+        journal = self.load(run_id)
+        action = ActionSpec.decode(raw_action)
+        return self.risk_authorizations.preview(
+            run_id=run_id,
+            action_digest=self._action_digest(raw_action),
+            target=self._target_identity(journal),
+            risks=authorization_risks(action),
+        )
+
+    def approve_risk(self, preview_id: str, fingerprint: str, note: str) -> dict[str, Any]:
+        return self.risk_authorizations.approve(preview_id, fingerprint, note)
+
+    def _mask_specs(
+        self,
+        run_id: str,
+        journal: dict[str, Any],
+        context: BindingContext,
+    ) -> tuple[Any, ...]:
+        masks = list(self._sensitive_masks.get(run_id, []))
+        if journal.get("sensitiveInputObserved") and not masks:
+            for prior in journal.get("steps", []):
+                try:
+                    masks.extend(context.sensitive_mask_specs(prior.get("action")))
+                except VerifierError as exc:
+                    if exc.code != "parameter_binding_required":
+                        raise
+        unique: dict[str, Any] = {}
+        for spec in masks:
+            unique[canonical_digest(spec.to_dict())] = spec
+        return tuple(unique.values())
 
     def _run_dir(self, run_id: str) -> Path:
         try:
@@ -152,6 +196,7 @@ class RunService:
             "updatedAt": now,
             "steps": [],
             "artifacts": [],
+            "sensitiveInputObserved": False,
         }
         EvidenceStore(run_dir).initialize(run_id)
         self._save(journal)
@@ -174,6 +219,7 @@ class RunService:
         raw_action: Any,
         bindings: Any = None,
         parameter_schema: Any = None,
+        risk_receipt: str | None = None,
     ) -> dict[str, Any]:
         journal = self.load(run_id)
         if journal.get("state") not in {RunState.PREPARED.value, RunState.RUNNING.value}:
@@ -194,34 +240,62 @@ class RunService:
         live = self.sessions.driver.live(intent.session_id)
         if live is None:
             raise VerifierError("stale_session", "run 缺少 live Playwright handle", status=409)
-        bound_action, bound_names = bind_parameters(raw_action, bindings, journal.get("parameterSchema") or {})
+        context = BindingContext.create(journal.get("parameterSchema") or {}, bindings).with_transient_values(
+            transient_input_values(raw_action)
+        )
+        bound_action, bound_names = context.bind(raw_action)
         action = ActionSpec.decode(bound_action)
+        risks = authorization_risks(action)
+        risk_authorization = self.risk_authorizations.consume(
+            risk_receipt,
+            run_id=run_id,
+            action_digest=self._action_digest(raw_action),
+            target=self._target_identity(journal),
+            risks=risks,
+        )
+        current_masks = context.sensitive_mask_specs(raw_action)
+        if current_masks:
+            journal["sensitiveInputObserved"] = True
+            self._sensitive_masks.setdefault(run_id, []).extend(current_masks)
+        screenshot_masks = self._mask_specs(run_id, journal, context) if action.action_type == "screenshot" else ()
+        if action.action_type == "screenshot" and journal.get("sensitiveInputObserved") and not screenshot_masks:
+            raise VerifierError(
+                "sensitive_evidence_blocked",
+                "run 已处理敏感绑定但当前进程无法重建 mask，拒绝生成 screenshot",
+                status=409,
+            )
         step_id = str(uuid.uuid4())
         label = str(raw_action.get("id") or step_id) if isinstance(raw_action, dict) else step_id
         step = {
             "stepId": step_id,
-            "label": label[:200],
+            "label": str(context.project(label))[:200],
             "status": "running",
             "optional": bool(isinstance(raw_action, dict) and raw_action.get("continueOnFailure") is True),
             "detour": bool(isinstance(raw_action, dict) and raw_action.get("detour") is True),
-            "action": _safe_action(raw_action),
+            "action": context.project(safe_action_template(raw_action)),
             "boundParameters": sorted(bound_names),
+            "parameterBindings": context.parameter_summary(bound_names),
             "startedAt": _now(),
         }
+        if risk_authorization is not None:
+            step["riskAuthorization"] = risk_authorization
         journal["state"] = RunState.RUNNING.value
         journal["steps"].append(step)
         self._save(journal)
         started_ms = monotonic_ms()
         try:
-            execution = await execute_action(live, action)
+            if screenshot_masks:
+                execution = await execute_action(live, action, sensitive_masks=screenshot_masks)
+            else:
+                execution = await execute_action(live, action)
             committed = []
             evidence = EvidenceStore(self._run_dir(run_id))
             for artifact in execution.artifacts:
-                committed.append(evidence.commit(artifact, step_id))
+                committed.append(evidence.commit(context.sanitize_artifact(artifact), step_id))
             step.update(
                 {
                     "status": "passed",
-                    "result": execution.result,
+                    "result": context.project(execution.result),
                     "risks": execution.risks,
                     "artifacts": [item["artifactId"] for item in committed],
                 }
@@ -229,7 +303,7 @@ class RunService:
         except VerifierError as exc:
             unknown = exc.code in {"action_outcome_unknown", "operation_timeout"} or exc.details.get("outcome") == "unknown"
             step["status"] = "unknown" if unknown else "failed"
-            step["error"] = exc.envelope()
+            step["error"] = context.project(exc.envelope())
             if unknown:
                 journal["state"] = RunState.ABORTED.value
         except Exception as exc:
@@ -255,6 +329,7 @@ class RunService:
         workflow: Any,
         auto_finalize: bool = True,
         bindings: Any = None,
+        risk_receipts: Any = None,
     ) -> dict[str, Any]:
         if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
             raise VerifierError("invalid_workflow", "workflow.steps 必须是数组")
@@ -278,9 +353,19 @@ class RunService:
             "expectedSteps": len(workflow["steps"]),
         }
         self._save(journal)
+        if risk_receipts in (None, {}):
+            receipt_map: dict[str, Any] = {}
+        elif isinstance(risk_receipts, dict):
+            receipt_map = risk_receipts
+        else:
+            raise VerifierError("invalid_risk_receipts", "riskReceipts 必须是 object")
         results = []
-        for raw_action in workflow["steps"]:
-            result = await self.append_action(run_id, raw_action, bindings)
+        for index, raw_action in enumerate(workflow["steps"]):
+            label = str(raw_action.get("id") or index) if isinstance(raw_action, dict) else str(index)
+            receipt = receipt_map.get(label, receipt_map.get(str(index)))
+            if receipt is not None and not isinstance(receipt, str):
+                raise VerifierError("invalid_risk_receipts", f"riskReceipts.{label} 必须是 receiptId 字符串")
+            result = await self.append_action(run_id, raw_action, bindings, risk_receipt=receipt)
             results.append(result["step"])
             if not result["ok"]:
                 action_type = raw_action.get("type") if isinstance(raw_action, dict) else None

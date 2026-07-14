@@ -2,101 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from typing import Any
 
 from . import KNOWLEDGE_FORMAT, SCHEMA_VERSION
 from .errors import VerifierError
 from .models import canonical_digest
-
-
-PLACEHOLDER = re.compile(r"^\$\{([A-Za-z][A-Za-z0-9_.-]{0,63})\}$")
-
-
-def placeholder_name(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    match = PLACEHOLDER.fullmatch(value)
-    return match.group(1) if match else None
-
-
-def placeholders(value: Any) -> set[str]:
-    result: set[str] = set()
-    if isinstance(value, dict):
-        for item in value.values():
-            result.update(placeholders(item))
-    elif isinstance(value, list):
-        for item in value:
-            result.update(placeholders(item))
-    elif isinstance(value, str):
-        name = placeholder_name(value)
-        if name:
-            result.add(name)
-        elif "${" in value:
-            raise VerifierError("invalid_placeholder", "参数占位符必须占据完整字符串")
-    return result
-
-
-def normalize_parameter_schema(value: Any) -> dict[str, dict[str, Any]]:
-    if value in (None, {}):
-        return {}
-    if not isinstance(value, dict):
-        raise VerifierError("invalid_parameter_schema", "parameterSchema 必须是 object")
-    result: dict[str, dict[str, Any]] = {}
-    for name, raw in value.items():
-        if not PLACEHOLDER.fullmatch(f"${{{name}}}"):
-            raise VerifierError("invalid_parameter_schema", f"参数名无效：{name}")
-        if not isinstance(raw, dict):
-            raise VerifierError("invalid_parameter_schema", f"参数 {name} schema 必须是 object")
-        parameter_type = str(raw.get("type") or "string")
-        if parameter_type not in {"string", "number", "integer", "boolean"}:
-            raise VerifierError("invalid_parameter_schema", f"参数 {name} type 不受支持：{parameter_type}")
-        result[str(name)] = {
-            "type": parameter_type,
-            "required": raw.get("required", True) is not False,
-            "description": str(raw.get("description") or "")[:500],
-        }
-    return result
-
-
-def _validate_binding(name: str, value: Any, schema: dict[str, Any]) -> None:
-    expected = schema.get("type", "string")
-    valid = {
-        "string": isinstance(value, str),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-        "integer": isinstance(value, int) and not isinstance(value, bool),
-        "boolean": isinstance(value, bool),
-    }[expected]
-    if not valid:
-        raise VerifierError("invalid_parameter_binding", f"参数 {name} 必须是 {expected}")
-
-
-def bind_parameters(
-    value: Any,
-    bindings: Any,
-    schema: dict[str, dict[str, Any]],
-) -> tuple[Any, set[str]]:
-    binding_map = bindings if isinstance(bindings, dict) else {}
-    required = placeholders(value)
-    undeclared = required - set(schema)
-    if undeclared:
-        raise VerifierError("undeclared_parameter", f"占位符未在 parameterSchema 声明：{sorted(undeclared)}")
-    missing = {name for name in required if name not in binding_map}
-    if missing:
-        raise VerifierError("parameter_binding_required", f"缺少参数绑定：{sorted(missing)}")
-    for name in required:
-        _validate_binding(name, binding_map[name], schema[name])
-
-    def replace(item: Any) -> Any:
-        if isinstance(item, dict):
-            return {key: replace(child) for key, child in item.items()}
-        if isinstance(item, list):
-            return [replace(child) for child in item]
-        name = placeholder_name(item)
-        return binding_map[name] if name else item
-
-    return replace(value), required
+from .sensitivity import bind_parameters, normalize_parameter_schema, placeholder_name, placeholders
 
 
 @dataclass(frozen=True)

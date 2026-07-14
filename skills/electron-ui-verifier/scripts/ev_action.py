@@ -17,6 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
     action_group.add_argument("--action", help="typed action JSON 文件绝对路径或 JSON 字符串")
     action_group.add_argument("--action-id", help="已批准的 action asset ID")
     parser.add_argument("--bindings", help="参数绑定 JSON 文件绝对路径或 JSON 字符串；值不会写入 journal")
+    parser.add_argument("--risk-receipt", help="ev_risk.py approve 签发的一次性 receiptId")
     return parser
 
 
@@ -36,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
             payload["parameterSchema"] = usage["parameterSchema"]
         if args.bindings:
             payload["bindings"] = read_json_arg(args.bindings, "--bindings")
+        if args.risk_receipt:
+            payload["riskReceipt"] = args.risk_receipt
         result = request_json(
             config,
             "POST",

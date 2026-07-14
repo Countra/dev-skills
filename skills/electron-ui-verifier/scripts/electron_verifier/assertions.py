@@ -25,12 +25,22 @@ async def evaluate_assertion(page: Any, assertion: AssertionSpec) -> dict[str, A
             locator = await resolve_strict(page, assertion.locator)
             actual = await locator.inner_text(timeout=timeout)
             passed = actual == str(assertion.expected)
-            result = {"type": "text", "passed": passed, "actual": actual[:1000], "expected": assertion.expected}
+            result = {
+                "type": "text",
+                "passed": passed,
+                "actualCharacters": len(actual),
+                "expectedCharacters": len(str(assertion.expected)),
+            }
         elif assertion.kind == "value":
             locator = await resolve_strict(page, assertion.locator)
             actual = await locator.input_value(timeout=timeout)
             passed = actual == str(assertion.expected)
-            result = {"type": "value", "passed": passed, "actual": actual[:1000], "expected": assertion.expected}
+            result = {
+                "type": "value",
+                "passed": passed,
+                "actualCharacters": len(actual),
+                "expectedCharacters": len(str(assertion.expected)),
+            }
         elif assertion.kind == "count":
             locator = raw_locator(page, assertion.locator)
             actual = await locator.count()
@@ -39,11 +49,16 @@ async def evaluate_assertion(page: Any, assertion: AssertionSpec) -> dict[str, A
         elif assertion.kind == "urlContains":
             actual = page.url
             passed = str(assertion.expected) in actual
-            result = {"type": "urlContains", "passed": passed, "expected": assertion.expected}
+            result = {"type": "urlContains", "passed": passed, "expectedCharacters": len(str(assertion.expected))}
         elif assertion.kind == "titleContains":
             actual = await page.title()
             passed = str(assertion.expected) in actual
-            result = {"type": "titleContains", "passed": passed, "actual": actual[:500], "expected": assertion.expected}
+            result = {
+                "type": "titleContains",
+                "passed": passed,
+                "actualCharacters": len(actual),
+                "expectedCharacters": len(str(assertion.expected)),
+            }
         elif assertion.kind == "screenshotQuality":
             metrics = validate_png(await page.screenshot(timeout=timeout))
             passed = True
@@ -55,7 +70,7 @@ async def evaluate_assertion(page: Any, assertion: AssertionSpec) -> dict[str, A
     except Exception as exc:
         raise VerifierError(
             "postcondition_error",
-            f"postcondition {assertion.kind} 执行失败：{exc}",
+            f"postcondition {assertion.kind} 执行失败：{type(exc).__name__}",
             details={"type": assertion.kind},
         ) from exc
     if not passed:

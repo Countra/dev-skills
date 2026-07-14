@@ -18,7 +18,7 @@ PUBLIC_SCRIPTS = (
     "ev_init.py", "ev_probe.py", "ev_prepare.py", "ev_action.py", "ev_workflow.py",
     "ev_finalize.py", "ev_pending.py", "ev_persist.py", "ev_knowledge.py",
     "ev_suggest.py", "ev_assets.py", "ev_asset_extract.py", "ev_asset_runner.py",
-    "ev_export_workflow.py", "ev_server.py",
+    "ev_export_workflow.py", "ev_risk.py", "ev_server.py",
 )
 
 
@@ -115,8 +115,18 @@ def main() -> int:
         if not identifier or identifier in schema_ids:
             failures.append(f"Schema $id 缺失或重复：{path}")
         schema_ids.add(str(identifier))
-    if len(schema_ids) < 6:
+    if len(schema_ids) < 7 or not (SCHEMAS / "risk-receipt.schema.json").exists():
         failures.append("当前契约 schema 数量不足")
+    required_security_modules = (PACKAGE / "sensitivity.py", PACKAGE / "risk_authorization.py")
+    missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
+    if missing_security_modules:
+        failures.append(f"敏感数据或风险授权模块缺失：{missing_security_modules}")
+    forbidden_bypasses = ("allowWithoutPostcondition", "confirmRisk", "allowCoordinate", "riskConfirmed")
+    bypass_hits = [marker for marker in forbidden_bypasses if marker in package_text]
+    action_schema_text = (SCHEMAS / "action.schema.json").read_text(encoding="utf-8")
+    bypass_hits.extend(f"action.schema.json:{marker}" for marker in forbidden_bypasses if marker in action_schema_text)
+    if bypass_hits:
+        failures.append(f"旧 mutation 自签旁路仍存在：{bypass_hits}")
     public_legacy_hits = []
     public_parse_failures = []
     for name in PUBLIC_SCRIPTS:
@@ -192,6 +202,8 @@ def main() -> int:
     metrics["linkedReferences"] = sorted(linked_references)
     metrics["removedLegacyPaths"] = stale_paths
     metrics["platformMatrixDefined"] = bool(matrix_text)
+    metrics["securityBoundaryModules"] = [path.name for path in required_security_modules if path.exists()]
+    metrics["mutationBypassHits"] = bypass_hits
     result = {"ok": not failures, "failures": failures, "metrics": metrics}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

@@ -82,7 +82,7 @@ def build_pending(journal: dict[str, Any], report: dict[str, Any], report_path: 
                 {
                     **risk,
                     "stepId": step.get("stepId"),
-                    "confirmed": step.get("result", {}).get("riskConfirmed") is True,
+                    "confirmed": step.get("riskAuthorization", {}).get("consumed") is True,
                 }
             )
     payload: dict[str, Any] = {

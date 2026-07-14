@@ -18,6 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--workflow-id", help="已批准的 workflow asset ID")
     parser.add_argument("--no-finalize", action="store_true", help="执行后保持 run open")
     parser.add_argument("--bindings", help="参数绑定 JSON 文件绝对路径或 JSON 字符串；值不会写入 journal")
+    parser.add_argument("--risk-receipts", help="按 step id 或索引映射 receiptId 的 JSON 文件或字符串")
     return parser
 
 
@@ -38,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         if args.bindings:
             payload["bindings"] = read_json_arg(args.bindings, "--bindings")
+        if args.risk_receipts:
+            payload["riskReceipts"] = read_json_arg(args.risk_receipts, "--risk-receipts")
         result = request_json(
             config,
             "POST",

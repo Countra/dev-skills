@@ -108,6 +108,7 @@ class AutomationRuntime:
                 payload.get("action"),
                 payload.get("bindings"),
                 payload.get("parameterSchema"),
+                str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
             )
         if operation == "run_workflow":
             return await self.runs.execute_workflow(
@@ -115,6 +116,18 @@ class AutomationRuntime:
                 payload.get("workflow"),
                 auto_finalize=payload.get("autoFinalize", True) is not False,
                 bindings=payload.get("bindings"),
+                risk_receipts=payload.get("riskReceipts"),
+            )
+        if operation == "risk_preview":
+            return self.runs.preview_risk(
+                str(payload.get("runId") or ""),
+                payload.get("action"),
+            )
+        if operation == "risk_approve":
+            return self.runs.approve_risk(
+                str(payload.get("previewId") or ""),
+                str(payload.get("fingerprint") or ""),
+                str(payload.get("note") or ""),
             )
         if operation == "run_finalize":
             return await self.runs.finalize(str(payload.get("runId") or ""))

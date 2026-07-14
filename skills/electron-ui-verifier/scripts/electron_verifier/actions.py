@@ -3,18 +3,17 @@
 from __future__ import annotations
 
 import json
-import urllib.parse
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from .assertions import evaluate_all
 from .evidence import PendingArtifact
 from .errors import VerifierError
-from .locators import locator_risks, resolve_strict
+from .locators import locator_risks, raw_locator, resolve_strict
 from .limits import DEFAULT_LIMITS
 from .models import ActionSpec, MUTATING_ACTIONS
 from .security import redact
+from .sensitivity import sanitize_url
 
 
 DIAGNOSTIC_ACTIONS = {"collectConsole", "collectExceptions", "collectNetwork"}
@@ -33,14 +32,7 @@ class ActionExecution:
 
 
 def _safe_page_url(value: str) -> str:
-    parsed = urllib.parse.urlsplit(value)
-    if parsed.scheme == "file":
-        return f"file:///[LOCAL]/{Path(parsed.path).name}"
-    if parsed.scheme in {"http", "https", "app"}:
-        host = parsed.hostname or ""
-        port = f":{parsed.port}" if parsed.port else ""
-        return urllib.parse.urlunsplit((parsed.scheme, f"{host}{port}", parsed.path[:2000], "", ""))
-    return f"{parsed.scheme}:"
+    return sanitize_url(value)
 
 
 async def page_state(page: Any) -> dict[str, Any]:
@@ -86,7 +78,11 @@ async def execute_mutation(page: Any, action: ActionSpec) -> dict[str, Any]:
                     click_count=2 if action_type == "doubleClick" else 1,
                 )
             except Exception as exc:
-                raise VerifierError("action_outcome_unknown", f"坐标动作结果未知：{exc}", details={"outcome": "unknown"}) from exc
+                raise VerifierError(
+                    "action_outcome_unknown",
+                    f"坐标动作结果未知：{type(exc).__name__}",
+                    details={"outcome": "unknown"},
+                ) from exc
             return {"action": action_type, "coordinate": True}
         try:
             if action_type == "click":
@@ -94,14 +90,18 @@ async def execute_mutation(page: Any, action: ActionSpec) -> dict[str, Any]:
             else:
                 await locator.dblclick(trial=True, timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_not_actionable", f"目标未通过 Playwright actionability：{exc}") from exc
+            raise VerifierError("action_not_actionable", f"目标未通过 Playwright actionability：{type(exc).__name__}") from exc
         try:
             if action_type == "click":
                 await locator.click(timeout=timeout)
             else:
                 await locator.dblclick(timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_outcome_unknown", f"{action_type} 结果未知：{exc}", details={"outcome": "unknown"}) from exc
+            raise VerifierError(
+                "action_outcome_unknown",
+                f"{action_type} 结果未知：{type(exc).__name__}",
+                details={"outcome": "unknown"},
+            ) from exc
         return {"action": action_type}
     if action_type == "fill":
         await _ensure_editable(locator, timeout)
@@ -110,25 +110,40 @@ async def execute_mutation(page: Any, action: ActionSpec) -> dict[str, Any]:
         try:
             await locator.fill(action.value, timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_outcome_unknown", f"fill 结果未知：{exc}", details={"outcome": "unknown"}) from exc
+            raise VerifierError(
+                "action_outcome_unknown",
+                f"fill 结果未知：{type(exc).__name__}",
+                details={"outcome": "unknown"},
+            ) from exc
         return {"action": "fill", "characters": len(action.value)}
     if action_type == "select":
         await _ensure_enabled(locator, timeout)
         try:
             selected = await locator.select_option(action.value, timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_outcome_unknown", f"select 结果未知：{exc}", details={"outcome": "unknown"}) from exc
+            raise VerifierError(
+                "action_outcome_unknown",
+                f"select 结果未知：{type(exc).__name__}",
+                details={"outcome": "unknown"},
+            ) from exc
         return {"action": "select", "selectedCount": len(selected)}
     if action_type in {"check", "uncheck"}:
         try:
             method = locator.check if action_type == "check" else locator.uncheck
             await method(trial=True, timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_not_actionable", f"{action_type} 未通过 actionability：{exc}") from exc
+            raise VerifierError(
+                "action_not_actionable",
+                f"{action_type} 未通过 actionability：{type(exc).__name__}",
+            ) from exc
         try:
             await method(timeout=timeout)
         except Exception as exc:
-            raise VerifierError("action_outcome_unknown", f"{action_type} 结果未知：{exc}", details={"outcome": "unknown"}) from exc
+            raise VerifierError(
+                "action_outcome_unknown",
+                f"{action_type} 结果未知：{type(exc).__name__}",
+                details={"outcome": "unknown"},
+            ) from exc
         return {"action": action_type}
     if action_type in {"press", "keyChord"}:
         key = action.value
@@ -141,7 +156,11 @@ async def execute_mutation(page: Any, action: ActionSpec) -> dict[str, Any]:
             else:
                 await page.keyboard.press(key)
         except Exception as exc:
-            raise VerifierError("action_outcome_unknown", f"{action_type} 结果未知：{exc}", details={"outcome": "unknown"}) from exc
+            raise VerifierError(
+                "action_outcome_unknown",
+                f"{action_type} 结果未知：{type(exc).__name__}",
+                details={"outcome": "unknown"},
+            ) from exc
         return {"action": action_type, "key": key}
     raise VerifierError("unsupported_action", f"不支持的 mutation：{action_type}")
 
@@ -151,7 +170,12 @@ def _json_artifact(value: Any, label: str) -> PendingArtifact:
     return PendingArtifact("application/json", data, label, "json")
 
 
-async def execute_read(page: Any, live: Any, action: ActionSpec) -> ActionExecution:
+async def execute_read(
+    page: Any,
+    live: Any,
+    action: ActionSpec,
+    sensitive_masks: tuple[Any, ...] = (),
+) -> ActionExecution:
     action_type = action.action_type
     timeout = _timeout(action.options)
     artifacts: list[PendingArtifact] = []
@@ -174,10 +198,25 @@ async def execute_read(page: Any, live: Any, action: ActionSpec) -> ActionExecut
             artifacts.append(PendingArtifact("text/plain", snapshot.encode("utf-8"), "observation", "txt"))
             result.update({"backend": backend, "characters": len(snapshot), "preview": snapshot[:2000]})
         elif action_type == "screenshot":
-            data = await page.screenshot(timeout=timeout)
+            mask_locators = [raw_locator(page, spec) for spec in sensitive_masks]
+            for locator in mask_locators:
+                if await locator.count() == 0:
+                    raise VerifierError(
+                        "sensitive_evidence_blocked",
+                        "敏感输入对应 locator 已失效，拒绝生成 screenshot",
+                    )
+            try:
+                data = await page.screenshot(timeout=timeout, mask=mask_locators)
+            except Exception as exc:
+                if mask_locators:
+                    raise VerifierError(
+                        "sensitive_evidence_blocked",
+                        f"无法稳定 mask 敏感输入区域：{type(exc).__name__}",
+                    ) from exc
+                raise
             label = str(action.options.get("label") or "screenshot")[:200]
             artifacts.append(PendingArtifact("image/png", data, label, "png"))
-            result["bytes"] = len(data)
+            result.update({"bytes": len(data), "maskedLocatorCount": len(mask_locators)})
         elif action_type == "waitText":
             if not isinstance(action.value, str):
                 raise VerifierError("invalid_action_value", "waitText.value 必须是字符串")
@@ -226,11 +265,16 @@ async def execute_read(page: Any, live: Any, action: ActionSpec) -> ActionExecut
     except VerifierError:
         raise
     except Exception as exc:
-        raise VerifierError("action_failed", f"{action_type} 执行失败：{exc}") from exc
+        raise VerifierError("action_failed", f"{action_type} 执行失败：{type(exc).__name__}") from exc
     return ActionExecution(result=result, artifacts=artifacts, risks=locator_risks(action.locator))
 
 
-async def execute_action(live: Any, action: ActionSpec) -> ActionExecution:
+async def execute_action(
+    live: Any,
+    action: ActionSpec,
+    *,
+    sensitive_masks: tuple[Any, ...] = (),
+) -> ActionExecution:
     page = live.page
     before = await page_state(page)
     if action.action_type in MUTATING_ACTIONS:
@@ -239,7 +283,7 @@ async def execute_action(live: Any, action: ActionSpec) -> ActionExecution:
         if action.action_type in {"click", "doubleClick"} and action.locator is None:
             execution.risks.append({"code": "coordinate_action", "learnable": False})
     else:
-        execution = await execute_read(page, live, action)
+        execution = await execute_read(page, live, action, sensitive_masks)
     assertions = await evaluate_all(page, action.postconditions)
     execution.result.update(
         {
@@ -248,6 +292,4 @@ async def execute_action(live: Any, action: ActionSpec) -> ActionExecution:
             "postconditions": assertions,
         }
     )
-    if action.options.get("confirmRisk") is True:
-        execution.result["riskConfirmed"] = True
     return execution

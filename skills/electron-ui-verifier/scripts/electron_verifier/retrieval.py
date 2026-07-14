@@ -335,10 +335,14 @@ class HybridRetriever:
                 if name in merged_schema and merged_schema[name] != definition:
                     raise VerifierError("parameter_schema_conflict", f"组合参数 schema 冲突：{name}", status=409)
                 merged_schema[name] = definition
-            bind_parameters(action, bindings, schema)
+            local_bindings = {name: bindings[name] for name in schema if name in bindings}
+            bind_parameters(action, local_bindings, schema)
             steps.append(action)
             selected.append(candidate["assetId"])
             previous_state = str(candidate["postState"])
+        undeclared = sorted(set(bindings) - set(merged_schema))
+        if undeclared:
+            raise VerifierError("undeclared_parameter", f"bindings 包含未声明参数：{undeclared}")
         return {
             "ok": True,
             "decision": "compose",

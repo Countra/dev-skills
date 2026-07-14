@@ -196,6 +196,159 @@ class RunTests(unittest.TestCase):
             self.assertIn("name", journal["parameterSchema"])
             self.assertNotIn("private-value", json.dumps(journal, ensure_ascii=False))
 
+    def test_sensitive_value_is_removed_from_results_errors_and_text_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(
+                service.prepare(
+                    {
+                        "session": "demo",
+                        "appId": "demo",
+                        "parameterSchema": {"secret": {"type": "string"}},
+                    }
+                )
+            )
+            sentinel = "SENTINEL-run-secret-551"
+            action = {
+                "type": "fill",
+                "locator": {"label": "密码"},
+                "value": "${secret}",
+                "postconditions": [
+                    {"type": "value", "locator": {"label": "密码"}, "expected": "${secret}"}
+                ],
+            }
+
+            async def successful_execute(live, decoded):
+                self.assertEqual(sentinel, decoded.value)
+                return ActionExecution(
+                    result={"action": "fill", "echo": sentinel, "postconditions": [{"passed": True}]},
+                    artifacts=[
+                        PendingArtifact(
+                            "application/json",
+                            json.dumps({"echo": sentinel}).encode(),
+                            f"event-{sentinel}",
+                            "json",
+                        )
+                    ],
+                )
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=successful_execute):
+                response = asyncio.run(
+                    service.append_action(prepared["runId"], action, bindings={"secret": sentinel})
+                )
+            self.assertNotIn(sentinel, json.dumps(response, ensure_ascii=False))
+
+            async def failing_execute(live, decoded):
+                raise VerifierError("action_failed", f"输入失败：{sentinel}", details={"echo": sentinel})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=failing_execute):
+                failed = asyncio.run(
+                    service.append_action(prepared["runId"], action, bindings={"secret": sentinel})
+                )
+            self.assertNotIn(sentinel, json.dumps(failed, ensure_ascii=False))
+
+            direct_action = {
+                "type": "waitUrlContains",
+                "value": sentinel,
+                "postconditions": [{"type": "titleContains", "expected": sentinel}],
+            }
+
+            async def direct_execute(live, decoded):
+                return ActionExecution(result={"action": "waitUrlContains", "echo": sentinel})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=direct_execute):
+                direct = asyncio.run(service.append_action(prepared["runId"], direct_action))
+            self.assertNotIn(sentinel, json.dumps(direct, ensure_ascii=False))
+            for path in root.rglob("*"):
+                if path.is_file():
+                    self.assertNotIn(sentinel.encode(), path.read_bytes(), msg=str(path))
+
+    def test_risky_mutation_requires_and_consumes_one_receipt(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
+            action = {
+                "type": "click",
+                "locator": {"role": "button", "accessibleName": "删除", "nth": 0},
+                "postconditions": [{"type": "hidden", "locator": {"text": "待删除"}}],
+            }
+            mutation_count = 0
+
+            async def fake_execute(live, decoded):
+                nonlocal mutation_count
+                mutation_count += 1
+                return ActionExecution(result={"action": "click", "postconditions": [{"passed": True}]})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
+                with self.assertRaises(VerifierError) as missing:
+                    asyncio.run(service.append_action(prepared["runId"], action))
+                self.assertEqual("risk_authorization_required", missing.exception.code)
+                self.assertEqual(0, mutation_count)
+
+                preview = service.preview_risk(prepared["runId"], action)
+                receipt = service.approve_risk(preview["previewId"], preview["fingerprint"], "确认测试删除动作")
+                passed = asyncio.run(
+                    service.append_action(prepared["runId"], action, risk_receipt=receipt["receiptId"])
+                )
+                self.assertTrue(passed["ok"])
+                self.assertEqual(1, mutation_count)
+
+                with self.assertRaises(VerifierError) as replayed:
+                    asyncio.run(
+                        service.append_action(prepared["runId"], action, risk_receipt=receipt["receiptId"])
+                    )
+                self.assertEqual("risk_authorization_consumed", replayed.exception.code)
+                self.assertEqual(1, mutation_count)
+
+    def test_restart_rebuilds_sensitive_mask_from_stable_locator(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder)
+            first_service = RunService(service_config(root), FakeSessions())
+            prepared = asyncio.run(
+                first_service.prepare(
+                    {
+                        "session": "demo",
+                        "appId": "demo",
+                        "parameterSchema": {"secret": {"type": "string"}},
+                    }
+                )
+            )
+            fill = {
+                "type": "fill",
+                "locator": {"label": "密码"},
+                "value": "${secret}",
+                "postconditions": [
+                    {"type": "value", "locator": {"label": "密码"}, "expected": "${secret}"}
+                ],
+            }
+
+            async def fill_execute(live, decoded):
+                return ActionExecution(result={"action": "fill", "postconditions": [{"passed": True}]})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=fill_execute):
+                asyncio.run(
+                    first_service.append_action(
+                        prepared["runId"],
+                        fill,
+                        bindings={"secret": "restart-secret"},
+                    )
+                )
+
+            restarted_service = RunService(service_config(root), FakeSessions())
+
+            async def screenshot_execute(live, decoded, *, sensitive_masks):
+                self.assertEqual(1, len(sensitive_masks))
+                self.assertEqual("label", sensitive_masks[0].strategy)
+                return ActionExecution(result={"action": "screenshot", "maskedLocatorCount": 1})
+
+            with mock.patch("electron_verifier.runs.execute_action", side_effect=screenshot_execute):
+                result = asyncio.run(
+                    restarted_service.append_action(prepared["runId"], {"type": "screenshot"})
+                )
+            self.assertTrue(result["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

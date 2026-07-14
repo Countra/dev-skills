@@ -86,6 +86,10 @@ class VerifierApplication:
         if method == "POST" and path == "/workflows/run":
             result = self.worker.submit("run_workflow", body, timeout=300)
             return (200 if result.get("ok") else 409), result
+        if method == "POST" and path == "/risks/preview":
+            return 200, self.worker.submit("risk_preview", body, timeout=30)
+        if method == "POST" and path == "/risks/approve":
+            return 200, self.worker.submit("risk_approve", body, timeout=30)
         if method == "POST" and path == "/runs/finalize":
             result = self.worker.submit("run_finalize", body, timeout=60)
             return (200 if result.get("ok") else 409), result
@@ -188,7 +192,7 @@ class VerifierHandler(http.server.BaseHTTPRequestHandler):
         except VerifierError as exc:
             self._send(exc.status, exc.envelope())
         except Exception as exc:
-            print(f"electron-ui-verifier internal error: {type(exc).__name__}: {redact(str(exc))}", file=sys.stderr, flush=True)
+            print(f"electron-ui-verifier internal error: {type(exc).__name__}", file=sys.stderr, flush=True)
             self._send(500, VerifierError("internal_error", "verifier service 内部错误", status=500).envelope())
 
     def do_GET(self) -> None:

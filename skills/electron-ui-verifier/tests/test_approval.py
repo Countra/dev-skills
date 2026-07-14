@@ -138,7 +138,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertFalse(preview["approvable"])
             self.assertIn("path_not_found", {item["code"] for item in preview["issues"]})
 
-    def test_unconfirmed_high_risk_action_is_not_approvable(self) -> None:
+    def test_consumed_high_risk_receipt_is_approvable(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
@@ -153,14 +153,18 @@ class ApprovalTests(unittest.TestCase):
 
             action = {
                 "type": "click",
-                "options": {"allowCoordinate": True, "coordinates": {"x": 10, "y": 10}},
+                "options": {"coordinates": {"x": 10, "y": 10}},
                 "postconditions": [{"type": "visible", "locator": {"text": "完成"}}],
             }
+            preview = runs.preview_risk(prepared["runId"], action)
+            receipt = runs.approve_risk(preview["previewId"], preview["fingerprint"], "确认坐标点击测试")
             with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
-                asyncio.run(runs.append_action(prepared["runId"], action))
+                asyncio.run(
+                    runs.append_action(prepared["runId"], action, risk_receipt=receipt["receiptId"])
+                )
             asyncio.run(runs.finalize(prepared["runId"]))
             preview = ApprovalService(CanonicalStore(root), runs).validate(prepared["runId"])
-            self.assertIn("risk_confirmation_required", {item["code"] for item in preview["issues"]})
+            self.assertNotIn("risk_confirmation_required", {item["code"] for item in preview["issues"]})
 
     def test_reject_is_idempotent_and_seals_against_approval(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:

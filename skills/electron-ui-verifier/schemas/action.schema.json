@@ -16,7 +16,30 @@
     },
     "locator": {"$ref": "locator.schema.json"},
     "value": {},
-    "options": {"type": "object"},
+    "options": {
+      "type": "object",
+      "properties": {
+        "timeoutMs": {"type": "integer", "minimum": 1, "maximum": 120000},
+        "coordinates": {
+          "type": "object",
+          "required": ["x", "y"],
+          "properties": {
+            "x": {"type": "number", "minimum": 0},
+            "y": {"type": "number", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "label": {"type": "string", "maxLength": 200},
+        "allowEvaluate": {"type": "boolean"},
+        "maxEvents": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "failOnException": {"type": "boolean"},
+        "levels": {"type": "array", "items": {"type": "string"}, "maxItems": 20},
+        "urlContains": {"type": "string", "maxLength": 2000},
+        "includeFailedOnly": {"type": "boolean"},
+        "exploratoryOnly": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
     "postconditions": {
       "type": "array",
       "items": {"$ref": "#/$defs/assertion"},
@@ -40,5 +63,23 @@
       "additionalProperties": false
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "enum": ["click", "doubleClick", "fill", "select", "check", "uncheck", "press", "keyChord"]
+          }
+        },
+        "required": ["type"]
+      },
+      "then": {
+        "required": ["postconditions"],
+        "properties": {
+          "postconditions": {"minItems": 1}
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

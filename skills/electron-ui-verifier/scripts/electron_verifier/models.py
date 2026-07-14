@@ -40,6 +40,30 @@ MUTATING_ACTIONS = {
 }
 
 LOCATOR_KEYS = ("role", "label", "placeholder", "text", "testId", "title", "css")
+LOCATOR_FIELDS = set(LOCATOR_KEYS) | {"accessibleName", "exact", "nth"}
+ASSERTION_FIELDS = {"type", "locator", "expected", "timeoutMs"}
+ACTION_FIELDS = {
+    "id",
+    "type",
+    "locator",
+    "value",
+    "options",
+    "postconditions",
+    "continueOnFailure",
+    "detour",
+}
+ACTION_OPTION_FIELDS = {
+    "timeoutMs",
+    "coordinates",
+    "label",
+    "allowEvaluate",
+    "maxEvents",
+    "failOnException",
+    "levels",
+    "urlContains",
+    "includeFailedOnly",
+    "exploratoryOnly",
+}
 
 
 @dataclass(frozen=True)
@@ -54,6 +78,9 @@ class LocatorSpec:
     def decode(cls, value: Any) -> "LocatorSpec":
         if not isinstance(value, dict):
             raise VerifierError("invalid_locator", "locator 必须是 JSON object")
+        unknown = sorted(set(value) - LOCATOR_FIELDS)
+        if unknown:
+            raise VerifierError("invalid_locator", f"locator 包含未知字段：{unknown}")
         present = [key for key in LOCATOR_KEYS if value.get(key) not in (None, "")]
         if len(present) != 1:
             raise VerifierError(
@@ -72,6 +99,8 @@ class LocatorSpec:
                 raise VerifierError("invalid_locator", "accessibleName 必须是字符串")
         elif not isinstance(raw, str) or not raw.strip():
             raise VerifierError("invalid_locator", f"locator.{strategy} 必须是非空字符串")
+        if strategy != "role" and "accessibleName" in value:
+            raise VerifierError("invalid_locator", "accessibleName 只能与 role locator 一起使用")
         nth = value.get("nth")
         if nth is not None and (not isinstance(nth, int) or isinstance(nth, bool) or nth < 0):
             raise VerifierError("invalid_locator", "locator.nth 必须是非负整数")
@@ -103,6 +132,9 @@ class AssertionSpec:
     def decode(cls, value: Any) -> "AssertionSpec":
         if not isinstance(value, dict):
             raise VerifierError("invalid_assertion", "postcondition 必须是 JSON object")
+        unknown = sorted(set(value) - ASSERTION_FIELDS)
+        if unknown:
+            raise VerifierError("invalid_assertion", f"postcondition 包含未知字段：{unknown}")
         kind = str(value.get("type") or "").strip()
         if kind not in {"visible", "hidden", "text", "value", "count", "urlContains", "titleContains", "screenshotQuality"}:
             raise VerifierError("unsupported_assertion", f"不支持的 postcondition：{kind}")
@@ -127,6 +159,9 @@ class ActionSpec:
     def decode(cls, value: Any) -> "ActionSpec":
         if not isinstance(value, dict):
             raise VerifierError("invalid_action", "action 必须是 JSON object")
+        unknown = sorted(set(value) - ACTION_FIELDS)
+        if unknown:
+            raise VerifierError("invalid_action", f"action 包含未知字段：{unknown}")
         action_type = str(value.get("type") or "").strip()
         supported = MUTATING_ACTIONS | {
             "hover",
@@ -147,6 +182,9 @@ class ActionSpec:
         options = value.get("options") or {}
         if not isinstance(options, dict):
             raise VerifierError("invalid_action", "action.options 必须是 JSON object")
+        unknown_options = sorted(set(options) - ACTION_OPTION_FIELDS)
+        if unknown_options:
+            raise VerifierError("invalid_action", f"action.options 包含未知字段：{unknown_options}")
         locator = LocatorSpec.decode(value["locator"]) if "locator" in value else None
         locator_required = {"fill", "select", "check", "uncheck", "hover", "extractText"}
         if action_type in locator_required and locator is None:
@@ -164,16 +202,16 @@ class ActionSpec:
                 and float(coordinates.get("x")) >= 0
                 and float(coordinates.get("y")) >= 0
             )
-            if options.get("allowCoordinate") is not True or not valid_coordinates:
+            if not valid_coordinates:
                 raise VerifierError(
-                    "coordinate_action_not_allowed",
-                    f"{action_type} 无 locator 时必须显式提供 allowCoordinate 和 coordinates",
+                    "coordinate_action_invalid",
+                    f"{action_type} 无 locator 时必须提供有效 coordinates；执行仍需要独立 risk receipt",
                 )
         post_raw = value.get("postconditions") or []
         if not isinstance(post_raw, list):
             raise VerifierError("invalid_action", "action.postconditions 必须是数组")
         postconditions = tuple(AssertionSpec.decode(item) for item in post_raw)
-        if action_type in MUTATING_ACTIONS and not postconditions and options.get("allowWithoutPostcondition") is not True:
+        if action_type in MUTATING_ACTIONS and not postconditions:
             raise VerifierError(
                 "postcondition_required",
                 f"有副作用的 {action_type} action 必须提供 required postcondition",

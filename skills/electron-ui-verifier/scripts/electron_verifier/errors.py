@@ -2,8 +2,39 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+
+SENSITIVE_KEY = re.compile(
+    r"(?:authorization|cookie|password|passwd|secret|token|credential|private[_-]?key)",
+    re.IGNORECASE,
+)
+URL_TEXT = re.compile(r"(?:https?|file|app)://[^\s'\"<>]+", re.IGNORECASE)
+WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/][^\r\n'\"]+")
+POSIX_PATH = re.compile(r"(?<![A-Za-z0-9_:])/(?:[^/\s'\":]+/)+[^\s'\":]*")
+
+
+def _public_text(value: str) -> str:
+    value = URL_TEXT.sub("[URL]", value)
+    value = WINDOWS_PATH.sub("[LOCAL_PATH]", value)
+    return POSIX_PATH.sub("[LOCAL_PATH]", value)
+
+
+def _public_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): "[REDACTED]" if SENSITIVE_KEY.search(str(key)) else _public_value(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_public_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_public_value(item) for item in value]
+    if isinstance(value, str):
+        return _public_text(value)
+    return value
 
 
 @dataclass(eq=False)
@@ -22,10 +53,10 @@ class VerifierError(RuntimeError):
         result: dict[str, Any] = {
             "ok": False,
             "code": self.code,
-            "error": self.message,
+            "error": _public_text(self.message),
         }
         if self.details:
-            result["details"] = self.details
+            result["details"] = _public_value(self.details)
         return result
 
 

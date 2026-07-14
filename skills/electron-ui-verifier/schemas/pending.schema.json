@@ -9,13 +9,28 @@
     "pendingId": {"type": "string", "format": "uuid"},
     "runId": {"type": "string", "format": "uuid"},
     "status": {"enum": ["pending", "approved", "rejected"]},
+    "appId": {"type": "string", "minLength": 1},
     "workflow": {"$ref": "workflow.schema.json"},
     "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
     "parameterSchema": {"type": "object"},
     "report": {"type": "string", "minLength": 1},
     "reportDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "risks": {"type": "array", "items": {"type": "object"}},
+    "risks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["code", "learnable", "stepId", "confirmed"],
+        "properties": {
+          "code": {"enum": ["coordinate_action", "explicit_nth", "css_fallback"]},
+          "learnable": {"type": "boolean"},
+          "nth": {"type": "integer", "minimum": 0},
+          "stepId": {"type": "string", "format": "uuid"},
+          "confirmed": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
     "bundleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

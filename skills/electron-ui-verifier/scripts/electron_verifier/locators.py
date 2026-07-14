@@ -49,7 +49,7 @@ async def candidate_summaries(locator: Any, count: int, maximum: int = 10) -> li
                     "index": index,
                     "tag": value.get("tag"),
                     "role": value.get("role"),
-                    "name": str(value.get("name") or "")[:200],
+                    "nameCharacters": len(str(value.get("name") or "")),
                     "disabled": value.get("disabled") is True,
                     "visible": visible,
                     "boundingBox": box,
