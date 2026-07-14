@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""运行跨应用、中英文 hybrid retrieval 正负例基准。"""
+"""运行跨应用 hybrid retrieval 的质量、延迟与输出预算基准。"""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+HARNESS_ROOT = (ROOT / ".harness").resolve()
 SCRIPTS = ROOT / "skills" / "electron-ui-verifier" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
@@ -20,6 +21,7 @@ from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
 from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
+from performance_support import knowledge_performance  # noqa: E402
 
 
 TASKS = {
@@ -88,11 +90,11 @@ def main() -> int:
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
     work_dir = Path(args.work_dir).resolve()
-    if ROOT not in work_dir.parents:
-        raise SystemExit("--work-dir 必须位于当前仓库内")
+    if work_dir == HARNESS_ROOT or HARNESS_ROOT not in work_dir.parents:
+        raise SystemExit("--work-dir 必须位于当前仓库 .harness 的隔离子目录")
     output = Path(args.output).resolve()
-    if ROOT not in output.parents:
-        raise SystemExit("--output 必须位于当前仓库内")
+    if output == HARNESS_ROOT or HARNESS_ROOT not in output.parents:
+        raise SystemExit("--output 必须位于当前仓库 .harness 的隔离子目录")
     if work_dir.exists():
         shutil.rmtree(work_dir)
     state = work_dir / "state"
@@ -103,10 +105,17 @@ def main() -> int:
     hits = 0
     reciprocal = 0.0
     false_positives = 0
+    max_candidate_count = 0
+    max_response_bytes = 0
     samples: list[dict[str, Any]] = []
     with HybridRetriever(store) as retriever:
         for case in positives:
             result = retriever.search(case["query"], runtime_context(case["appId"]), limit=5)
+            max_candidate_count = max(max_candidate_count, len(result["candidates"]))
+            max_response_bytes = max(
+                max_response_bytes,
+                len(json.dumps(result, ensure_ascii=False).encode("utf-8")),
+            )
             ids = [item["assetId"] for item in result["candidates"]]
             rank = ids.index(case["assetId"]) + 1 if case["assetId"] in ids and result["decision"] == "reuse" else None
             hits += int(rank is not None)
@@ -118,7 +127,13 @@ def main() -> int:
             for query in queries:
                 negative_count += 1
                 result = retriever.search(query, runtime_context(app_id), limit=5)
+                max_candidate_count = max(max_candidate_count, len(result["candidates"]))
+                max_response_bytes = max(
+                    max_response_bytes,
+                    len(json.dumps(result, ensure_ascii=False).encode("utf-8")),
+                )
                 false_positives += int(result["decision"] == "reuse")
+    performance, performance_failures = knowledge_performance(work_dir / "performance")
     recall = hits / len(positives)
     mrr = reciprocal / len(positives)
     false_positive_rate = false_positives / negative_count
@@ -128,6 +143,9 @@ def main() -> int:
         "recallAt5": round(recall, 6),
         "mrrAt5": round(mrr, 6),
         "negativeFalsePositiveRate": round(false_positive_rate, 6),
+        "maxCandidateCount": max_candidate_count,
+        "maxResponseBytes": max_response_bytes,
+        "performance": performance,
     }
     gates = {
         "positiveCorpus": len(positives) >= 40,
@@ -135,8 +153,22 @@ def main() -> int:
         "recallAt5": recall >= 0.90,
         "mrrAt5": mrr >= 0.80,
         "negativeFalsePositiveRate": false_positive_rate <= 0.05,
+        "candidateBudget": max_candidate_count <= 5,
+        "responseBudget": max_response_bytes <= 32 * 1024,
+        "ingestPerformance": performance["ingestMs"] <= performance["ingestLimitMs"]
+        and performance["speedup"] >= 3.0,
+        "ingestColdBudget": max(performance["ingestSamplesMs"])
+        <= performance["ingestColdLimitMs"],
+        "queryPerformance": performance["queryP95Ms"] <= performance["queryLimitMs"],
+        "queryCorrectness": performance["queryFailures"] == 0,
     }
-    result = {"ok": all(gates.values()), "metrics": metrics, "gates": gates, "samples": samples}
+    result = {
+        "ok": all(gates.values()) and not performance_failures,
+        "metrics": metrics,
+        "gates": gates,
+        "samples": samples,
+        "failures": performance_failures,
+    }
     write_json(output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

@@ -10,7 +10,8 @@
     "display_name": {
       "type": "string",
       "required": true,
-      "description": "本轮使用的显示名称"
+      "description": "本轮使用的显示名称",
+      "sensitive": true
     }
   },
   "steps": [

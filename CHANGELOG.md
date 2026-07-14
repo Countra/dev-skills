@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-14
+
+### Breaking: Electron UI Verifier 安全执行与知识闭环
+
+- mutation 统一切换为 durable operation receipt/poll/cancel，deadline、取消竞态和 owner 重启按持久终态失败关闭，不再把客户端等待等同于执行完成。
+- 敏感 binding 仅在 automation owner 内存存在；高风险动作改用 run/target/action 绑定的一次性 risk receipt，移除 postcondition、坐标和风险自签旁路。
+- knowledge 切换为 immutable objects + sealed decisions 激活模型，workflow 仅引用 action IDs；检索、组合和资产执行均由服务端重验 current compatibility。
+- 安装根与 workspace 解耦，复制安装保持只读；新增引用安全 retention preview/exact-fingerprint apply 和旧知识 direct reset 门禁。
+- 公共 fixture 通过复制安装、process-manager、CLI/HTTP 覆盖 attach、operation、pending、approve、search、compose、asset reuse、cancel、finalize 与 owner-empty cleanup。
+- 三平台 Actions 同步公共契约、CLI/示例和 portability/retention，Ubuntu 额外保留召回质量与性能摘要。
+- Commit: pending
+- Commit message: pending
+
 ## 2026-07-13
 
 ### Feature: Skill Evaluation Lab

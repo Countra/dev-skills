@@ -70,6 +70,9 @@ def prepare_pending(root: Path) -> tuple[RunService, str]:
             {
                 "session": "approval-recovery",
                 "appId": "approval-recovery",
+                "appVersion": "1.0.0",
+                "screenDigest": "approval-recovery-main",
+                "preState": "form-ready",
                 "goal": "填写名称并保存",
                 "parameterSchema": {"name": {"type": "string", "required": True}},
             }
@@ -105,6 +108,7 @@ def run_phase(work_dir: Path, phase: str) -> dict[str, Any]:
     initial_store = CanonicalStore(state_root)
     preview = ApprovalService(initial_store, runs).validate(run_id)
     fingerprint = str(preview["bundleFingerprint"])
+    expected_asset_count = int(preview["proposalCount"])
 
     def interrupt(current: str) -> None:
         if current == phase:
@@ -130,7 +134,7 @@ def run_phase(work_dir: Path, phase: str) -> dict[str, Any]:
     final = CanonicalStore(state_root).verify(repair_index=False)
     decision_after = retry["decision"]
     object_count = len(list(restarted.paths["objects"].glob("*.json")))
-    expected_pre_active = 0 if phase == "after_objects" else 1
+    expected_pre_active = 0 if phase == "after_objects" else expected_asset_count
     expected_pre_error = "knowledge_index_activation_mismatch" if phase == "after_decision" else None
     checks = {
         "interruptionObserved": interrupted,
@@ -154,9 +158,9 @@ def run_phase(work_dir: Path, phase: str) -> dict[str, Any]:
             checks["preActiveCount"] == expected_pre_active,
             checks["preRecoveryError"] == expected_pre_error,
             checks["recoveredActiveCount"] == expected_pre_active,
-            checks["finalActiveCount"] == 1,
+            checks["finalActiveCount"] == expected_asset_count,
             checks["decisionCount"] == 1,
-            checks["objectCount"] == 1,
+            checks["objectCount"] == expected_asset_count,
             checks["retryAlreadyApproved"] is (phase != "after_objects"),
             checks["sameDecision"],
         )
