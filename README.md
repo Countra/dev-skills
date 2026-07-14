@@ -88,6 +88,22 @@
 - knowledge 使用 approved canonical JSON 和可重建 SQLite index；只有 exact fingerprint 批准后才持久化。
 - Electron GUI 不由 process-manager 托管；verifier service 使用统一 manager 生命周期并验证 owner-empty cleanup。
 
+### skill-evaluation-lab
+
+位置：`skills/skill-evaluation-lab/`
+
+用途：对 Agent Skill 进行 source-bound 静态检查和七维设计评审，并按需导入用户在独立会话中完成的观察证据，最终由当前 Agent 给出完整结论与优化建议。
+
+核心约束：
+
+- `se_inventory.py` 按需只读盘点 Skill、测试、eval 与 CI coverage；单 Skill 请求不强制全仓扫描。
+- `se_check.py` 只解析 metadata、引用、语法、资源和静态能力信号，不 import 或执行目标代码。
+- 当前 Agent 按触发边界、工作流、信息架构、工具契约、安全权限、验证交付和可组合性七维完成语义评审。
+- 需要运行时证据时，`se_prepare.py` 只生成不可执行 packet，然后停止并等待用户在独立会话中操作。
+- `se_import.py` 只校验用户声明、source/case/artifact hash 与 provenance；缺失观察保持 partial/inconclusive。
+- `se_report.py` 重新核验当前 candidate/baseline hash，再分开静态事实、审查判断和用户观察；最终结论由当前 Agent 给出。
+- 生产代码与 CI 不启动或探测 Codex、模型 API、子代理或其它 Agent，不读取凭据、不运行网络评测。
+
 ## Repository Layout
 
 ```text
@@ -114,6 +130,14 @@ skills/
 │   ├── tests/
 │   └── references/
 ├── electron-ui-verifier/
+├── skill-evaluation-lab/
+│   ├── SKILL.md
+│   ├── agents/
+│   ├── assets/
+│   ├── references/
+│   ├── schemas/
+│   ├── scripts/
+│   └── tests/
 └── process-manager/
     ├── SKILL.md
     ├── agents/
@@ -133,7 +157,8 @@ evals/
 ├── complex-coding-executor/
 ├── gitlab-pat-ops/
 ├── electron-ui-verifier/
-└── process-manager/
+├── process-manager/
+└── skill-evaluation-lab/
 ```
 
 ## Install

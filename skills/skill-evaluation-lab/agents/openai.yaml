@@ -1,0 +1,4 @@
+interface:
+  display_name: "Skill Evaluation Lab"
+  short_description: "静态检查、七维评审并汇总用户驱动的 Skill 证据"
+  default_prompt: "Use $skill-evaluation-lab to statically check this skill, complete the seven-dimension semantic review, and produce a layered evidence report. Never launch another agent; prepare a manual observation packet only when runtime evidence is necessary."

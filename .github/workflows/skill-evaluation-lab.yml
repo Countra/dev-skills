@@ -1,0 +1,67 @@
+name: Skill Evaluation Lab Static
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skill-evaluation-lab-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  static-evaluation:
+    name: ${{ matrix.os }} static contract and self-eval
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run unit and component tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p "test_*.py" -v
+
+      - name: Run read-only inventory eval
+        run: >-
+          python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
+          --suite inventory
+          --work-dir .ci-artifacts/skill-evaluation-lab/inventory
+
+      - name: Run static workflow self-eval
+        run: >-
+          python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
+          --suite static
+          --work-dir .ci-artifacts/skill-evaluation-lab/static
+
+      - name: Upload static evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-skill-evaluation-lab-evidence
+          path: |
+            .ci-artifacts/skill-evaluation-lab/inventory/inventory-evals.json
+            .ci-artifacts/skill-evaluation-lab/static/static-self-evals.json
+            .ci-artifacts/skill-evaluation-lab/static/static-evidence.json
+            .ci-artifacts/skill-evaluation-lab/static/imported-observation.json
+            .ci-artifacts/skill-evaluation-lab/static/report.json
+            .ci-artifacts/skill-evaluation-lab/static/report.md
+            .ci-artifacts/skill-evaluation-lab/static/packet/packet.json
+          if-no-files-found: error
+          retention-days: 14

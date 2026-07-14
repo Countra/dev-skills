@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "electron-ui-verifier-20260714",
+  "candidate_tree_sha256": "3bd161d2738fbec48f11d7b73c5f25f113def4c96c99113a104255f9bcac5d2b",
+  "dimensions": [
+    {
+      "dimension": "invocation_boundary",
+      "status": "pass",
+      "summary": "Electron UI 验证、诊断、证据采集和知识沉淀的触发范围明确，服务、Electron GUI、CDP target 与最终证据边界也区分清楚。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "frontmatter 覆盖打包应用、开发版、session 复用、诊断、视觉/交互验证和知识资产场景，并明确 Playwright-only、loopback CDP 与不得恢复 raw fallback。"
+        },
+        {
+          "path": "references/server.md",
+          "detail": "Electron GUI、verifier service、process-manager、session intent 和 live Playwright handle 的所有权及生命周期边界清楚。"
+        },
+        {
+          "path": "references/workflow.md",
+          "detail": "当前 run 的现场证据与历史 knowledge candidate 被明确区分，abstain 不会被误判为 UI 失败。"
+        }
+      ]
+    },
+    {
+      "dimension": "workflow_completeness",
+      "status": "warn",
+      "summary": "prepare、action/workflow、finalize、pending、approval 和 recovery 主流程完整，但 HTTP 超时只取消返回 future，不会停止已经开始的自动化，长 workflow 可能在调用方收到 unknown 后继续执行后续 mutation。",
+      "evidence": [
+        {
+          "path": "scripts/electron_verifier/automation.py",
+          "detail": "submit 超时后调用 future.cancel()，而 _consume 中已进入 runtime.dispatch 的 coroutine 不会被取消，完成结果只因 future cancelled 被丢弃。"
+        },
+        {
+          "path": "scripts/electron_verifier/service.py",
+          "detail": "action 与 workflow HTTP route 分别使用 120 秒和 300 秒固定等待窗口；超时后 service 返回 operation_timeout，但 worker 仍串行执行当前 dispatch。"
+        },
+        {
+          "path": "scripts/ev_workflow.py",
+          "detail": "workflow client 等待 600 秒，长于 service 的 300 秒 deadline；最多 200 步的合法 workflow 很容易跨越 service deadline。"
+        },
+        {
+          "path": "scripts/electron_verifier/approval.py",
+          "detail": "approval 先写 canonical/index，再 exclusive-create sealed decision；两步之间崩溃会留下没有 approved decision 的 canonical asset，并在重启 verify 时成为可检索 truth。"
+        }
+      ],
+      "recommendation": "引入 operationId 与持久化 command receipt，把 deadline/cancellation token 传入 workflow，并在每一步前检查；超时后停止后续 mutation、将 inflight step/run 标记 unknown/aborted，并允许查询最终状态。知识批准改为可恢复的 staged transaction：先写 staging，再封存用户 decision，最后原子激活 canonical/index；重启依据 transaction journal 完成或回滚。"
+    },
+    {
+      "dimension": "information_architecture",
+      "status": "pass",
+      "summary": "SKILL 入口精炼，五份按需 reference、领域 package、薄 CLI、schemas、assets 和 tests 分层清楚，服务 adapter 与 automation owner 也保持解耦。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "56 行入口只保留核心流程、硬门禁、最小命令和条件 reference 索引，没有把全部实现细节塞入上下文。"
+        },
+        {
+          "path": "scripts/electron_verifier/service.py",
+          "detail": "HTTP adapter 负责认证、预算和 route submission，Playwright handle 不进入请求线程。"
+        },
+        {
+          "path": "scripts/electron_verifier/automation.py",
+          "detail": "单 owner event loop 集中持有 driver、session、run、knowledge 与 approval service，领域模块职责可辨认。"
+        },
+        {
+          "path": "references/troubleshooting.md",
+          "detail": "故障路径独立按需加载，覆盖 service、attach、stale、unknown outcome、截图、召回和 cleanup。"
+        }
+      ]
+    },
+    {
+      "dimension": "tool_contract",
+      "status": "fail",
+      "summary": "知识检索器具备 action、alias、compatibility、state edge、risk 和 reliability 契约，但正常 pending→approve 写入路径无法生成这些数据，导致文档宣称的硬过滤、action compose 和多通道召回无法端到端成立。",
+      "evidence": [
+        {
+          "path": "scripts/electron_verifier/reports.py",
+          "detail": "build_pending 只生成 workflow、空或 journal aliases、parameterSchema、steps、evidence 与 risks；没有保留 appVersion、screenDigest、preState、postState、compatibility 或 stats。"
+        },
+        {
+          "path": "scripts/electron_verifier/approval.py",
+          "detail": "唯一生产 persist 调用固定创建 kind=workflow，payload 仅包含 workflow、parameterSchema 和 risks，因此没有生产入口创建 action asset。"
+        },
+        {
+          "path": "scripts/electron_verifier/retrieval.py",
+          "detail": "兼容过滤和 compose 依赖 payload.compatibility、stats、pre/post state 以及 kind=action；这些能力在测试构造的 synthetic asset 上有效，但与批准写入契约断开。"
+        },
+        {
+          "path": "scripts/electron_verifier/runs.py",
+          "detail": "prepare 接收的 appVersion、screenDigest、preState 和 maxRisk 只用于当次 retrieval，没有写入 run journal；后续按 assetId 执行也无法重新校验准备时上下文。"
+        },
+        {
+          "path": "scripts/ev_asset_runner.py",
+          "detail": "按 assetId 读取时会返回 compatibility usage，但 action/workflow CLI 不把它作为执行门禁，直接 ID 可以绕开 prepare 的兼容性和 maxRisk 选择。"
+        }
+      ],
+      "recommendation": "定义一个闭合且唯一的 canonical payload contract，并让 prepare→run→pending→approve→retrieve→execute 全链携带 app/version/screen/preState/postState/risk/aliases/stats。批准时按可复用粒度生成 action assets，再生成引用这些 action 的 workflow asset；assetId 执行必须与当前 run context 重新做 compatibility/risk check。新增真实批准资产后搜索、compose、复用的端到端契约测试。"
+    },
+    {
+      "dimension": "safety_and_permissions",
+      "status": "fail",
+      "summary": "loopback、token、路径 containment、driver allowlist 和证据校验较强，但绑定值可能经 postcondition 结果写入 journal/report，且 mutation postcondition 与高风险操作存在调用方可自行设置的旁路。",
+      "evidence": [
+        {
+          "path": "scripts/electron_verifier/knowledge_models.py",
+          "detail": "bind_parameters 会把完整 ${name} 占位符替换为真实 binding value 后再交给 ActionSpec 和 assertion 执行。"
+        },
+        {
+          "path": "scripts/electron_verifier/assertions.py",
+          "detail": "text/value postcondition 把实际值和期望值原样放入 result 或失败 details。"
+        },
+        {
+          "path": "scripts/electron_verifier/runs.py",
+          "detail": "append_action 将 execution.result 或 VerifierError envelope 直接写入 step，再把完整 steps 写入 journal 和 final report；_safe_action 只保护 raw action，不能清理已绑定 assertion result。"
+        },
+        {
+          "path": "scripts/electron_verifier/models.py",
+          "detail": "options.allowWithoutPostcondition=true 可以绕过所有 mutating action 必须有 postcondition 的硬门禁，但该旁路未在 SKILL 或 reference 中声明授权条件。"
+        },
+        {
+          "path": "scripts/electron_verifier/actions.py",
+          "detail": "coordinate action 由 action 自带 allowCoordinate 执行，confirmRisk=true 也由同一 action 自行声明；没有独立用户 approval receipt。"
+        },
+        {
+          "path": "scripts/electron_verifier/sessions.py",
+          "detail": "session intent 持久化原始 target URL，而通用 redact 只按敏感 key 脱敏；含 query/fragment secret 的页面 URL 不会像 run page state 那样被安全规范化。"
+        }
+      ],
+      "recommendation": "立即移除 allowWithoutPostcondition 生产旁路；坐标、nth 和其它不可学习风险使用独立、不可由 action 自签的用户 receipt。保留未绑定 action 作为持久化模型，执行时单独维护 ephemeral resolved values；assertion 只持久化 passed、placeholder 名、长度或摘要，不记录 actual/expected 明文，失败 envelope 同样清理。统一对 session URL、console/exception 文本和服务输出做数据最小化，并增加真实 binding value 不得出现在 response、journal、report、pending、canonical 和日志中的回归测试。"
+    },
+    {
+      "dimension": "verification_and_delivery",
+      "status": "warn",
+      "summary": "测试数量、三平台 CI、Playwright fixture、截图质量和恢复测试都较强，但关键测试在模块或 synthetic asset 层完成，尚未覆盖真实 HTTP mutation、超时后的继续执行、批准后检索闭环和真实 binding 泄漏。",
+      "evidence": [
+        {
+          "path": "tests/run_fixture_cdp_smoke.py",
+          "detail": "跨平台 fixture 使用真实 Playwright CDP，但直接调用 driver/session/run 模块，流程是 snapshot+screenshot 的只读路径，没有经过 HTTP service、CLI、mutation 或 approval/reuse。"
+        },
+        {
+          "path": "tests/test_automation_worker.py",
+          "detail": "timeout case 只断言返回 operation_timeout/unknown，没有断言 dispatch 停止、后续 mutation 不执行或 run 被标记 aborted。"
+        },
+        {
+          "path": "tests/test_runs.py",
+          "detail": "binding 不落盘测试 mock 了 execute_action，并返回不含 actual/expected 的简化 postcondition，因此没有覆盖真实 assertion serialization。"
+        },
+        {
+          "path": "tests/test_retrieval.py",
+          "detail": "compatibility、state compose 和 reliability 测试直接创建带完整 payload 的 CanonicalAsset，没有从 pending approval 生成资产。"
+        },
+        {
+          "path": "tests/test_approval.py",
+          "detail": "覆盖 fingerprint、artifact、risk 和 decision 幂等，但没有覆盖 canonical persist 与 sealed decision 之间的崩溃恢复。"
+        }
+      ],
+      "recommendation": "保留三平台 fixture，并新增通过公共 CLI/HTTP 的 disposable Electron E2E：真实 fill binding+value postcondition、long workflow deadline、unknown outcome 停止、pending approve 后 search/compose/reuse、approval 每个事务断点重启。把 retrieval benchmark、知识回归和核心 eval 纳入 CI 的独立 job，并为安全不变量增加负向测试。"
+    },
+    {
+      "dimension": "scope_and_composability",
+      "status": "warn",
+      "summary": "公共 CLI 足够原子且与 process-manager 接口分离，但 init 把 skill 安装位置等同于目标 workspace，影响作为可安装 Skill 在任意项目中的复用；run/artifact 也没有保留策略。",
+      "evidence": [
+        {
+          "path": "scripts/ev_init.py",
+          "detail": "service_config 和 dependency check 从 workspaceRoot/skills/electron-ui-verifier 解析 ev_server.py、ev_check_env.py 与 requirements.txt，而不是从当前脚本的真实 skill root 解析。"
+        },
+        {
+          "path": "scripts/ev_common.py",
+          "detail": "workspace 被定义为状态与 process-manager 配置根目录，理论上应与 skill 安装目录独立；其余 CLI 也允许通过绝对 config 在任意 workspace 调用。"
+        },
+        {
+          "path": "scripts/electron_verifier/runs.py",
+          "detail": "run、report 和 artifact 持续按 UUID 累积，没有 quota、retention、prune 或用户确认的清理入口，长期使用会扩大扫描和磁盘成本。"
+        }
+      ],
+      "recommendation": "把 skill_root 从 __file__ 派生并写入 service launcher，workspace 只承载 .harness 状态和 process-manager 配置；新增外部临时 workspace 初始化测试。再提供统一、默认 dry-run、按 run terminal/age/size 筛选且保护 pending/canonical evidence 的 retention/prune 原子入口。"
+    }
+  ],
+  "assumptions": [
+    "本次目标是评估 electron-ui-verifier 当前源码设计、公开工作流和验证资产，不评估某一次 Termous 操作结果。",
+    "process-manager 的统一跨平台 service contract 按当前仓库版本成立，electron-ui-verifier 不需要自行暴露平台 backend。",
+    "知识资产的 app/version/screen/state/risk 硬过滤和 action compose 是当前 SKILL 声明的生产能力，而不是仅供未来使用的实验接口。",
+    "workspace 应可以与 skill 安装目录分离；否则需要在 SKILL 中明确仓库内运行这一限制。"
+  ],
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本间提升或退化结论。",
+    "按 skill-evaluation-lab 契约未启动 Termous、Electron、verifier service、process-manager、目标脚本、单元测试或 eval。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、UI 操作成功率、性能或召回指标。",
+    "本次只阅读 GitHub Actions 定义，没有执行或查询远程 CI；静态证据仅证明 CI 文件可发现。",
+    "Playwright connect_over_cdp 和 Electron 版本兼容性未做运行时验证。",
+    "关于 target URL 与 console 文本的敏感性取决于被测应用内容，但当前数据最小化不足是源码可直接确认的风险。"
+  ],
+  "observation_decision": "not_requested"
+}

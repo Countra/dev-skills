@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/imported-observation.schema.json",
+  "title": "Validated User Observation Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "packet_fingerprint",
+    "candidate_tree_sha256",
+    "baseline_tree_sha256",
+    "coverage",
+    "sessions",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "generated_at": {"type": "string"},
+    "packet_fingerprint": {"$ref": "#/$defs/sha256"},
+    "candidate_tree_sha256": {"$ref": "#/$defs/sha256"},
+    "baseline_tree_sha256": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/sha256"}
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected", "observed", "missing", "status"],
+      "properties": {
+        "expected": {"$ref": "#/$defs/stringArray"},
+        "observed": {"$ref": "#/$defs/stringArray"},
+        "missing": {"$ref": "#/$defs/stringArray"},
+        "status": {"enum": ["complete", "partial"]}
+      }
+    },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "variant",
+          "case_fingerprint",
+          "session_ref",
+          "status",
+          "notes",
+          "artifacts"
+        ],
+        "properties": {
+          "case_id": {"type": "string"},
+          "variant": {"enum": ["candidate", "baseline"]},
+          "case_fingerprint": {"$ref": "#/$defs/sha256"},
+          "session_ref": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pass", "fail", "inconclusive"]},
+          "notes": {"type": "string"},
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "size", "sha256"],
+              "properties": {
+                "path": {"type": "string"},
+                "size": {"type": "integer", "minimum": 0},
+                "sha256": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["declared_by", "import_mode", "agent_calls", "network_calls"],
+      "properties": {
+        "declared_by": {"const": "user"},
+        "import_mode": {"const": "validation_only"},
+        "agent_calls": {"const": 0},
+        "network_calls": {"const": 0}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stringArray": {"type": "array", "items": {"type": "string"}}
+  }
+}

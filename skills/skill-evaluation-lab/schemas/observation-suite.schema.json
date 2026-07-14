@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/observation-suite.schema.json",
+  "title": "Skill Evaluation Lab Observation Suite",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "suite_id",
+    "candidate",
+    "baseline",
+    "decision_question",
+    "observation_policy",
+    "cases"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "suite_id": {"$ref": "#/$defs/id"},
+    "candidate": {"$ref": "#/$defs/relativePath"},
+    "baseline": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/relativePath"}
+      ]
+    },
+    "decision_question": {"type": "string", "minLength": 1},
+    "observation_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_variants", "require_independent_session"],
+      "properties": {
+        "required_variants": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": {"const": "candidate"},
+          "minContains": 1,
+          "items": {"enum": ["candidate", "baseline"]}
+        },
+        "require_independent_session": {"const": true}
+      }
+    },
+    "cases": {
+      "type": "array",
+      "minItems": 3,
+      "items": {"$ref": "#/$defs/case"}
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "not": {"pattern": "(^[A-Za-z]:|^[/\\\\]|(^|[/\\\\])\\.\\.([/\\\\]|$))"}
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "prompt", "expected_observation", "inputs"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "kind": {"enum": ["trigger-positive", "trigger-near-miss", "behavior"]},
+        "prompt": {"type": "string", "minLength": 1},
+        "expected_observation": {"type": "string", "minLength": 1},
+        "inputs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/relativePath"}
+        }
+      }
+    }
+  }
+}

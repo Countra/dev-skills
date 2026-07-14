@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "complex-coding-executor-20260714",
+  "candidate_tree_sha256": "18a72fb877806b6792d8febcc971a5d190527d6d009327355d935248ae62ed25",
+  "dimensions": [
+    {
+      "dimension": "invocation_boundary",
+      "status": "pass",
+      "summary": "入口只接受已批准的 managed task bundle，并把规划、直接执行、恢复、状态查询和最终交付边界区分清楚。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "frontmatter 与核心规则限定只执行 approved managed task，缺失契约、批准、权限或确定状态时 fail closed，并禁止代替 planner 修改计划。"
+        },
+        {
+          "path": "references/execution-workflow.md",
+          "detail": "Preflight、Stage Loop、Transition、Amendment、Recovery 和 Final Gate 均有明确进入条件及停止条件。"
+        }
+      ]
+    },
+    {
+      "dimension": "workflow_completeness",
+      "status": "warn",
+      "summary": "单会话下从批准到完成、恢复和 amendment 的闭环完整，但“唯一 writer”目前只是流程约束，没有任务级锁、租约或 compare-and-append 机制。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "executor 被声明为运行状态与执行证据的唯一 writer，但没有要求获取或验证 task-scoped writer ownership。"
+        },
+        {
+          "path": "scripts/harness_event_writer.py",
+          "detail": "追加事件前读取并 replay 当前 ledger，再按长度生成下一个 seq；整个 read-check-append-write 流程没有互斥或版本比较。"
+        },
+        {
+          "path": "scripts/harness_state_io.py",
+          "detail": "ledger append 使用普通追加和 fsync，snapshot 使用原子 replace；两者保证单 writer 崩溃恢复，但不能阻止两个 executor 同时追加相同 seq。"
+        },
+        {
+          "path": "scripts/harness_amendment.py",
+          "detail": "revision archive 逐文件写入后再生成 manifest；进程中断会留下无 manifest 的目录，后续只报 AMENDMENT_ARCHIVE_INCOMPLETE，缺少确定性续写或修复入口。"
+        }
+      ],
+      "recommendation": "增加统一的 task-scoped writer lease：记录 owner/session、获取时间和最后心跳，所有写操作先验证 lease，并在 ledger append 时对 last_event_seq 做 compare-and-append；定义陈旧 lease 的显式接管流程。amendment archive 使用临时目录加原子发布，或提供可校验的 resume/repair 命令。"
+    },
+    {
+      "dimension": "information_architecture",
+      "status": "pass",
+      "summary": "入口、执行说明、故障处理、状态 reducer、持久化、attestation 与 amendment 分层合理，阅读路径和职责边界清楚。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "入口保留核心行为与命令索引，详细阶段语义和恢复说明分别下沉到 workflow 与 troubleshooting。"
+        },
+        {
+          "path": "scripts/harness_state.py",
+          "detail": "纯 reducer 负责事件语义和状态转换，未混入 CLI、文件解析或 subprocess 调用。"
+        },
+        {
+          "path": "scripts/harness_execution.py",
+          "detail": "preflight、status、transition、reconcile 和 final 以共享函数组织，CLI 只承担参数与稳定输出。"
+        }
+      ]
+    },
+    {
+      "dimension": "tool_contract",
+      "status": "pass",
+      "summary": "公共 CLI、封闭事件/状态 schema、稳定错误码和确定性 replay 形成了较强的机器契约，planner checker 的调用结果也被严格解析。",
+      "evidence": [
+        {
+          "path": "scripts/harness_state_schema.py",
+          "detail": "事件类型、公共字段、payload 字段和 run-state 字段均采用封闭集合并校验引用、时间、序号和证据路径。"
+        },
+        {
+          "path": "scripts/harness_exec_check.py",
+          "detail": "preflight、status、transition、reconcile、final 暴露为单一确定性入口，并统一输出 JSON/text 成功或失败结果。"
+        },
+        {
+          "path": "scripts/harness_execution.py",
+          "detail": "planner approval checker 设有超时、返回码和 JSON 结构校验，异常被转换为稳定诊断而不是静默放行。"
+        }
+      ]
+    },
+    {
+      "dimension": "safety_and_permissions",
+      "status": "warn",
+      "summary": "路径 containment、不可变文件哈希、提交证据和三类授权门禁较强，但 attestation 是完整性封印，不是经过身份认证的用户批准证明。",
+      "evidence": [
+        {
+          "path": "scripts/harness_attest_plan.py",
+          "detail": "write 模式从命令行接收 approved-by 与 commit/external-write/elevated-tool 授权标志，同一具备 task-dir 写权限的进程即可生成。"
+        },
+        {
+          "path": "scripts/harness_attestation.py",
+          "detail": "校验能够证明 immutable 文件自批准记录后未变化，但没有签名、nonce、宿主侧 receipt 或会话 provenance 来证明批准者身份。"
+        },
+        {
+          "path": "scripts/harness_event_writer.py",
+          "detail": "事件 writer 会阻止未授权 commit evidence，并在完成前要求已授权提交证据，说明授权消费端本身是 fail closed 的。"
+        }
+      ],
+      "recommendation": "首先在契约中明确 cooperative-agent trust model：attestation 只提供完整性与授权声明，不构成对抗性身份认证。若希望把授权变成真正的安全边界，应由宿主或用户控制的独立入口签发带 nonce、task/revision/hash 和 authorization scope 的 receipt，executor 只消费且不能自行签发。"
+    },
+    {
+      "dimension": "verification_and_delivery",
+      "status": "warn",
+      "summary": "单元测试覆盖 reducer、attestation、恢复、drift、amendment 和提交门禁，仓库也有确定性联合 eval，但 executor 没有独立 CI，且关键并发与中断窗口未纳入回归。",
+      "evidence": [
+        {
+          "path": "tests/test_task_bundle_and_state.py",
+          "detail": "覆盖 resolver containment、事件顺序、必需验证、review、失败失效、terminal state 和 snapshot drift。"
+        },
+        {
+          "path": "tests/test_attestation_and_recovery.py",
+          "detail": "覆盖计划篡改、snapshot 丢失/写失败、未授权提交、缺失证据和 planner checker 输出异常。"
+        },
+        {
+          "path": "tests/test_amendment.py",
+          "detail": "覆盖 revision archive/activation、不可覆盖 attestation、carry 语义与上一 revision 完成条件，但没有 archive 中断恢复或并发 writer case。"
+        }
+      ],
+      "recommendation": "为 executor 增加可发现的 CI，运行三组单元测试和 planner→executor 确定性 eval；新增双 writer 竞争、陈旧 lease 接管、archive 中断恢复、ledger append 后 snapshot 失败及授权 receipt 篡改用例。真实触发和长任务行为仍通过用户独立会话 observation 验证。"
+    },
+    {
+      "dimension": "scope_and_composability",
+      "status": "pass",
+      "summary": "状态查询、检查、事件追加、批准和 amendment 都有原子 CLI，统一消费 planner contract，并能按阶段、验证和 artifact 组合复杂任务。",
+      "evidence": [
+        {
+          "path": "SKILL.md",
+          "detail": "命令表把 resolver、attestation、ledger、status/transition/reconcile/final 分成可按需调用的原子入口。"
+        },
+        {
+          "path": "references/execution-workflow.md",
+          "detail": "Stage DAG、Research Drift、Development Quality、process-manager、Git 和 final delivery 通过显式 gate 组合，不要求暴露平台专属接口。"
+        },
+        {
+          "path": "scripts/harness_task_bundle.py",
+          "detail": "pointer 与显式 task-dir 使用统一 resolver 和 workspace containment，支持恢复、检查与自动化消费同一 bundle。"
+        }
+      ]
+    }
+  ],
+  "assumptions": [
+    "本次评估目标是 complex-coding-executor 当前源码设计、静态契约和测试设计，不评估某次具体执行任务的实现质量。",
+    "planner 与 executor 作为同仓、绑定演进的一对 Skill，共享 planner 的 task-contract 定义。",
+    "当前默认信任模型是用户与 Agent 协作而非抵抗拥有 workspace 写权限的恶意进程。"
+  ],
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本间提升或退化结论。",
+    "按 skill-evaluation-lab 契约未执行 executor 脚本、单元测试或 eval，仅静态阅读其实现、测试与评测设计。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、长任务完成率、恢复成功率或执行质量。",
+    "planner approval checker 的语义强度会直接影响 executor preflight，本报告把该问题视为已在 planner 评估中记录的跨 Skill 继承风险。",
+    "process-manager 规则被直接消费，双方契约仍需依赖联合回归防止演进漂移。"
+  ],
+  "observation_decision": "not_requested"
+}

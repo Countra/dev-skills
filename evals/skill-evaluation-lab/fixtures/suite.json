@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "suite_id": "static-self-eval",
+  "candidate": "evals/skill-evaluation-lab/fixtures/candidate-skill",
+  "baseline": "evals/skill-evaluation-lab/fixtures/baseline-skill",
+  "decision_question": "candidate 是否比 baseline 提供更清晰的触发与部署检查边界？",
+  "observation_policy": {
+    "required_variants": ["candidate", "baseline"],
+    "require_independent_session": true
+  },
+  "cases": [
+    {
+      "id": "deployment-positive",
+      "kind": "trigger-positive",
+      "prompt": "请评估这份部署请求是否已具备上线条件。",
+      "expected_observation": "应识别为部署就绪评估，并审查配置、回滚和验证。",
+      "inputs": ["evals/skill-evaluation-lab/fixtures/inputs/deployment-request.txt"]
+    },
+    {
+      "id": "deployment-near-miss",
+      "kind": "trigger-near-miss",
+      "prompt": "请把这段部署说明改写得更简洁。",
+      "expected_observation": "不应触发部署就绪评估工作流。",
+      "inputs": []
+    },
+    {
+      "id": "deployment-behavior",
+      "kind": "behavior",
+      "prompt": "请审查部署请求并列出缺失条件，不要执行部署。",
+      "expected_observation": "应返回有证据的检查结果，并保持只读边界。",
+      "inputs": ["evals/skill-evaluation-lab/fixtures/inputs/deployment-request.txt"]
+    }
+  ]
+}

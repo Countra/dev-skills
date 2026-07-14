@@ -1,0 +1,177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/static-evidence.schema.json",
+  "title": "Skill Evaluation Lab Static Evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "generated_at",
+    "checker",
+    "candidate",
+    "baseline",
+    "checks",
+    "capabilities",
+    "delta",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "evaluation_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "generated_at": {"type": "string"},
+    "checker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "contract", "agent_calls", "network_calls", "target_imports"],
+      "properties": {
+        "name": {"const": "skill-evaluation-lab"},
+        "contract": {"const": "deterministic-static-only"},
+        "agent_calls": {"const": 0},
+        "network_calls": {"const": 0},
+        "target_imports": {"const": 0}
+      }
+    },
+    "candidate": {"$ref": "#/$defs/sourceIdentity"},
+    "baseline": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/sourceIdentity"}
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 8,
+      "items": {"$ref": "#/$defs/check"}
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/capability"}
+    },
+    "delta": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "added_files",
+            "removed_files",
+            "changed_files",
+            "check_status_changes",
+            "capabilities_added",
+            "capabilities_removed"
+          ],
+          "properties": {
+            "added_files": {"$ref": "#/$defs/stringArray"},
+            "removed_files": {"$ref": "#/$defs/stringArray"},
+            "changed_files": {"$ref": "#/$defs/stringArray"},
+            "check_status_changes": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/checkStatusChange"}
+            },
+            "capabilities_added": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/capabilityDelta"}
+            },
+            "capabilities_removed": {
+              "type": "array",
+              "items": {"$ref": "#/$defs/capabilityDelta"}
+            }
+          }
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "warn", "fail", "not_applicable"],
+      "properties": {
+        "pass": {"type": "integer", "minimum": 0},
+        "warn": {"type": "integer", "minimum": 0},
+        "fail": {"type": "integer", "minimum": 0},
+        "not_applicable": {"type": "integer", "minimum": 0}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "size", "sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "size": {"type": "integer", "minimum": 0},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "sourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "tree_sha256", "file_count", "total_bytes", "files"],
+      "properties": {
+        "path": {"type": "string"},
+        "tree_sha256": {"$ref": "#/$defs/sha256"},
+        "file_count": {"type": "integer", "minimum": 0},
+        "total_bytes": {"type": "integer", "minimum": 0},
+        "files": {"type": "array", "items": {"$ref": "#/$defs/file"}}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "detail"],
+      "properties": {
+        "path": {"type": "string"},
+        "detail": {"type": "string"}
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "dimension", "status", "severity", "summary", "evidence", "guidance"],
+      "properties": {
+        "id": {"type": "string"},
+        "dimension": {"type": "string"},
+        "status": {"enum": ["pass", "warn", "fail", "not_applicable"]},
+        "severity": {"enum": ["info", "advisory", "blocking"]},
+        "summary": {"type": "string"},
+        "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
+        "guidance": {"type": "string"}
+      }
+    },
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path", "line", "detail"],
+      "properties": {
+        "kind": {"type": "string"},
+        "path": {"type": "string"},
+        "line": {"type": "integer", "minimum": 1},
+        "detail": {"type": "string"}
+      }
+    },
+    "checkStatusChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "baseline", "candidate"],
+      "properties": {
+        "id": {"type": "string"},
+        "baseline": {"enum": ["pass", "warn", "fail", "not_applicable"]},
+        "candidate": {"enum": ["pass", "warn", "fail", "not_applicable"]}
+      }
+    },
+    "capabilityDelta": {
+      "type": "array",
+      "prefixItems": [
+        {"type": "string"},
+        {"type": "string"},
+        {"type": "string"}
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    }
+  }
+}

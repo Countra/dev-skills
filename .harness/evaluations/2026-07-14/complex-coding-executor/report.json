@@ -1,0 +1,228 @@
+{
+  "assumptions": [
+    "本次评估目标是 complex-coding-executor 当前源码设计、静态契约和测试设计，不评估某次具体执行任务的实现质量。",
+    "planner 与 executor 作为同仓、绑定演进的一对 Skill，共享 planner 的 task-contract 定义。",
+    "当前默认信任模型是用户与 Agent 协作而非抵抗拥有 workspace 写权限的恶意进程。"
+  ],
+  "claim_boundaries": [
+    "静态检查只证明 source-bound 机械事实和能力信号，不证明真实运行行为。",
+    "七维语义审查是当前 Agent 的设计判断，必须保留 assumptions 与 limitations。",
+    "缺少完整、结论明确的用户观察，不得声明真实触发率或行为提升。"
+  ],
+  "completion": {
+    "conclusion_owner": "current_agent",
+    "ready_for_agent_conclusion": true,
+    "script_generated_conclusion": false
+  },
+  "evaluation_id": "complex-coding-executor-20260714",
+  "evidence_coverage": {
+    "observed": {
+      "expected": 0,
+      "missing": 0,
+      "observed": 0,
+      "session_statuses": {
+        "fail": 0,
+        "inconclusive": 0,
+        "pass": 0
+      },
+      "status": "not_requested"
+    },
+    "semantic": {
+      "dimension_statuses": {
+        "fail": 0,
+        "not_applicable": 0,
+        "pass": 4,
+        "warn": 3
+      },
+      "status": "complete"
+    },
+    "static": {
+      "check_statuses": {
+        "fail": 0,
+        "not_applicable": 1,
+        "pass": 4,
+        "warn": 3
+      },
+      "status": "complete"
+    }
+  },
+  "findings": {
+    "observed": [],
+    "semantic": [
+      {
+        "dimension": "workflow_completeness",
+        "evidence": [
+          {
+            "detail": "executor 被声明为运行状态与执行证据的唯一 writer，但没有要求获取或验证 task-scoped writer ownership。",
+            "path": "SKILL.md"
+          },
+          {
+            "detail": "追加事件前读取并 replay 当前 ledger，再按长度生成下一个 seq；整个 read-check-append-write 流程没有互斥或版本比较。",
+            "path": "scripts/harness_event_writer.py"
+          },
+          {
+            "detail": "ledger append 使用普通追加和 fsync，snapshot 使用原子 replace；两者保证单 writer 崩溃恢复，但不能阻止两个 executor 同时追加相同 seq。",
+            "path": "scripts/harness_state_io.py"
+          },
+          {
+            "detail": "revision archive 逐文件写入后再生成 manifest；进程中断会留下无 manifest 的目录，后续只报 AMENDMENT_ARCHIVE_INCOMPLETE，缺少确定性续写或修复入口。",
+            "path": "scripts/harness_amendment.py"
+          }
+        ],
+        "recommendation": "增加统一的 task-scoped writer lease：记录 owner/session、获取时间和最后心跳，所有写操作先验证 lease，并在 ledger append 时对 last_event_seq 做 compare-and-append；定义陈旧 lease 的显式接管流程。amendment archive 使用临时目录加原子发布，或提供可校验的 resume/repair 命令。",
+        "status": "warn",
+        "summary": "单会话下从批准到完成、恢复和 amendment 的闭环完整，但“唯一 writer”目前只是流程约束，没有任务级锁、租约或 compare-and-append 机制。"
+      },
+      {
+        "dimension": "safety_and_permissions",
+        "evidence": [
+          {
+            "detail": "write 模式从命令行接收 approved-by 与 commit/external-write/elevated-tool 授权标志，同一具备 task-dir 写权限的进程即可生成。",
+            "path": "scripts/harness_attest_plan.py"
+          },
+          {
+            "detail": "校验能够证明 immutable 文件自批准记录后未变化，但没有签名、nonce、宿主侧 receipt 或会话 provenance 来证明批准者身份。",
+            "path": "scripts/harness_attestation.py"
+          },
+          {
+            "detail": "事件 writer 会阻止未授权 commit evidence，并在完成前要求已授权提交证据，说明授权消费端本身是 fail closed 的。",
+            "path": "scripts/harness_event_writer.py"
+          }
+        ],
+        "recommendation": "首先在契约中明确 cooperative-agent trust model：attestation 只提供完整性与授权声明，不构成对抗性身份认证。若希望把授权变成真正的安全边界，应由宿主或用户控制的独立入口签发带 nonce、task/revision/hash 和 authorization scope 的 receipt，executor 只消费且不能自行签发。",
+        "status": "warn",
+        "summary": "路径 containment、不可变文件哈希、提交证据和三类授权门禁较强，但 attestation 是完整性封印，不是经过身份认证的用户批准证明。"
+      },
+      {
+        "dimension": "verification_and_delivery",
+        "evidence": [
+          {
+            "detail": "覆盖 resolver containment、事件顺序、必需验证、review、失败失效、terminal state 和 snapshot drift。",
+            "path": "tests/test_task_bundle_and_state.py"
+          },
+          {
+            "detail": "覆盖计划篡改、snapshot 丢失/写失败、未授权提交、缺失证据和 planner checker 输出异常。",
+            "path": "tests/test_attestation_and_recovery.py"
+          },
+          {
+            "detail": "覆盖 revision archive/activation、不可覆盖 attestation、carry 语义与上一 revision 完成条件，但没有 archive 中断恢复或并发 writer case。",
+            "path": "tests/test_amendment.py"
+          }
+        ],
+        "recommendation": "为 executor 增加可发现的 CI，运行三组单元测试和 planner→executor 确定性 eval；新增双 writer 竞争、陈旧 lease 接管、archive 中断恢复、ledger append 后 snapshot 失败及授权 receipt 篡改用例。真实触发和长任务行为仍通过用户独立会话 observation 验证。",
+        "status": "warn",
+        "summary": "单元测试覆盖 reducer、attestation、恢复、drift、amendment 和提交门禁，仓库也有确定性联合 eval，但 executor 没有独立 CI，且关键并发与中断窗口未纳入回归。"
+      }
+    ],
+    "static": [
+      {
+        "dimension": "structure",
+        "evidence": [
+          {
+            "detail": "files=23; total_bytes=149378",
+            "path": "."
+          },
+          {
+            "detail": "非标准顶层资源：templates",
+            "path": "."
+          }
+        ],
+        "guidance": "确认非标准资源确有必要，并移除空 placeholder。",
+        "id": "skill.structure",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "非标准顶层资源：templates"
+      },
+      {
+        "dimension": "capabilities",
+        "evidence": [
+          {
+            "detail": "line=158; environment_read: os.environ",
+            "path": "scripts/harness_task_bundle.py"
+          },
+          {
+            "detail": "line=158; environment_read: os.environ.get",
+            "path": "scripts/harness_task_bundle.py"
+          },
+          {
+            "detail": "line=71; file_write: target.parent.mkdir",
+            "path": "scripts/harness_amendment.py"
+          },
+          {
+            "detail": "line=75; file_write: target.write_bytes",
+            "path": "scripts/harness_amendment.py"
+          },
+          {
+            "detail": "line=128; file_write: archive_root.mkdir",
+            "path": "scripts/harness_amendment.py"
+          },
+          {
+            "detail": "line=464; file_write: current_path.unlink",
+            "path": "scripts/harness_amendment.py"
+          },
+          {
+            "detail": "line=98; file_write: path.parent.mkdir",
+            "path": "scripts/harness_state_io.py"
+          },
+          {
+            "detail": "line=106; file_write: os.replace",
+            "path": "scripts/harness_state_io.py"
+          },
+          {
+            "detail": "line=109; file_write: temp_path.unlink",
+            "path": "scripts/harness_state_io.py"
+          },
+          {
+            "detail": "line=128; file_write: path.parent.mkdir",
+            "path": "scripts/harness_state_io.py"
+          },
+          {
+            "detail": "line=20; file_write: value.replace",
+            "path": "scripts/harness_time.py"
+          },
+          {
+            "detail": "line=7; process: import subprocess",
+            "path": "scripts/harness_execution.py"
+          },
+          {
+            "detail": "line=65; process: subprocess.run",
+            "path": "scripts/harness_execution.py"
+          }
+        ],
+        "guidance": "这些仅是静态信号，不代表能力实际执行；由安全与权限语义审查确认。",
+        "id": "skill.capabilities",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "发现需要人工确认的静态能力信号：environment_read=2, file_write=9, process=2"
+      },
+      {
+        "dimension": "validation",
+        "evidence": [
+          {
+            "detail": "tests=true; evals=true; ci=false",
+            "path": "."
+          }
+        ],
+        "guidance": "按 Skill 风险补充可重复验证资产。",
+        "id": "skill.validation_assets",
+        "severity": "advisory",
+        "status": "warn",
+        "summary": "缺少可发现的验证资产：ci"
+      }
+    ]
+  },
+  "generated_at": "2026-07-14T03:27:26.565446Z",
+  "limitations": [
+    "未提供旧版 baseline，因此没有版本间提升或退化结论。",
+    "按 skill-evaluation-lab 契约未执行 executor 脚本、单元测试或 eval，仅静态阅读其实现、测试与评测设计。",
+    "未进行用户独立会话观察，因此不能声明真实触发准确率、长任务完成率、恢复成功率或执行质量。",
+    "planner approval checker 的语义强度会直接影响 executor preflight，本报告把该问题视为已在 planner 评估中记录的跨 Skill 继承风险。",
+    "process-manager 规则被直接消费，双方契约仍需依赖联合回归防止演进漂移。"
+  ],
+  "runtime_claims_allowed": false,
+  "schema_version": 1,
+  "target": {
+    "path": "skills/complex-coding-executor",
+    "tree_sha256": "18a72fb877806b6792d8febcc971a5d190527d6d009327355d935248ae62ed25"
+  }
+}

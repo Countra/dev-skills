@@ -1,0 +1,505 @@
+{
+  "task_id": "skill-evaluation-lab-20260713",
+  "plan_revision": 3,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "将 skill-evaluation-lab 重构为用户驱动、静态优先、证据分层的 Skill 工作流，由当前 Agent 完成语义审查，由用户掌控独立观察运行，并在工作流结束后形成完整结论。"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "永久移除所有 Codex、模型 API、子代理和其它 Agent 派生执行、探测与配置能力。"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "提供只读、source-bound 的 Skill metadata、结构、引用、语法、能力风险和验证资产静态检查。"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "要求当前 Agent 按固定七维完成结构化语义 review，缺少证据、限制或修复建议时失败关闭。"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "可选生成只供用户手工执行的 observation packet，不包含任何 Agent 或模型启动操作。"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "只导入并校验用户提供的 observation、artifact hash 和 provenance，不执行、重放或补写结果。"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "报告透明分开 static、semantic 和 observed 证据，并由当前 Agent 在工作流末尾综合完整结论。"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "支持 candidate 与显式 baseline 的 source identity、文件、check 和 capability footprint 静态比较。"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "公共 CLI、closed JSON contract、错误 envelope、资源边界和 UTF-8 行为保持稳定且跨平台。"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "SKILL.md 必须体现用户驱动主路径、可选 observation 分支、按需引用和最终完成门禁。"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "仓库 inventory、static self-eval 和三平台只读 CI 必须可审计且不产生 Agent 或网络调用。"
+    },
+    {
+      "id": "REQ-11",
+      "priority": "must",
+      "summary": "直接删除 revision 1 的 runner、live、judge、trace、budget 和旧数据协议，不保留兼容层。"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-08", "NFR-03", "NFR-05"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_contracts_static.py -v",
+      "evidence_path": "artifacts/validation/contracts-static.json"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-11", "NFR-01"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_no_agent_execution.py -v",
+      "evidence_path": "artifacts/validation/no-agent-execution.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-07", "NFR-04"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_static_checks.py -v",
+      "evidence_path": "artifacts/validation/static-checks.json"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-04", "AC-05", "AC-07", "NFR-03", "NFR-04"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_packets_observations.py -v",
+      "evidence_path": "artifacts/validation/packets-observations.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-03", "AC-06", "AC-09", "NFR-04", "NFR-06"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_reviews_reports.py -v",
+      "evidence_path": "artifacts/validation/reviews-reports.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-08", "AC-10", "NFR-02"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/skill-evaluation-lab/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/full-unit.json"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-10"],
+      "command": "python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py --suite inventory --work-dir .harness/test-tmp/skill-evaluation-lab/inventory",
+      "evidence_path": "artifacts/validation/inventory-self-eval.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-10", "NFR-04"],
+      "command": "python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py --suite static --work-dir .harness/test-tmp/skill-evaluation-lab/static",
+      "evidence_path": "artifacts/validation/static-self-eval.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-09", "NFR-06"],
+      "command": "run the bundled skill-creator quick validator for skills/skill-evaluation-lab and verify agents/openai.yaml matches the current workflow",
+      "evidence_path": "artifacts/validation/skill-validator.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-08", "AC-11", "NFR-02", "NFR-05"],
+      "command": "run all six se_*.py --help commands, AST-parse production Python, parse schemas/assets JSON, and check modified Python line lengths",
+      "evidence_path": "artifacts/validation/static-quality.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "build",
+      "required": true,
+      "covers": ["AC-10", "NFR-01", "NFR-07"],
+      "command": "run test_ci_contract.py and locally execute the unit, inventory, and static commands declared by .github/workflows/skill-evaluation-lab.yml",
+      "evidence_path": "artifacts/validation/ci-contract.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "other",
+      "required": true,
+      "covers": ["AC-10", "NFR-05"],
+      "command": "run complex-coding-planner and complex-coding-executor unit/eval checks plus revision 2 approval, preflight, transition, and final harness checks",
+      "evidence_path": "artifacts/validation/harness-regression.json"
+    },
+    {
+      "id": "VAL-13",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-06", "AC-11", "NFR-01", "NFR-05", "NFR-07"],
+      "command": "perform final code review, old-contract/secret/pycache search, scope review, git diff --check, and staged diff review",
+      "evidence_path": "artifacts/validation/final-review.md"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "拟恢复或新增任何 Codex、模型 API、子代理、Agent CLI、进程执行或网络能力",
+    "required evidence layers、七维 review、公共 CLI、schema、Stage DAG 或 required validation 实质变化",
+    "需要自动执行目标 Skill、脚本、test 或 verifier，或写入 target/baseline source",
+    "需要引入第三方依赖、后台服务、数据库、凭据、外部系统写入、提权或 push",
+    "需要兼容 revision 1 或批量修改其它 Skill runtime"
+  ],
+  "stop_conditions": [
+    "检测到任何生产路径可能启动 Agent 或进程、访问网络或读取凭据",
+    "source/output containment、link、hash 或 observation provenance 无法失败关闭",
+    "实现需要超出 approved scope，或旧协议删除影响未确认的外部消费者",
+    "required validation 在有界修复后仍失败，或 review 存在 blocking 或 major finding",
+    "attestation、hash、ledger 或 run-state 不一致",
+    "用户暂停或撤销授权"
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "生产路径零子进程、零网络、零 Agent SDK、零凭据读取，并以 AST contract test 固化。"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "仅依赖 Python 3.12+ 标准库，同一公共接口支持 Windows、Linux 和 macOS，不依赖 shell 行为。"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "路径 containment、symlink/junction、文件数、单文件、总大小和文本 excerpt 均有硬上限。"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "source、packet、review、observation 和 report 使用 SHA-256 绑定，可检测 drift 与证据不兼容。"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "模块高内聚、依赖单向、公共函数有类型标注、错误不吞掉，代码与测试遵循项目现有风格。"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "SKILL.md 保持精炼，详细契约按需进入一层 references，规则只有一个真相源。"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "CI 使用最小只读权限、无 secrets、无 package install、无模型或 Agent 操作，证据有界保存。"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research-findings.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "other",
+      "path": "artifacts/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "other",
+      "path": "artifacts/traceability.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "validation",
+      "path": "artifacts/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "review",
+      "path": "artifacts/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "移除 Agent runner 并建立静态契约内核",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-07", "REQ-08", "REQ-11"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-07", "AC-08", "AC-11"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03"],
+      "allowed_changes": [
+        "skills/skill-evaluation-lab/scripts/",
+        "skills/skill-evaluation-lab/schemas/",
+        "skills/skill-evaluation-lab/assets/",
+        "skills/skill-evaluation-lab/tests/"
+      ],
+      "forbidden_changes": [
+        "Codex、模型 API、子代理或其它 Agent 派生执行",
+        "网络、凭据读取或目标 source 写入",
+        "revision 1 兼容 adapter 或 schema 分支",
+        "其它 Skill runtime"
+      ],
+      "entry_conditions": [
+        "revision 2 attestation 有效且 amendment 已激活",
+        "工作树只有已知 amendment planning artifacts"
+      ],
+      "exit_conditions": [
+        "旧 runner/live 执行面与公共协议完全删除",
+        "静态 evidence 对合法、非法和 baseline fixtures 稳定闭环",
+        "零派生执行架构测试通过"
+      ],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-02",
+      "title": "实现用户 observation packet 与证据导入",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-04", "REQ-05", "REQ-07", "REQ-08"],
+      "acceptance_ids": ["AC-04", "AC-05", "AC-07", "AC-08"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05"],
+      "validation_ids": ["VAL-04"],
+      "allowed_changes": [
+        "skills/skill-evaluation-lab/assets/",
+        "skills/skill-evaluation-lab/schemas/",
+        "skills/skill-evaluation-lab/scripts/",
+        "skills/skill-evaluation-lab/tests/"
+      ],
+      "forbidden_changes": [
+        "自动运行 packet 或任意目标脚本",
+        "Agent 启动命令、模型配置或凭据",
+        "workspace 外写入或覆盖已有 packet"
+      ],
+      "entry_conditions": [
+        "STG-01 完成",
+        "source identity 与安全路径 API 已稳定"
+      ],
+      "exit_conditions": [
+        "packet 生成过程无执行能力且目录不可覆盖",
+        "合法与 mutation observation fixtures 全部闭环"
+      ],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-03",
+      "title": "完成语义 review、报告与 Skill 工作流",
+      "depends_on": ["STG-01", "STG-02"],
+      "requirement_ids": ["REQ-03", "REQ-06", "REQ-09", "REQ-11"],
+      "acceptance_ids": ["AC-03", "AC-06", "AC-09", "AC-11"],
+      "nonfunctional_ids": ["NFR-04", "NFR-05", "NFR-06"],
+      "validation_ids": ["VAL-05", "VAL-09"],
+      "allowed_changes": [
+        "skills/skill-evaluation-lab/SKILL.md",
+        "skills/skill-evaluation-lab/agents/openai.yaml",
+        "skills/skill-evaluation-lab/references/",
+        "skills/skill-evaluation-lab/assets/",
+        "skills/skill-evaluation-lab/schemas/",
+        "skills/skill-evaluation-lab/scripts/",
+        "skills/skill-evaluation-lab/tests/"
+      ],
+      "forbidden_changes": [
+        "脚本替当前 Agent 生成语义 finding",
+        "自动 LLM judge 或 runtime claim 推断",
+        "revision 1 文档与公共入口残留"
+      ],
+      "entry_conditions": [
+        "STG-01 与 STG-02 完成",
+        "static 与 observation documents 已稳定"
+      ],
+      "exit_conditions": [
+        "缺任一必需 review 维度时 report 失败关闭",
+        "完整 report 明确 evidence coverage 与 claim boundary",
+        "SKILL workflow 与六个公共 CLI 一致"
+      ],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-04",
+      "title": "重建离线 self-eval 与三平台 CI",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-08", "REQ-10", "REQ-11"],
+      "acceptance_ids": ["AC-08", "AC-10", "AC-11"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-07"],
+      "validation_ids": ["VAL-06", "VAL-07", "VAL-08", "VAL-10", "VAL-11"],
+      "allowed_changes": [
+        "skills/skill-evaluation-lab/scripts/se_inventory.py",
+        "skills/skill-evaluation-lab/scripts/skill_evaluation_lab/inventory.py",
+        "skills/skill-evaluation-lab/tests/",
+        "evals/skill-evaluation-lab/",
+        ".github/workflows/skill-evaluation-lab.yml"
+      ],
+      "forbidden_changes": [
+        "GitHub secrets、network eval 或 package install",
+        "Codex、模型或其它 Agent command",
+        "push 或其它 workflow 行为"
+      ],
+      "entry_conditions": [
+        "STG-03 完成",
+        "公共 CLI、schema 和工作流文档已稳定"
+      ],
+      "exit_conditions": [
+        "本地完整复现 CI 的 unit、inventory 和 static 命令",
+        "self-eval 明确 agent_calls=0 与 network_calls=0",
+        "CI contract 覆盖三平台、所有分支和最小权限"
+      ],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-05",
+      "title": "最终审查、回归与提交",
+      "depends_on": ["STG-04"],
+      "requirement_ids": [
+        "REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06",
+        "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-11"
+      ],
+      "acceptance_ids": [
+        "AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06",
+        "AC-07", "AC-08", "AC-09", "AC-10", "AC-11"
+      ],
+      "nonfunctional_ids": [
+        "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"
+      ],
+      "validation_ids": ["VAL-06", "VAL-08", "VAL-12", "VAL-13"],
+      "allowed_changes": [
+        "approved skill-evaluation-lab scope problem fixes",
+        "task-dir executor evidence and lifecycle files",
+        "final authorized Git commit"
+      ],
+      "forbidden_changes": [
+        "new feature expansion or old protocol restoration",
+        "push、external write or elevated tool",
+        "modification of archived revision 1"
+      ],
+      "entry_conditions": [
+        "STG-01 至 STG-04 完成",
+        "没有 blocking 或 major review finding"
+      ],
+      "exit_conditions": [
+        "所有 required validation 与 Development Quality review 通过",
+        "最终 commit 已真实创建并记录",
+        "任务 completed、active pointer 关闭且 final checker 通过"
+      ],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "生产树不再包含 Agent runner、doctor 或 live 入口，AST 安全测试证明无进程、网络和 Agent runtime 能力。"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02"],
+      "summary": "合法 Skill fixture 生成稳定静态 evidence，metadata、断链、语法、路径和资源 mutation 被准确分类为 fail 或 warn。"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-03"],
+      "summary": "semantic review 缺少固定维度、source hash、evidence、limitations 或 warn/fail recommendation 时 report 拒绝生成。"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-04"],
+      "summary": "observation packet 包含 case/source/input hash 与人工说明，目录不可覆盖且不含 Agent 启动命令。"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-05"],
+      "summary": "有效 observation bundle 被规范化，未知 case、hash drift、路径逃逸和不完整 provenance 返回稳定错误。"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-06"],
+      "summary": "report 分层展示证据、finding 和 claim boundary；未观察时禁止 runtime claim，且不产生单一不透明总分。"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-07"],
+      "summary": "相同 candidate/baseline 被拒绝，合法比较绑定双方 tree hash 并按文件、check 和 capability 分组。"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-08"],
+      "summary": "六个公共 CLI 的 help、合法/非法 envelope、closed schema、资源上限和 UTF-8 行为通过离线测试。"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-09"],
+      "summary": "Skill 主路径、人工 observation 分支、停止点、引用加载时机和结论边界与公共 CLI 一致。"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-10"],
+      "summary": "inventory/static self-eval 通过，Actions 覆盖三平台和所有分支、使用只读权限且不引用 secrets 或 live 能力。"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-11"],
+      "summary": "旧 CLI、模块、schema、asset、reference、fixture 和测试全部删除，全仓无旧公共契约引用。"
+    }
+  ]
+}

@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/report.schema.json",
+  "title": "Layered Skill Evaluation Evidence Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "evaluation_id",
+    "generated_at",
+    "target",
+    "evidence_coverage",
+    "findings",
+    "assumptions",
+    "limitations",
+    "runtime_claims_allowed",
+    "claim_boundaries",
+    "completion"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "evaluation_id": {"type": "string"},
+    "generated_at": {"type": "string"},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "tree_sha256"],
+      "properties": {
+        "path": {"type": "string"},
+        "tree_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "evidence_coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["static", "semantic", "observed"],
+      "properties": {
+        "static": {"$ref": "#/$defs/staticCoverage"},
+        "semantic": {"$ref": "#/$defs/semanticCoverage"},
+        "observed": {"$ref": "#/$defs/observedCoverage"}
+      }
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["static", "semantic", "observed"],
+      "properties": {
+        "static": {"type": "array", "items": {"type": "object"}},
+        "semantic": {"type": "array", "items": {"type": "object"}},
+        "observed": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "assumptions": {"$ref": "#/$defs/stringArray"},
+    "limitations": {"$ref": "#/$defs/stringArray"},
+    "runtime_claims_allowed": {"type": "boolean"},
+    "claim_boundaries": {"$ref": "#/$defs/stringArray"},
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready_for_agent_conclusion", "conclusion_owner", "script_generated_conclusion"],
+      "properties": {
+        "ready_for_agent_conclusion": {"const": true},
+        "conclusion_owner": {"const": "current_agent"},
+        "script_generated_conclusion": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "statusCounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "warn", "fail", "not_applicable"],
+      "properties": {
+        "pass": {"type": "integer", "minimum": 0},
+        "warn": {"type": "integer", "minimum": 0},
+        "fail": {"type": "integer", "minimum": 0},
+        "not_applicable": {"type": "integer", "minimum": 0}
+      }
+    },
+    "staticCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "check_statuses"],
+      "properties": {
+        "status": {"const": "complete"},
+        "check_statuses": {"$ref": "#/$defs/statusCounts"}
+      }
+    },
+    "semanticCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "dimension_statuses"],
+      "properties": {
+        "status": {"const": "complete"},
+        "dimension_statuses": {"$ref": "#/$defs/statusCounts"}
+      }
+    },
+    "sessionStatuses": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pass", "fail", "inconclusive"],
+      "properties": {
+        "pass": {"type": "integer", "minimum": 0},
+        "fail": {"type": "integer", "minimum": 0},
+        "inconclusive": {"type": "integer", "minimum": 0}
+      }
+    },
+    "observedCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "expected", "observed", "missing", "session_statuses"],
+      "properties": {
+        "status": {"enum": ["not_requested", "not_observed", "partial", "complete"]},
+        "expected": {"type": "integer", "minimum": 0},
+        "observed": {"type": "integer", "minimum": 0},
+        "missing": {"type": "integer", "minimum": 0},
+        "session_statuses": {"$ref": "#/$defs/sessionStatuses"}
+      }
+    }
+  }
+}

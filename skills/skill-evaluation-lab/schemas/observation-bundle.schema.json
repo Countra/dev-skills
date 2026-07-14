@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/skill-evaluation-lab/observation-bundle.schema.json",
+  "title": "User Declared Observation Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "packet_fingerprint", "declared_by", "sessions"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "packet_fingerprint": {"$ref": "#/$defs/sha256"},
+    "declared_by": {"const": "user"},
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["case_id", "variant", "session_ref", "status", "notes", "artifacts"],
+        "properties": {
+          "case_id": {"$ref": "#/$defs/id"},
+          "variant": {"enum": ["candidate", "baseline"]},
+          "session_ref": {"type": "string", "minLength": 1},
+          "status": {"enum": ["pass", "fail", "inconclusive"]},
+          "notes": {"type": "string"},
+          "artifacts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path"],
+              "properties": {
+                "path": {"type": "string", "minLength": 1},
+                "sha256": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
