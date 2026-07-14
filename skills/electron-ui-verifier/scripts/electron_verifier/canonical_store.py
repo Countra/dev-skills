@@ -287,23 +287,24 @@ class CanonicalStore:
             return existing, False
         return decision, True
 
-    def _active_assets(self) -> list[tuple[CanonicalAsset, Path]]:
-        active_ids = {
+    def _active_asset_ids(self) -> set[str]:
+        return {
             asset_id
             for decision in self.list_decisions()
             if decision["status"] == "approved"
             for asset_id in decision["assetIds"]
         }
-        return [self._load_object(asset_id) for asset_id in sorted(active_ids)]
+
+    def _active_assets(self) -> list[tuple[CanonicalAsset, Path]]:
+        return [self._load_object(asset_id) for asset_id in sorted(self._active_asset_ids())]
 
     def list_assets(self) -> list[tuple[CanonicalAsset, Path]]:
         return self._active_assets()
 
     def get_asset(self, asset_id: str) -> CanonicalAsset:
-        for asset, _ in self._active_assets():
-            if asset.asset_id == asset_id:
-                return asset
-        raise VerifierError("asset_not_found", f"approved asset 不存在：{asset_id}", status=404)
+        if asset_id not in self._active_asset_ids():
+            raise VerifierError("asset_not_found", f"approved asset 不存在：{asset_id}", status=404)
+        return self._load_object(asset_id)[0]
 
     @staticmethod
     def _asset_entries(assets: list[tuple[CanonicalAsset, Path]]) -> list[dict[str, str]]:
@@ -328,15 +329,24 @@ class CanonicalStore:
     def rebuild_index(self) -> dict[str, Any]:
         assets = self._active_assets()
         decisions = self.list_decisions()
+        target_journal = Path(str(self.paths["index"]) + "-journal")
+        if target_journal.exists():
+            stale_journal = self.paths["derived"] / f"index.stale-{uuid.uuid4()}.sqlite3-journal"
+            os.replace(target_journal, stale_journal)
+        reliability: dict[str, dict[str, Any]] = {}
+        if self.paths["index"].exists():
+            try:
+                with KnowledgeIndex(self.paths["index"]) as current_index:
+                    reliability = current_index.reliability_snapshot()
+            except (VerifierError, sqlite3.Error, OSError):
+                # 损坏或旧版索引不能成为恢复来源，回退到 canonical 资产中的保守基线。
+                reliability = {}
         temporary = self.paths["derived"] / f"index.rebuild-{uuid.uuid4()}.sqlite3"
         try:
             with KnowledgeIndex(temporary) as index:
                 index.upsert(assets)
+                index.restore_reliability(reliability)
                 verification = index.verify()
-            target_journal = Path(str(self.paths["index"]) + "-journal")
-            if target_journal.exists():
-                stale_journal = self.paths["derived"] / f"index.stale-{uuid.uuid4()}.sqlite3-journal"
-                os.replace(target_journal, stale_journal)
             os.replace(temporary, self.paths["index"])
         finally:
             temporary.unlink(missing_ok=True)

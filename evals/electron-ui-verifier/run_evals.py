@@ -18,19 +18,19 @@ SCRIPTS = SKILL / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
-from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.models import ActionSpec  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
+from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
 
 
 PUBLIC_CLIS = (
-    "ev_action.py", "ev_artifact.py", "ev_asset_extract.py", "ev_assets.py", "ev_attach.py",
+    "ev_action.py", "ev_artifact.py", "ev_assets.py", "ev_attach.py",
     "ev_check_env.py", "ev_console.py", "ev_detach.py", "ev_doctor.py", "ev_exceptions.py",
-    "ev_export_workflow.py", "ev_finalize.py", "ev_health.py", "ev_init.py", "ev_knowledge.py",
+    "ev_finalize.py", "ev_health.py", "ev_init.py", "ev_knowledge.py",
     "ev_network.py", "ev_pending.py", "ev_persist.py", "ev_prepare.py", "ev_probe.py",
     "ev_report.py", "ev_screenshot.py", "ev_server.py", "ev_sessions.py", "ev_snapshot.py",
-    "ev_suggest.py", "ev_workflow.py",
+    "ev_suggest.py", "ev_workflow.py", "ev_risk.py", "ev_operation.py",
 )
 
 
@@ -58,19 +58,16 @@ def compact_retrieval(work_dir: Path) -> dict[str, Any]:
     assets = []
     for index in range(12):
         assets.append(
-            CanonicalAsset.create(
-                kind="workflow",
-                app_id="eval-app",
-                goal=f"打开设置面板 {index}",
-                aliases=[f"Open settings panel {index}"],
-                payload={"workflow": {"goal": f"打开设置面板 {index}", "steps": [{"type": "snapshot"}]}},
-                evidence=[{"reportDigest": f"{index % 10}" * 64}],
-                created_at="2026-07-11T00:00:00Z",
+            action_asset(
+                "eval-app",
+                f"打开设置面板 {index}",
+                [f"Open settings panel {index}"],
+                evidence_digest=f"{index % 10}" * 64,
             )
         )
     store.activate(assets)
     with HybridRetriever(store) as retriever:
-        result = retriever.search("Please open settings panel 3", {"appId": "eval-app"})
+        result = retriever.search("Please open settings panel 3", runtime_context("eval-app"))
     return {
         "decision": result["decision"],
         "candidateCount": len(result["candidates"]),

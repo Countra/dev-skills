@@ -14,6 +14,7 @@
     "requestFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "kind": {"enum": ["action", "workflow"]},
     "runId": {"type": "string", "format": "uuid"},
+    "assetId": {"type": "string", "pattern": "^(action|workflow)-[0-9a-f]{40}$"},
     "state": {"enum": ["queued", "running", "succeeded", "failed", "cancelled", "deadline_exceeded", "unknown"]},
     "done": {"type": "boolean"},
     "cancelRequested": {"type": "boolean"},

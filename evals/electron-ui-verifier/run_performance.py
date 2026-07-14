@@ -21,6 +21,7 @@ from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
+from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
 
 
 INGEST_BASELINE_MS = 4480.26
@@ -64,18 +65,7 @@ def knowledge_performance(work_dir: Path) -> tuple[dict[str, Any], list[str]]:
         app_id = f"perf-app-{index % 14}"
         goal = f"Execute operation {index}"
         alias = f"Run task code {index}"
-        asset = CanonicalAsset.create(
-            kind="workflow",
-            app_id=app_id,
-            goal=goal,
-            aliases=[alias],
-            payload={
-                "workflow": {"schemaVersion": 1, "appId": app_id, "goal": goal, "steps": [{"type": "snapshot"}]},
-                "stats": {"successCount": 5, "failureCount": 0},
-            },
-            evidence=[{"reportDigest": "d" * 64}],
-            created_at="2026-07-11T00:00:00Z",
-        )
+        asset = action_asset(app_id, goal, [alias], success_count=5, evidence_digest="d" * 64)
         assets.append(asset)
         cases.append((app_id, alias, asset.asset_id))
     started = time.perf_counter()
@@ -87,7 +77,7 @@ def knowledge_performance(work_dir: Path) -> tuple[dict[str, Any], list[str]]:
         for index in range(10000):
             app_id, query, expected = cases[index % len(cases)]
             query_started = time.perf_counter_ns()
-            result = retriever.search(query, {"appId": app_id}, limit=3)
+            result = retriever.search(query, runtime_context(app_id), limit=3)
             timings.append((time.perf_counter_ns() - query_started) / 1_000_000)
             if result["decision"] != "reuse" or not result["candidates"] or result["candidates"][0]["assetId"] != expected:
                 query_failures += 1

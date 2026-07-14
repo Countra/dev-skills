@@ -15,46 +15,12 @@ sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
-from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
+from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
 
 
 TEST_ROOT = Path(os.environ.get("EV_TEST_ROOT", Path.cwd() / ".harness" / "electron-ui-verifier-test-tmp"))
-
-
-def action_asset(
-    goal: str,
-    aliases: list[str],
-    *,
-    app_id: str = "demo",
-    pre_state: str = "home",
-    post_state: str = "done",
-    risk: str = "low",
-    value: object | None = None,
-    parameter_schema: dict | None = None,
-) -> CanonicalAsset:
-    action = {
-        "type": "fill" if value is not None else "click",
-        "locator": {"role": "button", "accessibleName": goal},
-        "postconditions": [{"type": "visible", "locator": {"text": post_state}}],
-    }
-    if value is not None:
-        action["value"] = value
-    return CanonicalAsset.create(
-        kind="action",
-        app_id=app_id,
-        goal=goal,
-        aliases=aliases,
-        payload={
-            "action": action,
-            "parameterSchema": parameter_schema or {},
-            "compatibility": {"preState": pre_state, "postState": post_state, "risk": risk},
-            "stats": {"successCount": 4, "failureCount": 0},
-        },
-        evidence=[{"reportDigest": "a" * 64}],
-        created_at="2026-07-11T00:00:00Z",
-    )
 
 
 class RetrievalTests(unittest.TestCase):
@@ -83,10 +49,10 @@ class RetrievalTests(unittest.TestCase):
             ]
         )
         with HybridRetriever(self.store) as retriever:
-            exact = retriever.search("保存设置", {"appId": "demo", "preState": "home"})
-            alias = retriever.search("Save preferences", {"appId": "demo", "preState": "home"})
-            cjk = retriever.search("保存配置", {"appId": "demo", "preState": "home"})
-            negative = retriever.search("旋转三维地球", {"appId": "demo", "preState": "home"})
+            exact = retriever.search("保存设置", runtime_context())
+            alias = retriever.search("Save preferences", runtime_context())
+            cjk = retriever.search("保存配置", runtime_context())
+            negative = retriever.search("旋转三维地球", runtime_context())
         self.assertEqual("reuse", exact["decision"])
         self.assertEqual("reuse", alias["decision"])
         self.assertEqual("reuse", cjk["decision"])
@@ -98,13 +64,13 @@ class RetrievalTests(unittest.TestCase):
         other_app = action_asset("保存设置", [], app_id="other")
         self.store.activate([high_risk, other_app])
         with HybridRetriever(self.store) as retriever:
-            risk = retriever.search("删除环境", {"appId": "demo", "preState": "home"}, explain=True)
+            risk = retriever.search("删除环境", runtime_context(), explain=True)
             state = retriever.search(
                 "删除环境",
-                {"appId": "demo", "preState": "settings", "maxRisk": "high"},
+                runtime_context(pre_state="settings", max_risk="high"),
                 explain=True,
             )
-            app = retriever.search("保存设置", {"appId": "demo", "preState": "home"}, explain=True)
+            app = retriever.search("保存设置", runtime_context(), explain=True)
         self.assertEqual("abstain", risk["decision"])
         self.assertIn("risk_not_allowed", risk["explain"]["rejected"][0]["reasons"])
         self.assertEqual("abstain", state["decision"])
@@ -119,7 +85,7 @@ class RetrievalTests(unittest.TestCase):
             ]
         )
         with HybridRetriever(self.store) as retriever:
-            result = retriever.search("Save changes", {"appId": "demo", "preState": "home"})
+            result = retriever.search("Save changes", runtime_context())
         self.assertEqual("abstain", result["decision"])
         self.assertEqual("ambiguous_margin", result["abstain"]["reason"])
 
@@ -127,7 +93,7 @@ class RetrievalTests(unittest.TestCase):
         self.store.activate([action_asset("保存设置", [])])
         with HybridRetriever(self.store) as retriever:
             with self.assertRaises(VerifierError) as query_error:
-                retriever.search("x" * 501, {"appId": "demo"})
+                retriever.search("x" * 501, runtime_context())
             with self.assertRaises(VerifierError) as app_error:
                 retriever.search("保存设置", {"appId": "x" * 201})
         self.assertEqual("knowledge_query_too_long", query_error.exception.code)
@@ -147,22 +113,28 @@ class RetrievalTests(unittest.TestCase):
         with HybridRetriever(self.store) as retriever:
             result = retriever.compose(
                 {
-                    "appId": "demo",
-                    "preState": "home",
+                    **runtime_context(),
                     "subgoals": ["打开设置", "填写名称"],
                     "bindings": {"name": "private-value"},
                 }
             )
             with self.assertRaises(VerifierError) as missing:
                 retriever.compose(
-                    {"appId": "demo", "preState": "home", "subgoals": ["打开设置", "填写名称"]}
+                    {**runtime_context(), "subgoals": ["打开设置", "填写名称"]}
                 )
             with self.assertRaises(VerifierError) as state_missing:
                 retriever.compose(
-                    {"appId": "demo", "subgoals": ["打开设置"], "bindings": {}}
+                    {
+                        "appId": "demo",
+                        "appVersion": "1.0.0",
+                        "screenDigest": "screen-main",
+                        "subgoals": ["打开设置"],
+                        "bindings": {},
+                    }
                 )
         self.assertEqual("compose", result["decision"])
-        self.assertEqual("${name}", result["workflow"]["steps"][1]["value"])
+        self.assertEqual([open_settings.asset_id, set_name.asset_id], result["assetIds"])
+        self.assertNotIn("workflow", result)
         self.assertNotIn("private-value", str(result))
         self.assertEqual("parameter_binding_required", missing.exception.code)
         self.assertEqual("composition_pre_state_required", state_missing.exception.code)

@@ -17,8 +17,7 @@ SCHEMAS = SKILL / "schemas"
 PUBLIC_SCRIPTS = (
     "ev_init.py", "ev_probe.py", "ev_prepare.py", "ev_action.py", "ev_workflow.py",
     "ev_finalize.py", "ev_pending.py", "ev_persist.py", "ev_knowledge.py",
-    "ev_suggest.py", "ev_assets.py", "ev_asset_extract.py", "ev_asset_runner.py",
-    "ev_export_workflow.py", "ev_risk.py", "ev_server.py",
+    "ev_suggest.py", "ev_assets.py", "ev_risk.py", "ev_server.py",
     "ev_operation.py",
 )
 
@@ -133,6 +132,9 @@ def main() -> int:
         PACKAGE / "sensitivity.py",
         PACKAGE / "risk_authorization.py",
         PACKAGE / "operations.py",
+        PACKAGE / "compatibility.py",
+        PACKAGE / "asset_execution.py",
+        PACKAGE / "run_context.py",
     )
     missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
     if missing_security_modules:
@@ -162,15 +164,30 @@ def main() -> int:
         except (OSError, SyntaxError) as exc:
             public_parse_failures.append(f"{name}:{exc}")
             continue
-        for marker in ("ev_knowledge_store", "ev_knowledge_extract", "supplemental_actions"):
+        for marker in (
+            "ev_knowledge_store",
+            "ev_knowledge_extract",
+            "supplemental_actions",
+            "ev_asset_runner",
+            "executable_from_asset",
+        ):
             if marker in text:
                 public_legacy_hits.append(f"{name}:{marker}")
     if public_parse_failures:
         failures.append(f"公共 CLI 缺失或语法错误：{public_parse_failures}")
     if public_legacy_hits:
         failures.append(f"公共 CLI 仍依赖旧知识路径：{public_legacy_hits}")
+    id_only_clis = ("ev_action.py", "ev_workflow.py", "ev_risk.py")
+    missing_id_handoff = [
+        name
+        for name in id_only_clis
+        if 'payload["assetId"]' not in (SKILL / "scripts" / name).read_text(encoding="utf-8")
+    ]
+    if missing_id_handoff:
+        failures.append(f"资产复用 CLI 未把 assetId 原样交给服务端：{missing_id_handoff}")
     removed_paths = (
         "ev_knowledge_store.py", "ev_knowledge_extract.py", "ev_learn.py", "ev_promote.py",
+        "ev_asset_extract.py", "ev_asset_runner.py", "ev_export_workflow.py",
         "ev_asset_extract_smoke.py", "ev_asset_reuse_smoke.py", "ev_knowledge_smoke.py",
         "ev_pending_smoke.py", "ev_progressive_suggest_smoke.py",
     )
@@ -223,6 +240,7 @@ def main() -> int:
     metrics["legacyKnowledgeReader"] = store_facade.exists()
     metrics["publicScriptCount"] = len(PUBLIC_SCRIPTS)
     metrics["publicLegacyHits"] = public_legacy_hits
+    metrics["idOnlyAssetHandoff"] = not missing_id_handoff
     metrics["skillLines"] = len(skill_text.splitlines())
     metrics["linkedReferences"] = sorted(linked_references)
     metrics["removedLegacyPaths"] = stale_paths

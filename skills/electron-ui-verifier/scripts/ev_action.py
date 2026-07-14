@@ -7,7 +7,6 @@ import argparse
 import uuid
 
 from ev_common import EVError, add_common_args, fail, load_config, operation_exit_code, print_json, read_json_arg, request_json, resolve_config_path, wait_for_operation
-from ev_asset_runner import load_action_asset
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -29,21 +28,18 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         config = load_config(resolve_config_path(args))
-        usage = None
-        if args.action_id:
-            action, _, usage = load_action_asset(config, args.action_id)
-        else:
-            action = read_json_arg(args.action, "--action")
-        if not isinstance(action, dict):
-            raise EVError("--action 必须解析为 JSON object")
         payload: dict[str, object] = {
             "runId": args.run_id,
-            "action": action,
             "requestId": args.request_id or str(uuid.uuid4()),
             "deadlineMs": args.deadline_ms,
         }
-        if usage and usage.get("parameterSchema"):
-            payload["parameterSchema"] = usage["parameterSchema"]
+        if args.action_id:
+            payload["assetId"] = args.action_id
+        else:
+            action = read_json_arg(args.action, "--action")
+            if not isinstance(action, dict):
+                raise EVError("--action 必须解析为 JSON object")
+            payload["action"] = action
         if args.bindings:
             payload["bindings"] = read_json_arg(args.bindings, "--bindings")
         if args.risk_receipt:

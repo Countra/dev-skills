@@ -18,8 +18,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
-from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
+from knowledge_fixtures import action_asset  # noqa: E402
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -27,16 +27,8 @@ def write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def asset() -> CanonicalAsset:
-    return CanonicalAsset.create(
-        kind="workflow",
-        app_id="eval-app",
-        goal="保存设置",
-        aliases=["保存配置"],
-        payload={"workflow": {"goal": "保存设置", "steps": [{"type": "click"}]}},
-        evidence=[{"reportDigest": "b" * 64}],
-        created_at="2026-07-11T00:00:00Z",
-    )
+def asset():
+    return action_asset("eval-app", "保存设置", ["保存配置"], evidence_digest="b" * 64)
 
 
 def main() -> int:

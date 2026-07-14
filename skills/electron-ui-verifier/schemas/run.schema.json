@@ -4,7 +4,8 @@
   "title": "Verifier run journal",
   "type": "object",
   "required": [
-    "schemaVersion", "runId", "sessionId", "sessionName", "state", "createdAt", "updatedAt",
+    "schemaVersion", "runId", "sessionId", "sessionName", "appId", "appVersion", "screenDigest",
+    "preState", "maxRisk", "goal", "aliases", "state", "createdAt", "updatedAt",
     "parameterSchema", "sensitiveInputObserved", "steps", "artifacts"
   ],
   "properties": {
@@ -13,7 +14,12 @@
     "sessionId": {"type": "string", "minLength": 1},
     "sessionName": {"type": "string", "minLength": 1},
     "appId": {"type": ["string", "null"]},
+    "appVersion": {"type": ["string", "null"]},
+    "screenDigest": {"type": ["string", "null"]},
+    "preState": {"type": ["string", "null"]},
+    "maxRisk": {"enum": ["low", "medium", "high"]},
     "goal": {"type": ["string", "null"]},
+    "aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "state": {"enum": ["prepared", "running", "finalizing", "passed", "failed", "aborted"]},
     "createdAt": {"type": "string", "format": "date-time"},
     "updatedAt": {"type": "string", "format": "date-time"},
@@ -27,7 +33,8 @@
       "required": ["goal", "expectedSteps"],
       "properties": {
         "goal": {"type": ["string", "null"]},
-        "expectedSteps": {"type": "integer", "minimum": 1, "maximum": 200}
+        "expectedSteps": {"type": "integer", "minimum": 1, "maximum": 200},
+        "assetId": {"type": "string", "pattern": "^workflow-[0-9a-f]{40}$"}
       },
       "additionalProperties": false
     },
@@ -64,6 +71,10 @@
             "additionalProperties": false
           }
         },
+        "assetId": {"type": "string", "pattern": "^action-[0-9a-f]{40}$"},
+        "preState": {"type": "string", "minLength": 1},
+        "postState": {"type": "string", "minLength": 1},
+        "riskLevel": {"enum": ["low", "medium", "high"]},
         "riskAuthorization": {
           "type": "object",
           "required": ["receiptId", "risks", "consumed"],

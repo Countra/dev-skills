@@ -64,7 +64,18 @@ class RunTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
-            prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo", "goal": "保存设置"}))
+            prepared = asyncio.run(
+                service.prepare(
+                    {
+                        "session": "demo",
+                        "appId": "demo",
+                        "appVersion": "1.0.0",
+                        "screenDigest": "screen-main",
+                        "preState": "home",
+                        "goal": "保存设置",
+                    }
+                )
+            )
             counter = 0
 
             async def fake_execute(live, action):

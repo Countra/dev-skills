@@ -16,7 +16,8 @@ from .errors import VerifierError
 from .evidence import EvidenceStore
 from .models import ActionSpec, MUTATING_ACTIONS, RunState, canonical_digest, monotonic_ms
 from .operations import OperationContext
-from .reports import build_pending, build_report, summary_markdown
+from .reports import build_pending, build_report, summary_markdown, verified_post_state
+from .run_context import configure_asset_workflow, current_run_state, normalize_prepare_context, validate_asset_usage
 from .run_outputs import finalize_result, get_artifact, get_report, latest_report
 from .risk_authorization import (
     RiskAuthorizationService,
@@ -123,6 +124,18 @@ class RunService:
         journal["updatedAt"] = _now()
         atomic_write_json(self._journal_path(journal["runId"]), journal)
 
+    def begin_asset_workflow(
+        self,
+        run_id: str,
+        asset_id: str,
+        goal: str,
+        expected_steps: int,
+        parameter_schema: Any,
+    ) -> None:
+        journal = self.load(run_id)
+        configure_asset_workflow(journal, asset_id, goal, expected_steps, parameter_schema)
+        self._save(journal)
+
     async def recover(self) -> dict[str, Any]:
         recovered = []
         self.config.runs_dir.mkdir(parents=True, exist_ok=True)
@@ -157,9 +170,8 @@ class RunService:
                 self._save(journal)
 
     async def prepare(self, payload: dict[str, Any]) -> dict[str, Any]:
-        session_name = str(payload.get("session") or payload.get("name") or "").strip()
-        if not session_name:
-            raise VerifierError("session_name_required", "prepare 需要 session name")
+        context = normalize_prepare_context(payload)
+        session_name = str(context["sessionName"])
         if payload.get("cdp"):
             attach_payload = {
                 key: payload[key]
@@ -191,9 +203,14 @@ class RunService:
             "runId": run_id,
             "sessionId": session["sessionId"],
             "sessionName": session["name"],
-            "appId": str(payload.get("appId")) if payload.get("appId") else None,
-            "goal": str(payload.get("goal"))[:500] if payload.get("goal") else None,
-            "parameterSchema": normalize_parameter_schema(payload.get("parameterSchema")),
+            "appId": context["appId"],
+            "appVersion": context["appVersion"],
+            "screenDigest": context["screenDigest"],
+            "preState": context["preState"],
+            "maxRisk": context["maxRisk"],
+            "goal": context["goal"],
+            "aliases": context["aliases"],
+            "parameterSchema": context["parameterSchema"],
             "state": RunState.PREPARED.value,
             "createdAt": now,
             "updatedAt": now,
@@ -224,12 +241,16 @@ class RunService:
         parameter_schema: Any = None,
         risk_receipt: str | None = None,
         operation_context: OperationContext | None = None,
+        asset_usage: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if operation_context is not None:
             operation_context.checkpoint()
         journal = self.load(run_id)
         if journal.get("state") not in {RunState.PREPARED.value, RunState.RUNNING.value}:
             raise VerifierError("run_not_appendable", f"run 当前状态不可追加：{journal.get('state')}", status=409)
+        current_state = current_run_state(journal)
+        if asset_usage is not None:
+            asset_usage = validate_asset_usage(asset_usage, current_state)
         asset_schema = normalize_parameter_schema(parameter_schema)
         current_schema = normalize_parameter_schema(journal.get("parameterSchema"))
         if asset_schema and current_schema and asset_schema != current_schema:
@@ -285,6 +306,11 @@ class RunService:
             "parameterBindings": context.parameter_summary(bound_names),
             "startedAt": _now(),
         }
+        if current_state is not None:
+            step["preState"] = current_state
+        if asset_usage is not None:
+            step["assetId"] = asset_usage["assetId"]
+            step["riskLevel"] = asset_usage["risk"]
         if risk_authorization is not None:
             step["riskAuthorization"] = risk_authorization
         journal["state"] = RunState.RUNNING.value
@@ -310,6 +336,9 @@ class RunService:
                     "risks": execution.risks,
                     "artifacts": [item["artifactId"] for item in committed],
                 }
+            )
+            step["postState"] = (
+                asset_usage["postState"] if asset_usage is not None else verified_post_state(step["action"])
             )
         except asyncio.CancelledError:
             unknown = mutating

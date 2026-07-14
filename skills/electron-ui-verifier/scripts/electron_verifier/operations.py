@@ -25,8 +25,8 @@ _TRANSITIONS = {
     "running": {"succeeded", "failed", "cancelled", "deadline_exceeded", "unknown"},
 }
 _SUBMISSION_FIELDS = {
-    "action": {"requestId", "deadlineMs", "runId", "action", "bindings", "parameterSchema", "riskReceipt"},
-    "workflow": {"requestId", "deadlineMs", "runId", "workflow", "autoFinalize", "bindings", "riskReceipts"},
+    "action": {"requestId", "deadlineMs", "runId", "action", "assetId", "bindings", "parameterSchema", "riskReceipt"},
+    "workflow": {"requestId", "deadlineMs", "runId", "workflow", "assetId", "autoFinalize", "bindings", "riskReceipts"},
 }
 
 
@@ -227,6 +227,8 @@ class OperationStore:
             "updatedAt": now,
             "revision": 1,
         }
+        if payload.get("assetId"):
+            operation["assetId"] = str(payload["assetId"])
         atomic_write_json(self._operation_path(operation_id), operation, max_bytes=self.limits.operation_record_bytes)
         index = {
             "schemaVersion": 1,
@@ -317,8 +319,18 @@ class OperationService:
         unknown = sorted(set(payload) - _SUBMISSION_FIELDS[kind])
         if unknown:
             raise VerifierError("operation_request_invalid", f"operation 请求包含未知字段：{unknown}")
-        if not payload.get("runId") or payload.get(kind) is None:
-            raise VerifierError("operation_request_invalid", f"{kind} operation 缺少 runId 或 {kind}")
+        direct = payload.get(kind) is not None
+        asset = payload.get("assetId") not in (None, "")
+        if not payload.get("runId") or direct == asset:
+            raise VerifierError(
+                "operation_request_invalid",
+                f"{kind} operation 需要 runId，且 {kind}/assetId 必须且只能提供一个",
+            )
+        if asset and kind == "action" and payload.get("parameterSchema") not in (None, {}):
+            raise VerifierError(
+                "operation_request_invalid",
+                "asset action 的 parameterSchema 只能由服务端 canonical asset 提供",
+            )
         default_deadline = self.limits.workflow_timeout_ms if kind == "workflow" else self.limits.action_timeout_ms
         if isinstance(payload.get("deadlineMs"), bool):
             raise VerifierError("operation_deadline_invalid", "deadlineMs 必须是整数")

@@ -8,9 +8,10 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
-from .config import ServiceConfig
 from .approval import ApprovalService
+from .asset_execution import AssetExecutionService
 from .canonical_store import CanonicalStore
+from .config import ServiceConfig
 from .driver import PlaywrightCdpDriver
 from .errors import VerifierError
 from .limits import DEFAULT_LIMITS, RuntimeLimits
@@ -58,12 +59,15 @@ class AutomationRuntime:
         self.knowledge: CanonicalStore | None = None
         self.retriever: HybridRetriever | None = None
         self.approvals: ApprovalService | None = None
+        self.asset_executor: AssetExecutionService | None = None
 
     async def start(self) -> None:
         KnowledgeReset(self.config.state_root).ensure()
         self.knowledge = CanonicalStore(self.config.state_root)
+        self.knowledge.verify()
         self.retriever = HybridRetriever(self.knowledge)
         self.approvals = ApprovalService(self.knowledge, self.runs)
+        self.asset_executor = AssetExecutionService(self.knowledge, self.runs, self._record_outcome)
         await self.driver.start()
         await self.sessions.load()
         await self.runs.recover()
@@ -84,6 +88,11 @@ class AutomationRuntime:
             finally:
                 if self.retriever is not None:
                     self.retriever.close()
+
+    def _record_outcome(self, asset_id: str, succeeded: bool, verified_at: str) -> dict[str, Any]:
+        if self.retriever is None:
+            raise VerifierError("knowledge_index_unavailable", "derived index 暂不可用", status=503)
+        return self.retriever.record_outcome(asset_id, succeeded, verified_at)
 
     async def dispatch(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation == "probe":
@@ -121,6 +130,15 @@ class AutomationRuntime:
         if operation == "operation_cancel":
             return await self.operations.cancel(str(payload.get("operationId") or ""))
         if operation == "risk_preview":
+            asset_id = str(payload.get("assetId") or "")
+            if asset_id:
+                if payload.get("action") is not None:
+                    raise VerifierError("risk_preview_invalid", "risk preview 的 action/assetId 只能提供一个")
+                assert self.asset_executor is not None
+                return self.asset_executor.preview_risk(
+                    str(payload.get("runId") or ""),
+                    asset_id,
+                )
             return self.runs.preview_risk(
                 str(payload.get("runId") or ""),
                 payload.get("action"),
@@ -215,6 +233,15 @@ class AutomationRuntime:
         context: OperationContext,
     ) -> dict[str, Any]:
         if kind == "action":
+            if payload.get("assetId"):
+                assert self.asset_executor is not None
+                return await self.asset_executor.execute_action(
+                    str(payload.get("runId") or ""),
+                    str(payload["assetId"]),
+                    payload.get("bindings"),
+                    str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
+                    context,
+                )
             return await self.runs.append_action(
                 str(payload.get("runId") or ""),
                 payload.get("action"),
@@ -224,6 +251,16 @@ class AutomationRuntime:
                 operation_context=context,
             )
         if kind == "workflow":
+            if payload.get("assetId"):
+                assert self.asset_executor is not None
+                return await self.asset_executor.execute_workflow(
+                    str(payload.get("runId") or ""),
+                    str(payload["assetId"]),
+                    payload.get("bindings"),
+                    payload.get("riskReceipts"),
+                    payload.get("autoFinalize", True) is not False,
+                    context,
+                )
             return await self.runs.execute_workflow(
                 str(payload.get("runId") or ""),
                 payload.get("workflow"),

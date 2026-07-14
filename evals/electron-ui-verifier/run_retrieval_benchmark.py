@@ -19,6 +19,7 @@ from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
+from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
 
 
 TASKS = {
@@ -75,18 +76,7 @@ def build_assets() -> tuple[list[CanonicalAsset], list[dict[str, str]]]:
     positives: list[dict[str, str]] = []
     for app_id, tasks in TASKS.items():
         for goal, alias in tasks:
-            asset = CanonicalAsset.create(
-                kind="workflow",
-                app_id=app_id,
-                goal=goal,
-                aliases=[alias],
-                payload={
-                    "workflow": {"schemaVersion": 1, "appId": app_id, "goal": goal, "steps": [{"type": "snapshot"}]},
-                    "stats": {"successCount": 3, "failureCount": 0},
-                },
-                evidence=[{"reportDigest": "c" * 64}],
-                created_at="2026-07-11T00:00:00Z",
-            )
+            asset = action_asset(app_id, goal, [alias])
             assets.append(asset)
             positives.append({"appId": app_id, "query": f"Please {alias.lower()}", "assetId": asset.asset_id})
     return assets, positives
@@ -95,10 +85,14 @@ def build_assets() -> tuple[list[CanonicalAsset], list[dict[str, str]]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", required=True)
+    parser.add_argument("--output", required=True)
     args = parser.parse_args()
     work_dir = Path(args.work_dir).resolve()
     if ROOT not in work_dir.parents:
         raise SystemExit("--work-dir 必须位于当前仓库内")
+    output = Path(args.output).resolve()
+    if ROOT not in output.parents:
+        raise SystemExit("--output 必须位于当前仓库内")
     if work_dir.exists():
         shutil.rmtree(work_dir)
     state = work_dir / "state"
@@ -112,7 +106,7 @@ def main() -> int:
     samples: list[dict[str, Any]] = []
     with HybridRetriever(store) as retriever:
         for case in positives:
-            result = retriever.search(case["query"], {"appId": case["appId"]}, limit=5)
+            result = retriever.search(case["query"], runtime_context(case["appId"]), limit=5)
             ids = [item["assetId"] for item in result["candidates"]]
             rank = ids.index(case["assetId"]) + 1 if case["assetId"] in ids and result["decision"] == "reuse" else None
             hits += int(rank is not None)
@@ -123,7 +117,7 @@ def main() -> int:
         for app_id, queries in NEGATIVES.items():
             for query in queries:
                 negative_count += 1
-                result = retriever.search(query, {"appId": app_id}, limit=5)
+                result = retriever.search(query, runtime_context(app_id), limit=5)
                 false_positives += int(result["decision"] == "reuse")
     recall = hits / len(positives)
     mrr = reciprocal / len(positives)
@@ -143,8 +137,7 @@ def main() -> int:
         "negativeFalsePositiveRate": false_positive_rate <= 0.05,
     }
     result = {"ok": all(gates.values()), "metrics": metrics, "gates": gates, "samples": samples}
-    task_dir = work_dir.parent.parent
-    write_json(task_dir / "artifacts" / "validation" / "retrieval-benchmark.json", result)
+    write_json(output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1
 

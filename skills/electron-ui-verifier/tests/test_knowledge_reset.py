@@ -20,21 +20,14 @@ from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.knowledge_index import KnowledgeIndex  # noqa: E402
 from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
+from knowledge_fixtures import action_asset  # noqa: E402
 
 
 TEST_ROOT = Path(os.environ.get("EV_TEST_ROOT", Path.cwd() / ".harness" / "electron-ui-verifier-test-tmp"))
 
 
 def sample_asset() -> CanonicalAsset:
-    return CanonicalAsset.create(
-        kind="workflow",
-        app_id="demo",
-        goal="保存设置",
-        aliases=["保存配置"],
-        payload={"workflow": {"goal": "保存设置", "steps": [{"type": "click"}]}},
-        evidence=[{"reportDigest": "a" * 64}],
-        created_at="2026-07-11T00:00:00Z",
-    )
+    return action_asset("保存设置", ["保存配置"])
 
 
 class KnowledgeResetTests(unittest.TestCase):
@@ -116,6 +109,40 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual(1, rebuilt["activeAssetCount"])
             self.assertFalse(stale_journal.exists())
             self.assertEqual(1, len(list(store.paths["derived"].glob("index.stale-*.sqlite3-journal"))))
+
+    def test_rebuild_preserves_valid_reliability_and_corruption_uses_baseline(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            state = Path(folder) / "state"
+            KnowledgeReset(state).ensure()
+            store = CanonicalStore(state)
+            asset = sample_asset()
+            store.activate([asset])
+            with KnowledgeIndex(store.paths["index"]) as index:
+                index.record_outcome(asset.asset_id, True, "2026-07-12T00:00:00Z")
+                index.record_outcome(asset.asset_id, False, "2026-07-12T00:01:00Z")
+            store.rebuild_index()
+            with KnowledgeIndex(store.paths["index"]) as index:
+                preserved = index.get(asset.asset_id)
+            self.assertEqual(5, preserved["success_count"])
+            self.assertEqual(1, preserved["failure_count"])
+            connection = sqlite3.connect(store.paths["index"])
+            connection.execute(
+                "UPDATE assets SET success_count='invalid', last_verified_at='invalid' WHERE asset_id=?",
+                (asset.asset_id,),
+            )
+            connection.commit()
+            connection.close()
+            store.rebuild_index()
+            with KnowledgeIndex(store.paths["index"]) as index:
+                semantic_baseline = index.get(asset.asset_id)
+            self.assertEqual(4, semantic_baseline["success_count"])
+            self.assertEqual(0, semantic_baseline["failure_count"])
+            store.paths["index"].write_bytes(b"corrupt-derived-index")
+            CanonicalStore(state).verify()
+            with KnowledgeIndex(store.paths["index"]) as index:
+                baseline = index.get(asset.asset_id)
+            self.assertEqual(4, baseline["success_count"])
+            self.assertEqual(0, baseline["failure_count"])
 
     def test_wal_index_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:

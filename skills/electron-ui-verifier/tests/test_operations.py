@@ -78,6 +78,39 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual("operation_request_conflict", caught.exception.code)
             await service.shutdown()
 
+    async def test_asset_submission_is_id_only_and_mutually_exclusive(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            seen = []
+
+            async def executor(kind, submitted, context):
+                seen.append(dict(submitted))
+                return {"ok": True}
+
+            service = OperationService(Path(folder), b"test-secret", executor)
+            base = {
+                "requestId": str(uuid.uuid4()),
+                "runId": str(uuid.uuid4()),
+                "assetId": "action-" + "a" * 40,
+            }
+            submitted = service.submit("action", base)
+            terminal = await wait_final(service, submitted["operation"]["operationId"])
+            self.assertEqual("succeeded", terminal["state"])
+            self.assertEqual(base["assetId"], terminal["assetId"])
+            self.assertNotIn("action", seen[0])
+            with self.assertRaises(VerifierError) as both:
+                service.submit(
+                    "action",
+                    {**base, "requestId": str(uuid.uuid4()), "action": {"type": "snapshot"}},
+                )
+            self.assertEqual("operation_request_invalid", both.exception.code)
+            with self.assertRaises(VerifierError) as client_schema:
+                service.submit(
+                    "action",
+                    {**base, "requestId": str(uuid.uuid4()), "parameterSchema": {"value": {}}},
+                )
+            self.assertEqual("operation_request_invalid", client_schema.exception.code)
+            await service.shutdown()
+
     async def test_queued_cancel_never_calls_executor(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
             release = asyncio.Event()
