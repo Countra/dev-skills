@@ -27,6 +27,7 @@ WINDOWS_ROTATION_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32)
 WINDOWS_SHARING_VIOLATIONS = {5, 32, 33}
 PROCESS_GROUP_SETTLE_SECONDS = 1.0
 PROCESS_GROUP_POLL_SECONDS = 0.02
+LOG_PUMP_DRAIN_SECONDS = 5.0
 
 
 class WindowsConsole:
@@ -265,6 +266,21 @@ def _group_remaining_after_target(
     return False
 
 
+def _log_pumps_timed_out(
+    pumps: list[threading.Thread],
+    *,
+    timeout: float = LOG_PUMP_DRAIN_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> bool:
+    deadline = monotonic() + max(0.0, timeout)
+    for thread in pumps:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            break
+        thread.join(timeout=remaining)
+    return any(thread.is_alive() for thread in pumps)
+
+
 class TargetController:
     def __init__(self, process: subprocess.Popen[bytes], mode: str, owner_control: dict[str, Any]) -> None:
         self.process = process
@@ -398,12 +414,10 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     watcher = threading.Thread(target=control_loop, daemon=True)
     watcher.start()
     exit_code = process.wait()
-    for thread in pumps:
-        thread.join(timeout=5)
-    log_pump_timeout = any(thread.is_alive() for thread in pumps)
     group_remaining = _group_remaining_after_target(process.pid, mode)
     if group_remaining:
         controller.force()
+    log_pump_timeout = _log_pumps_timed_out(pumps)
     state.update(
         {
             "state": (
