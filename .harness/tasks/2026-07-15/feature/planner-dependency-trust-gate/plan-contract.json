@@ -1,0 +1,369 @@
+{
+  "task_id": "2026-07-15-feature-planner-dependency-trust-gate",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "把依赖与技术选型从可用性建议升级为可审计、可执行、可复核的可信度决策门，并由 Planner 与 Executor 共同守住批准结论"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "Planner 必须先判断依赖是否必要，再按用户或组织策略、现有项目栈、标准库或官方 SDK、生态主流方案、专用例外的顺序完成选型"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "依赖候选必须记录稳定版本、采用规模、更新时间、维护活跃度、采用趋势及安全、许可、真实性、兼容性等可信度证据与新鲜度"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "任务契约、计划模板、依赖选型附件和 Planner checker 必须以受控字段表达选型模式、候选比较、结论、例外和验证映射"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "Planner checker 必须拒绝空门禁、口号式完成声明、缺证据的主流结论及活动任务指针冲突，并提供稳定诊断"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "Executor 必须执行批准的依赖身份与版本策略，发现未批准替换、证据过期、弃用或安全状态变化时进入 Research Drift 或 Amendment"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "单测、确定性评估、三平台 CI 和仓库文档必须覆盖主流选择、保留现有栈、标准库优先、专用例外、陈旧证据和负向门禁"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "当任务不新增、更换或升级依赖时可明确选择 none 并保持轻量；触发依赖变更时未完成必要性判断不能通过批准检查"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-01", "REQ-02"],
+      "summary": "选型任务比较现有组件或标准库与二至四个领先候选，并优先遵守用户策略和现有项目栈，不因单项热度强制迁移"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-02"],
+      "summary": "每项正式候选都有稳定性、采用规模、更新时间、维护、趋势、安全、许可、真实性和兼容性结果，以及来源、观察日期、窗口和局限"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03"],
+      "summary": "专用或非主流方案只有在主流基线不能满足明确需求，并记录风险、缓解、回滚与批准要求后才可入选"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-03", "REQ-04"],
+      "summary": "契约与 checker 对缺失字段、无效枚举、过期证据、来源不足、计划契约漂移和仅写 complete 的空门禁给出稳定失败码"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-05"],
+      "summary": "Executor 在实施前和依赖变更阶段核对批准身份、版本策略、manifest 或 lock 范围和证据新鲜度，偏离时停止而非自行替换"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-04"],
+      "summary": "活动任务指针缺失、同任务、终态旧任务和非终态冲突四类情况均有确定行为，非终态冲突默认拒绝覆盖"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-03", "REQ-04", "REQ-05", "REQ-06"],
+      "summary": "Planner 与 Executor 单测、评估和自举 approval checker 全部通过，并由全分支三平台 CI 定义持续验证"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-06"],
+      "summary": "文档以 Go Web 和 ORM 说明主流基线的用法，同时明确 Gin、GORM 等只是有时效证据的示例而非跨项目永久默认"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "不得以 stars、下载量、单一聚合评分或单日快照独立决定选型，所有信号必须按生态、类别和项目适配性解释"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "运行时关键依赖证据默认不老于 30 天、普通运行时依赖不老于 60 天、开发测试依赖不老于 90 天，超期必须复核"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "已归档、已弃用、来源不真实、许可不允许、版本不兼容或存在未缓解适用高危漏洞的候选必须 fail closed"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "趋势缺少可靠历史数据时必须标记 insufficient-data、披露限制并交叉验证，不得伪造增长结论"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "direct 和无依赖变更任务保持渐进披露；只有 add、replace、upgrade 或关键 retain 决策触发完整证据成本"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "实现保持 Python 3.11+ 标准库、模块高内聚、稳定诊断、跨 Windows、Linux、macOS 且不新增后台服务"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "计划、契约、附件、Executor handoff、测试和文档使用同一受控术语与 ID，检查器只验证可证明事实"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/dependency-trust-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/dependency-gate-design.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "依赖可信度政策与规划资产",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/complex-coding-planner/SKILL.md", "skills/complex-coding-planner/references/**", "skills/complex-coding-planner/templates/**"],
+      "forbidden_changes": ["hard-coded permanent package winners", "automatic package installation", "runtime state files", "unrelated skills"],
+      "entry_conditions": ["批准 attestation 有效", "ART-01 至 ART-03 的决策边界已确认", "Planner 基线为 17 单测和 10 评估通过"],
+      "exit_conditions": ["必要性门、优先级、硬门槛、比较信号、证据新鲜度和例外流程在规则与模板中一致", "dependency selection artifact 模板可独立使用", "无依赖变更任务有明确轻量路径"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-02",
+      "title": "机器契约与依赖决策校验器",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-02", "REQ-03"],
+      "acceptance_ids": ["AC-03", "AC-04", "AC-05"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/complex-coding-planner/scripts/harness_contract*.py", "skills/complex-coding-planner/references/task-contract.md", "skills/complex-coding-planner/templates/plan-contract.json"],
+      "forbidden_changes": ["schema version forks", "network calls inside deterministic contract validation", "aggregate popularity winner", "executor runtime state semantics"],
+      "entry_conditions": ["STG-01 完成", "字段模型与受控枚举在 ART-03 固定", "自举计划已确认不新增第三方依赖"],
+      "exit_conditions": ["DEP ID、模式、候选、信号、来源、新鲜度、版本策略和例外均有 closed validation", "现有无依赖变更计划仍可按 none 语义自举", "错误码稳定且模块职责单一"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-03",
+      "title": "语义门禁与活动任务指针安全",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-03", "REQ-04"],
+      "acceptance_ids": ["AC-05", "AC-07"],
+      "nonfunctional_ids": ["NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/complex-coding-planner/scripts/harness_plan_check.py", "skills/complex-coding-planner/scripts/harness_active_task.py", "skills/complex-coding-planner/references/**", "skills/complex-coding-planner/SKILL.md"],
+      "forbidden_changes": ["free-form keyword success detection", "silent active pointer overwrite", "executor ledger mutation", "external writes"],
+      "entry_conditions": ["STG-02 完成", "dependency decision validator 可被 checker 组合", "指针四态规则已记录"],
+      "exit_conditions": ["空门禁、伪完成和计划契约漂移被拒绝", "指针缺失、同任务、终态切换、非终态冲突均有原子且 fail-closed 行为", "draft 与 approval 诊断可测试"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-04",
+      "title": "Executor 依赖决策执行与漂移闭环",
+      "depends_on": ["STG-02", "STG-03"],
+      "requirement_ids": ["REQ-05"],
+      "acceptance_ids": ["AC-06"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-03", "VAL-04", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/complex-coding-executor/SKILL.md", "skills/complex-coding-executor/references/**", "skills/complex-coding-executor/scripts/**"],
+      "forbidden_changes": ["unapproved dependency substitution", "automatic latest-version upgrade", "network mutation during preflight", "unrelated attestation or ledger redesign"],
+      "entry_conditions": ["STG-03 完成", "Planner contract 与 checker 已稳定", "Executor 基线为 39 单测和 13 评估通过"],
+      "exit_conditions": ["preflight 和 stage entry 读取依赖决策", "manifest 或 lock 偏离、证据过期、弃用和漏洞变化进入 Research Drift", "none 模式不增加无关执行成本"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-05",
+      "title": "负向单测与行为评估扩展",
+      "depends_on": ["STG-03", "STG-04"],
+      "requirement_ids": ["REQ-03", "REQ-04", "REQ-05", "REQ-06"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-07"],
+      "allowed_changes": ["skills/complex-coding-planner/tests/**", "skills/complex-coding-executor/tests/**", "evals/complex-coding-planner/**", "evals/complex-coding-executor/**"],
+      "forbidden_changes": ["agent execution", "live package installation", "network-dependent deterministic tests", "tests that assert only keywords"],
+      "entry_conditions": ["STG-04 完成", "受控错误码和 fixture contract 稳定", "测试临时目录可写"],
+      "exit_conditions": ["正向、边界和负向矩阵全部通过", "Go 示例覆盖 retain、stdlib、Gin、GORM 和专用例外语义", "陈旧证据、趋势缺失和指针冲突均有回归"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-06",
+      "title": "三平台 CI 与公共文档收敛",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-06"],
+      "acceptance_ids": ["AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-06", "VAL-07", "VAL-08"],
+      "allowed_changes": [".github/workflows/planner-executor.yml", "README.md", "CHANGELOG.md", "skills/complex-coding-planner/**", "skills/complex-coding-executor/**"],
+      "forbidden_changes": ["branch filters that omit feature branches", "secret-dependent CI", "remote workflow dispatch", "unrelated skill documentation"],
+      "entry_conditions": ["STG-05 全部 required 本地验证通过", "CI 命令与本地命令一致", "文档术语表已固定"],
+      "exit_conditions": ["全分支 Windows、Ubuntu、macOS 矩阵定义完成", "README、CHANGELOG、SKILL 和 reference 一致", "本地 workflow contract 与格式检查通过"],
+      "risk": "medium",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-07",
+      "title": "自举复核、最终审查与交付",
+      "depends_on": ["STG-06"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/complex-coding-planner/**", "skills/complex-coding-executor/**", "evals/complex-coding-planner/**", "evals/complex-coding-executor/**", ".github/workflows/planner-executor.yml", "README.md", "CHANGELOG.md", ".harness/tasks/2026-07-15/feature/planner-dependency-trust-gate/artifacts/**"],
+      "forbidden_changes": ["unapproved scope expansion", "remote push or external write", "fabricated CI evidence", "commit without explicit authorization"],
+      "entry_conditions": ["STG-06 完成", "全部 required automated validation 先通过", "源文件和批准 attestation 无漂移"],
+      "exit_conditions": ["当前计划在新版 checker 下继续以 none 模式通过", "最终代码审查无 blocker", "diff 范围、文档、测试和追踪矩阵闭环"],
+      "risk": "high",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-07", "AC-08", "AC-09", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/planner-unit-tests.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-08", "AC-09", "NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-planner/run_evals.py",
+      "evidence_path": "artifacts/validation/planner-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-06", "AC-08", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/executor-unit-tests.txt"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-06", "AC-08", "NFR-02", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/run_evals.py",
+      "evidence_path": "artifacts/validation/executor-evals.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-05", "AC-06", "AC-07", "AC-08", "NFR-02", "NFR-04", "NFR-05", "NFR-07"],
+      "command": "python -X utf8 -B skills/complex-coding-planner/scripts/harness_plan_check.py --task-dir .harness/tasks/2026-07-15/feature/planner-dependency-trust-gate --mode approval --format json",
+      "evidence_path": "artifacts/validation/self-host-plan-check.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-08", "NFR-06", "NFR-07"],
+      "command": "git -c diff.autoRefreshIndex=false diff --check",
+      "evidence_path": "artifacts/validation/diff-check.txt"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "command": "按 ART-07 追踪矩阵执行 source-bound 最终代码审查并核对批准范围、诊断、测试与文档",
+      "evidence_path": "artifacts/reviews/final-code-review.md"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "other",
+      "required": false,
+      "covers": ["AC-08", "NFR-06"],
+      "command": "用户推送后运行 .github/workflows/planner-executor.yml 的 Windows、Ubuntu、macOS 矩阵",
+      "evidence_path": "artifacts/validation/hosted-platform-matrix.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "dependency decision schema, hard gates, freshness windows or specialized exception semantics change",
+    "approved scope, stage graph, required validations or public Planner and Executor behavior changes",
+    "new runtime dependency, background service, package installation, external write or elevated tool becomes necessary",
+    "implementation requires migrating existing projects solely because another package is more popular",
+    "active task pointer conflict cannot be resolved by the approved four-state policy"
+  ],
+  "stop_conditions": [
+    "user requests pause or does not approve implementation",
+    "reapproval is required",
+    "blocking dependency evidence or required permission is unavailable",
+    "required validation remains failing after bounded repair attempts",
+    "nonterminal active task pointer belongs to another task",
+    "selected dependency fails authenticity, compatibility, license, support or applicable vulnerability hard gates"
+  ]
+}

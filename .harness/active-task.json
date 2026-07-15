@@ -1,6 +1,6 @@
 {
-  "task_id": "2026-07-14-feature-electron-ui-verifier-safety-knowledge-closure",
-  "task_dir": ".harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure",
+  "task_id": "2026-07-15-feature-planner-dependency-trust-gate",
+  "task_dir": ".harness/tasks/2026-07-15/feature/planner-dependency-trust-gate",
   "run_state_path": "run-state.json",
-  "updated_at": "2026-07-14T06:13:43.697Z"
+  "updated_at": "2026-07-15T06:00:32.659Z"
 }
