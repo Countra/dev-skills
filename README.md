@@ -16,6 +16,7 @@
 - 同时生成不可变 `execution-plan.md` 和封闭 `plan-contract.json`，用稳定 ID 追踪 requirement、acceptance、stage、validation 与 artifact。
 - `Plan Quality Gate` 检查影响面、DAG、覆盖、scope、证据和 amendment trigger。
 - `Research Gate` 必须判断不确定项是否为 `none`、`local-only`、`online-required` 或 `blocked-by-access`；涉及可能变化的外部事实时优先查询官方或一手资料。
+- `Dependency Selection Gate` 先判断依赖是否必要，再按 existing stack、标准库/官方方案、生态主流候选和受控专用例外逐级比较；稳定版本、采用规模、更新新鲜度、维护活跃度和采用趋势是正式证据，不能用单一热度指标代替项目适配与 hard gates。
 - `Standards Discovery Gate` 必须识别语言、技术栈、框架、API 类型和架构风险，收集官方/一手或高质量规范来源并形成 standards index。
 - `Development Quality Gate` 必须覆盖代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。
 - `Plan Self-Review` 主动复查缺陷、优化点、缺失项、风险和一致性；full/高风险优先 clean-context critique。
@@ -34,6 +35,7 @@
 
 - 每轮读取 pointer、contract、attestation、append-only ledger 和派生 `run-state.json`；不解析 Markdown 状态。
 - 执行前运行 `harness_exec_check.py --mode preflight`，恢复时使用 `status|reconcile`，阶段完成后使用 `transition`。
+- `dependency_selection.mode=none` 时依赖门禁直接返回 `not-applicable`；其它模式精确核对批准的包、来源、选择类别、版本策略和 manifest，并按 critical-runtime/runtime/dev-build 的 30/60/90 天上限要求 task-local runtime receipt。
 - 每个开始、attempt、validation、review、stage completion、block、amendment 和 commit 都先追加合法 event，再原子刷新 snapshot。
 - 实施中发现计划未覆盖的外部事实、API/依赖变化或关键不确定项时，进入 `Research Drift Gate`，补证据或触发 `Plan Amendment Gate`。
 - 每个阶段执行 `Development Quality Check`，引用 standards index 复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
@@ -41,6 +43,7 @@
 - scope、DAG、required validation、风险或授权变化时归档上一 revision，重新批准并用新 ledger 首事件连接旧 hash。
 - 阶段完成不是停止条件；只有所有 stage、验证、review、授权、pointer closure 和 final checker 闭环后才能交付。
 - 实施授权不等于提交授权；提交必须由 attestation 明确授权并使用 `git commit -F`。
+- `.github/workflows/planner-executor.yml` 在所有 push/pull request 分支上运行 Windows、Ubuntu、macOS 的 Planner/Executor 单测与确定性 eval，不需要 secrets 或依赖安装。
 
 ### process-manager
 
