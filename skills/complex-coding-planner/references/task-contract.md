@@ -45,6 +45,7 @@ task-dir/
 - executor 启动后维护 `run-state.json` 与 `ledger.jsonl`。
 - `active-task.json` 只定位任务，不复制 lifecycle、stage、remaining 或 next action。
 - active pointer 是封闭对象，只含 `task_id`、workspace 相对 `task_dir`、task-dir 相对 `run_state_path` 和 RFC3339 `updated_at`；路径不得包含 `..`。
+- pointer 激活必须先分类：missing 创建、same-task 复用、different-terminal 原子替换、different-nonterminal/different-unknown fail closed。显式切换必须携带与当前 pointer 一致的 expected task ID，不得静默覆盖。
 - 任务 completed/aborted 且无需恢复时删除 `active-task.json`；“无活动任务”用文件不存在表达，不写 `null` 根对象。
 
 ## 所有权

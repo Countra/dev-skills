@@ -16,6 +16,11 @@ from harness_contract import (
     load_json_object,
 )
 from harness_contract_rules import validate_contract
+from harness_plan_semantics import (
+    validate_dependency_plan,
+    validate_gate_semantics,
+    validate_online_research,
+)
 
 
 REQUIRED_PLAN_SECTIONS = [
@@ -66,6 +71,7 @@ ID_REGEX = {
     "STG": re.compile(r"\bSTG-\d{2,}\b"),
     "VAL": re.compile(r"\bVAL-\d{2,}\b"),
     "ART": re.compile(r"\bART-\d{2,}\b"),
+    "DEP": re.compile(r"\bDEP-\d{2,}\b"),
 }
 
 
@@ -112,6 +118,13 @@ def contract_ids(contract: dict[str, Any]) -> dict[str, set[str]]:
             return set()
         return {str(item.get("id")) for item in values if isinstance(item, dict) and item.get("id")}
 
+    selection = contract.get("dependency_selection")
+    dependency_ids = {
+        str(item.get("id"))
+        for item in selection.get("decisions", [])
+        if isinstance(item, dict) and item.get("id")
+    } if isinstance(selection, dict) else set()
+
     return {
         "GOAL": {str(contract.get("goal", {}).get("id"))}
         if isinstance(contract.get("goal"), dict) and contract["goal"].get("id")
@@ -122,6 +135,7 @@ def contract_ids(contract: dict[str, Any]) -> dict[str, set[str]]:
         "STG": ids("stages"),
         "VAL": ids("validations"),
         "ART": ids("artifacts"),
+        "DEP": dependency_ids,
     }
 
 
@@ -308,14 +322,16 @@ def validate_plan(
                 "计划仍包含模板占位符。",
                 "用任务真实内容替换占位符。",
             )
-        gates = (
+        gates = [
             "调研门禁",
             "规范发现门禁",
             "开发质量门禁",
             "方案质量门禁",
             "规划自查",
             "就绪门禁",
-        )
+        ]
+        if has_heading(plan, "依赖选型门禁"):
+            gates.append("依赖选型门禁")
         for gate in gates:
             gate_text = section(plan, gate)
             if re.search(r"\bpending\b", gate_text, re.IGNORECASE):
@@ -343,6 +359,16 @@ def validate_plan(
                     "online-required 缺少 URL 证据。",
                     "引用官方或一手来源。",
                 )
+
+        semantic_gates_enabled = has_heading(plan, "依赖选型门禁")
+        if semantic_gates_enabled:
+            validate_gate_semantics(plan, issues)
+            validate_online_research(
+                contract,
+                validation_context(task_dir, contract, plan),
+                issues,
+            )
+        validate_dependency_plan(plan, contract, issues)
 
         options = section(plan, "候选方案")
         option_count = len(re.findall(r"^###\s+", options, re.MULTILINE))
