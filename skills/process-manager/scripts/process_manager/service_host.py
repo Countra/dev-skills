@@ -16,15 +16,13 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
-from .atomic import atomic_write_json
+from .atomic import atomic_write_json, retry_windows_file_operation
 from .errors import ConfigurationError
 from .runtime import now_text
 
 
 MAX_SPEC_BYTES = 256 * 1024
 MAX_CONTROL_BYTES = 4096
-WINDOWS_ROTATION_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32)
-WINDOWS_SHARING_VIOLATIONS = {5, 32, 33}
 PROCESS_GROUP_SETTLE_SECONDS = 1.0
 PROCESS_GROUP_POLL_SECONDS = 0.02
 LOG_PUMP_DRAIN_SECONDS = 5.0
@@ -155,18 +153,7 @@ class RotatingBinaryLog:
 
     @staticmethod
     def _retry_rotation(operation: Callable[[], object]) -> None:
-        for attempt in range(len(WINDOWS_ROTATION_RETRY_DELAYS) + 1):
-            try:
-                operation()
-                return
-            except OSError as exc:
-                winerror = getattr(exc, "winerror", None)
-                retryable = os.name == "nt" and (
-                    isinstance(exc, PermissionError) or winerror in WINDOWS_SHARING_VIOLATIONS
-                )
-                if not retryable or attempt >= len(WINDOWS_ROTATION_RETRY_DELAYS):
-                    raise
-                time.sleep(WINDOWS_ROTATION_RETRY_DELAYS[attempt])
+        retry_windows_file_operation(operation)
 
     def _rotate(self) -> None:
         self._handle.close()
