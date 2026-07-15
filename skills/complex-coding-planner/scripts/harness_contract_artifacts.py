@@ -20,6 +20,7 @@ ARTIFACT_KINDS = {
     "research",
     "standards",
     "architecture",
+    "dependency",
     "validation",
     "review",
     "other",

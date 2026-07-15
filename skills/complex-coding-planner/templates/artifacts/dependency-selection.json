@@ -1,0 +1,141 @@
+{
+  "observed_at": "<YYYY-MM-DD>",
+  "decisions": [
+    {
+      "decision_id": "DEP-01",
+      "necessity": {
+        "result": "dependency-required",
+        "existing_or_standard_option": "<necessity-evidence>",
+        "evidence": ["REQ-01"]
+      },
+      "candidates": [
+        {
+          "key": "candidate-a",
+          "package": "<package-identity>",
+          "source_repository": "<source-repository-url>",
+          "selected_version": "<selected-version>",
+          "selection_class": "ecosystem-mainstream",
+          "disposition": "selected",
+          "hard_gates": {
+            "authenticity": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "compatibility": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "stable_support": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "lifecycle": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "security": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "license": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            },
+            "reproducibility": {
+              "result": "pass",
+              "source": "<evidence-url>"
+            }
+          },
+          "trust_signals": {
+            "stable_version": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "registry",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            },
+            "adoption_scale": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "registry",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            },
+            "update_recency": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "official",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "12m",
+              "caveat": "<evidence-caveat>"
+            },
+            "maintenance_activity": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "official",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "12m",
+              "caveat": "<evidence-caveat>"
+            },
+            "adoption_trend": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "mixed",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "12m",
+              "caveat": "<evidence-caveat>"
+            },
+            "api_and_project_fit": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "project",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            },
+            "ecosystem_and_docs": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "official",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            },
+            "transitive_and_provenance": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "primary",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            },
+            "operational_cost": {
+              "result": "pass",
+              "value": "<evidence-value>",
+              "source_type": "project",
+              "url": "<evidence-url>",
+              "as_of": "<YYYY-MM-DD>",
+              "window": "snapshot",
+              "caveat": "<evidence-caveat>"
+            }
+          },
+          "fit_summary": "<evidence-value>",
+          "risks": []
+        }
+      ],
+      "excluded_alternatives": ["<necessity-evidence>"],
+      "decision_reason": "<decision-reason>",
+      "exception": null
+    }
+  ]
+}
