@@ -136,6 +136,17 @@ class ManagedVerifier:
             timeout=timeout,
         )
 
+    def _validate_service(self, service_file: Path) -> dict[str, Any]:
+        """使用当前 fixture workspace 的 manager config 校验服务。"""
+        return self._pm(
+            "pm_validate.py",
+            "--config",
+            str(self.manager_config),
+            "--service",
+            str(service_file),
+            "--pretty",
+        )
+
     def reset(self) -> None:
         if self.work_dir.exists():
             shutil.rmtree(self.work_dir)
@@ -162,7 +173,7 @@ class ManagedVerifier:
             ),
             cwd=self.workspace,
         )
-        self._pm("pm_validate.py", "--service", str(self.service_file), "--pretty")
+        self._validate_service(self.service_file)
         self._pm("pm_manager.py", "start", "--config", str(self.manager_config), "--pretty")
         self.manager_started = True
         started = self._pm(
@@ -188,7 +199,7 @@ class ManagedVerifier:
 
     def start_managed_service(self, service_file: Path, *, timeout: float = 90.0) -> dict[str, Any]:
         """通过同一 manager 启动并等待一个额外的受管服务。"""
-        self._pm("pm_validate.py", "--service", str(service_file), "--pretty")
+        self._validate_service(service_file)
         started = self._pm(
             "pm_start.py",
             "--config",
