@@ -101,7 +101,7 @@ class PlaywrightCdpDriver:
         except VerifierError:
             raise
         except (OSError, urllib.error.URLError) as exc:
-            raise VerifierError("cdp_discovery_failed", f"无法读取 CDP discovery：{exc}", status=502) from exc
+            raise VerifierError("cdp_discovery_failed", f"无法读取 CDP discovery：{type(exc).__name__}", status=502) from exc
         if len(raw) > 1024 * 1024:
             raise VerifierError("cdp_discovery_too_large", "CDP discovery response 超过上限", status=502)
         try:
@@ -128,7 +128,7 @@ class PlaywrightCdpDriver:
         except Exception as exc:
             raise VerifierError(
                 "cdp_connect_failed",
-                f"Playwright 无法连接 CDP endpoint：{exc}",
+                f"Playwright 无法连接 CDP endpoint：{type(exc).__name__}",
                 status=502,
                 details={"endpoint": normalized},
             ) from exc
@@ -261,7 +261,7 @@ class PlaywrightCdpDriver:
             title = await live.page.title()
         except Exception as exc:
             live.status = "stale"
-            return {"connected": False, "status": "stale", "reason": str(exc)}
+            return {"connected": False, "status": "stale", "reason": type(exc).__name__}
         if live.target.target_id:
             current_id = await self._target_id(live.context, live.page)
             if not current_id:
@@ -280,7 +280,7 @@ class PlaywrightCdpDriver:
         try:
             await live.browser.close(reason="electron-ui-verifier detach")
         except Exception as exc:
-            warnings.append(f"disconnect_warning: {exc}")
+            warnings.append(f"disconnect_warning:{type(exc).__name__}")
         live.status = "detached"
         return warnings
 

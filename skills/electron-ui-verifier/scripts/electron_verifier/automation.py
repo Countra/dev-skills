@@ -8,12 +8,14 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Coroutine
 
-from .config import ServiceConfig
 from .approval import ApprovalService
+from .asset_execution import AssetExecutionService
 from .canonical_store import CanonicalStore
+from .config import ServiceConfig
 from .driver import PlaywrightCdpDriver
 from .errors import VerifierError
 from .limits import DEFAULT_LIMITS, RuntimeLimits
+from .operations import OperationContext, OperationService
 from .runs import RunService
 from .knowledge_reset import KnowledgeReset
 from .retrieval import DEFAULT_MIN_MARGIN, DEFAULT_MIN_SCORE, HybridRetriever
@@ -49,31 +51,48 @@ class AutomationRuntime:
         self.driver = driver_factory(config.artifacts_dir)
         self.sessions = SessionManager(config.sessions_file, self.driver)
         self.runs = RunService(config, self.sessions)
+        self.operations = OperationService(
+            config.operations_dir,
+            config.token().encode("utf-8"),
+            self._execute_operation,
+        )
         self.knowledge: CanonicalStore | None = None
         self.retriever: HybridRetriever | None = None
         self.approvals: ApprovalService | None = None
+        self.asset_executor: AssetExecutionService | None = None
 
     async def start(self) -> None:
         KnowledgeReset(self.config.state_root).ensure()
         self.knowledge = CanonicalStore(self.config.state_root)
+        self.knowledge.verify()
         self.retriever = HybridRetriever(self.knowledge)
         self.approvals = ApprovalService(self.knowledge, self.runs)
+        self.asset_executor = AssetExecutionService(self.knowledge, self.runs, self._record_outcome)
         await self.driver.start()
         await self.sessions.load()
         await self.runs.recover()
+        self.operations.recover()
 
     async def stop(self) -> None:
         try:
             try:
-                await self.runs.abort_open()
+                await self.operations.shutdown()
             finally:
-                await self.sessions.shutdown()
+                try:
+                    await self.runs.abort_open()
+                finally:
+                    await self.sessions.shutdown()
         finally:
             try:
                 await self.driver.stop()
             finally:
                 if self.retriever is not None:
                     self.retriever.close()
+
+    def _record_outcome(self, asset_id: str, succeeded: bool, verified_at: str) -> dict[str, Any]:
+        if self.retriever is None:
+            raise VerifierError("knowledge_index_unavailable", "derived index 暂不可用", status=503)
+        return self.retriever.record_outcome(asset_id, succeeded, verified_at)
 
     async def dispatch(self, operation: str, payload: dict[str, Any]) -> dict[str, Any]:
         if operation == "probe":
@@ -103,18 +122,32 @@ class AutomationRuntime:
                 prepared["knowledge"] = knowledge
             return prepared
         if operation == "run_action":
-            return await self.runs.append_action(
+            return self.operations.submit("action", payload)
+        if operation == "run_workflow":
+            return self.operations.submit("workflow", payload)
+        if operation == "operation_get":
+            return self.operations.get(str(payload.get("operationId") or ""))
+        if operation == "operation_cancel":
+            return await self.operations.cancel(str(payload.get("operationId") or ""))
+        if operation == "risk_preview":
+            asset_id = str(payload.get("assetId") or "")
+            if asset_id:
+                if payload.get("action") is not None:
+                    raise VerifierError("risk_preview_invalid", "risk preview 的 action/assetId 只能提供一个")
+                assert self.asset_executor is not None
+                return self.asset_executor.preview_risk(
+                    str(payload.get("runId") or ""),
+                    asset_id,
+                )
+            return self.runs.preview_risk(
                 str(payload.get("runId") or ""),
                 payload.get("action"),
-                payload.get("bindings"),
-                payload.get("parameterSchema"),
             )
-        if operation == "run_workflow":
-            return await self.runs.execute_workflow(
-                str(payload.get("runId") or ""),
-                payload.get("workflow"),
-                auto_finalize=payload.get("autoFinalize", True) is not False,
-                bindings=payload.get("bindings"),
+        if operation == "risk_approve":
+            return self.runs.approve_risk(
+                str(payload.get("previewId") or ""),
+                str(payload.get("fingerprint") or ""),
+                str(payload.get("note") or ""),
             )
         if operation == "run_finalize":
             return await self.runs.finalize(str(payload.get("runId") or ""))
@@ -131,11 +164,19 @@ class AutomationRuntime:
             return {"ok": True, **self.approvals.validate(str(payload.get("runId") or ""))}
         if operation == "pending_approve":
             assert self.approvals is not None
-            return self.approvals.approve(
-                str(payload.get("runId") or ""),
-                str(payload.get("fingerprint") or ""),
-                str(payload.get("note") or ""),
-            )
+            assert self.knowledge is not None
+            if self.retriever is not None:
+                self.retriever.close()
+                self.retriever = None
+            try:
+                return self.approvals.approve(
+                    str(payload.get("runId") or ""),
+                    str(payload.get("fingerprint") or ""),
+                    str(payload.get("note") or ""),
+                )
+            finally:
+                self.knowledge.verify()
+                self.retriever = HybridRetriever(self.knowledge)
         if operation == "pending_reject":
             assert self.approvals is not None
             return self.approvals.reject(
@@ -185,6 +226,51 @@ class AutomationRuntime:
             return self.retriever.stats()
         raise VerifierError("operation_not_found", f"未知 automation operation：{operation}", status=404)
 
+    async def _execute_operation(
+        self,
+        kind: str,
+        payload: dict[str, Any],
+        context: OperationContext,
+    ) -> dict[str, Any]:
+        if kind == "action":
+            if payload.get("assetId"):
+                assert self.asset_executor is not None
+                return await self.asset_executor.execute_action(
+                    str(payload.get("runId") or ""),
+                    str(payload["assetId"]),
+                    payload.get("bindings"),
+                    str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
+                    context,
+                )
+            return await self.runs.append_action(
+                str(payload.get("runId") or ""),
+                payload.get("action"),
+                payload.get("bindings"),
+                payload.get("parameterSchema"),
+                str(payload["riskReceipt"]) if payload.get("riskReceipt") else None,
+                operation_context=context,
+            )
+        if kind == "workflow":
+            if payload.get("assetId"):
+                assert self.asset_executor is not None
+                return await self.asset_executor.execute_workflow(
+                    str(payload.get("runId") or ""),
+                    str(payload["assetId"]),
+                    payload.get("bindings"),
+                    payload.get("riskReceipts"),
+                    payload.get("autoFinalize", True) is not False,
+                    context,
+                )
+            return await self.runs.execute_workflow(
+                str(payload.get("runId") or ""),
+                payload.get("workflow"),
+                auto_finalize=payload.get("autoFinalize", True) is not False,
+                bindings=payload.get("bindings"),
+                risk_receipts=payload.get("riskReceipts"),
+                operation_context=context,
+            )
+        raise VerifierError("operation_kind_invalid", f"不支持的 operation kind：{kind}")
+
 
 class AutomationWorker:
     """HTTP 线程通过此边界提交命令，Playwright handle 永不越过线程。"""
@@ -203,17 +289,43 @@ class AutomationWorker:
         self._ready = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[_Command] | None = None
+        self._startup_task: asyncio.Task[None] | None = None
         self._startup_error: BaseException | None = None
         self._shutdown_error: BaseException | None = None
         self._closing = False
 
-    def start(self, timeout: float = 30.0) -> None:
+    def start(self, timeout: float | None = None) -> None:
+        wait_timeout = self.limits.automation_start_timeout_seconds if timeout is None else timeout
         self._thread.start()
-        if not self._ready.wait(timeout):
-            raise VerifierError("automation_start_timeout", "automation worker 启动超时", status=503)
+        if not self._ready.wait(wait_timeout):
+            self._closing = True
+            if self._loop is not None:
+                try:
+                    self._loop.call_soon_threadsafe(self._cancel_startup)
+                except RuntimeError:
+                    # 超时边界上 worker 可能已自行关闭 event loop。
+                    pass
+            self._thread.join(timeout=self.limits.shutdown_grace_seconds)
+            raise VerifierError(
+                "automation_start_timeout",
+                "automation worker 启动超时",
+                status=503,
+                details={
+                    "timeoutSeconds": wait_timeout,
+                    "cleanupCompleted": not self._thread.is_alive(),
+                },
+            )
         if self._startup_error is not None:
             cleanup = f"；cleanup 失败：{self._shutdown_error}" if self._shutdown_error is not None else ""
             raise VerifierError("automation_start_failed", f"automation worker 启动失败：{self._startup_error}{cleanup}", status=503)
+
+    def _cancel_startup(self) -> None:
+        if self._startup_task is not None and not self._startup_task.done():
+            self._startup_task.cancel()
+            return
+        if self._queue is not None:
+            future: concurrent.futures.Future[dict[str, Any]] = concurrent.futures.Future()
+            self._enqueue(_Command("__shutdown__", {}, future))
 
     def _thread_main(self) -> None:
         loop = asyncio.new_event_loop()
@@ -221,8 +333,9 @@ class AutomationWorker:
         self._loop = loop
         self._queue = asyncio.Queue(maxsize=self.limits.command_queue_size)
         runtime = self.runtime_factory(self.config)
+        self._startup_task = loop.create_task(runtime.start())
         try:
-            loop.run_until_complete(runtime.start())
+            loop.run_until_complete(self._startup_task)
         except BaseException as exc:
             self._startup_error = exc
             try:
@@ -233,9 +346,12 @@ class AutomationWorker:
             loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
             return
+        finally:
+            self._startup_task = None
         self._ready.set()
         try:
-            loop.run_until_complete(self._consume(runtime))
+            if not self._closing:
+                loop.run_until_complete(self._consume(runtime))
         except BaseException as exc:
             self._shutdown_error = exc
         finally:

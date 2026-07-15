@@ -12,6 +12,7 @@ from .driver import PlaywrightCdpDriver
 from .errors import VerifierError
 from .models import SessionIntent
 from .security import normalize_loopback_endpoint
+from .sensitivity import sanitize_url
 
 
 def _now() -> str:
@@ -35,7 +36,7 @@ class SessionManager:
         try:
             data = json.loads(self.sessions_file.read_text(encoding="utf-8-sig"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise VerifierError("sessions_corrupt", f"无法读取 session intent：{exc}", status=500) from exc
+            raise VerifierError("sessions_corrupt", f"无法读取 session intent：{type(exc).__name__}", status=500) from exc
         rows = data.get("sessions", []) if isinstance(data, dict) else []
         if not isinstance(rows, list):
             raise VerifierError("sessions_corrupt", "sessions.json 的 sessions 必须是数组", status=500)
@@ -47,9 +48,7 @@ class SessionManager:
             if not name or not endpoint:
                 continue
             endpoint = normalize_loopback_endpoint(endpoint)
-            selector = row.get("selector") if isinstance(row.get("selector"), dict) else {}
-            if row.get("targetId") and not selector.get("targetId"):
-                selector["targetId"] = row["targetId"]
+            selector = {"targetId": str(row["targetId"])} if row.get("targetId") else {}
             created = str(row.get("createdAt") or _now())
             self._intents[name] = SessionIntent(
                 session_id=str(row.get("sessionId") or uuid.uuid4()),
@@ -59,7 +58,7 @@ class SessionManager:
                 app_id=str(row.get("appId")) if row.get("appId") else None,
                 status="stale",
                 target_id=str(row.get("targetId")) if row.get("targetId") else None,
-                target_url=str(row.get("targetUrl")) if row.get("targetUrl") else None,
+                target_url=sanitize_url(str(row.get("targetUrl"))) if row.get("targetUrl") else None,
                 target_title=str(row.get("targetTitle")) if row.get("targetTitle") else None,
                 created_at=created,
                 updated_at=_now(),
@@ -67,12 +66,17 @@ class SessionManager:
         await self._persist()
 
     async def _persist(self) -> None:
+        sessions = []
+        for item in sorted(self._intents.values(), key=lambda value: value.name):
+            record = item.to_dict()
+            record["targetTitle"] = None
+            sessions.append(record)
         atomic_write_json(
             self.sessions_file,
             {
                 "schemaVersion": 1,
                 "updatedAt": _now(),
-                "sessions": [item.to_dict() for item in sorted(self._intents.values(), key=lambda value: value.name)],
+                "sessions": sessions,
             },
         )
 
@@ -112,11 +116,11 @@ class SessionManager:
             session_id=session_id,
             name=name,
             cdp=endpoint,
-            selector=selector,
+            selector={"targetId": live.target.target_id},
             app_id=str(payload.get("appId")) if payload.get("appId") else (existing.app_id if existing else None),
             status="connected",
             target_id=live.target.target_id,
-            target_url=live.target.url,
+            target_url=sanitize_url(live.target.url),
             target_title=live.target.title,
             created_at=existing.created_at if existing else now,
             updated_at=now,
@@ -137,7 +141,7 @@ class SessionManager:
         if health.get("reason"):
             record["reason"] = health["reason"]
         if health.get("url"):
-            record["targetUrl"] = health["url"]
+            record["targetUrl"] = sanitize_url(str(health["url"]))
         if health.get("title"):
             record["targetTitle"] = health["title"]
         return record

@@ -84,9 +84,11 @@
 
 - 只按任务需要读取 server、actions、workflow、knowledge 或 troubleshooting reference，不预加载全部文档。
 - 每轮先 prepare；有 appId/goal 时执行紧凑 hybrid retrieval，低置信结果明确 abstain，不补无关 recent assets。
-- Playwright 是唯一 driver；mutating action 必须有 postcondition，timeout/unknown outcome 不自动重放。
-- knowledge 使用 approved canonical JSON 和可重建 SQLite index；只有 exact fingerprint 批准后才持久化。
-- Electron GUI 不由 process-manager 托管；verifier service 使用统一 manager 生命周期并验证 owner-empty cleanup。
+- Playwright 是唯一 driver；mutating action 通过 durable operation 执行，必须有 postcondition，cancel/deadline/unknown outcome 不自动重放。
+- 高风险动作使用独立、一次性 risk receipt；风险授权与 knowledge 批准分离，客户端不能自签或绕过服务端复用门禁。
+- knowledge 使用 immutable objects、sealed decisions 和可重建 SQLite index；只有 approved decision 引用的 object 才可检索或执行。
+- 安装根与 workspace 分离，复制安装保持只读；verifier service 使用统一 process-manager 生命周期并验证 owner-empty cleanup。
+- retention 默认只预览，apply 需要未漂移的 exact fingerprint，并保护 active/pending/operation 引用。
 
 ### skill-evaluation-lab
 

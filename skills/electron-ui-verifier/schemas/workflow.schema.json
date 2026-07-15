@@ -9,7 +9,10 @@
     "goal": {"type": "string", "minLength": 1, "maxLength": 500},
     "aliases": {"type": "array", "items": {"type": "string"}, "maxItems": 50},
     "appId": {"type": "string", "minLength": 1},
-    "parameterSchema": {"type": "object"},
+    "parameterSchema": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/parameter"}
+    },
     "steps": {
       "type": "array",
       "items": {"$ref": "action.schema.json"},
@@ -17,6 +20,18 @@
       "maxItems": 200
     },
     "autoFinalize": {"type": "boolean"}
+  },
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "properties": {
+        "type": {"enum": ["string", "number", "integer", "boolean"]},
+        "required": {"type": "boolean"},
+        "description": {"type": "string", "maxLength": 500},
+        "sensitive": {"type": "boolean", "default": true}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

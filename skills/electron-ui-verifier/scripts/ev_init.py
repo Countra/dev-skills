@@ -23,9 +23,11 @@ from ev_common import (
     write_environment,
     write_json,
 )
-from electron_verifier.security import secure_mode
 from electron_verifier.errors import VerifierError
 from electron_verifier.knowledge_reset import KnowledgeReset
+from electron_verifier.limits import DEFAULT_LIMITS
+from electron_verifier.paths import SkillPaths, inspect_skill_install, require_skill_install, skill_paths
+from electron_verifier.security import secure_mode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,10 +40,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def service_config(workspace_root: Path, python_path: Path, config_file: Path, port: int) -> dict[str, Any]:
-    server_script = workspace_root / "skills" / "electron-ui-verifier" / "scripts" / "ev_server.py"
+def service_config(
+    workspace_root: Path,
+    python_path: Path,
+    config_file: Path,
+    port: int,
+    install: SkillPaths | None = None,
+) -> dict[str, Any]:
+    install = install or skill_paths()
+    server_script = install.server_script
     if not server_script.exists():
-        raise EVError(f"ev_server.py does not exist: {server_script}")
+        raise EVError(f"ev_server.py 不存在：{server_script}")
     return {
         "name": "electron-ui-verifier",
         "kind": "long-running",
@@ -55,7 +64,7 @@ def service_config(workspace_root: Path, python_path: Path, config_file: Path, p
         },
         "environment": {
             "inherit": ["PATH", "HOME", "USERPROFILE", "SystemRoot", "WINDIR", "TEMP", "TMP", "LANG"],
-            "set": {"PYTHONUNBUFFERED": "1"},
+            "set": {"PYTHONDONTWRITEBYTECODE": "1", "PYTHONUNBUFFERED": "1"},
             "fromEnv": [],
         },
         "stop": {"graceSeconds": 8},
@@ -65,7 +74,7 @@ def service_config(workspace_root: Path, python_path: Path, config_file: Path, p
             "pattern": "EV_READY\\s+(?P<url>http://127\\.0\\.0\\.1:\\d+/health)",
             "extract": {"urls": ["url"]},
             "scanBytes": 262144,
-            "timeoutSeconds": 30,
+            "timeoutSeconds": DEFAULT_LIMITS.service_readiness_timeout_seconds,
         },
         "logs": {"maxBytes": 10485760, "backups": 3},
     }
@@ -95,16 +104,21 @@ def format_dependency_error(result: dict[str, Any], stderr: str = "") -> str:
     return "verifier Python 环境依赖不完整，已阻塞初始化。缺失或不满足项：" + "；".join(messages)
 
 
-def check_python_environment(python_path: Path, workspace_root: Path) -> dict[str, Any]:
-    check_script = workspace_root / "skills" / "electron-ui-verifier" / "scripts" / "ev_check_env.py"
-    requirements_file = workspace_root / "skills" / "electron-ui-verifier" / "requirements.txt"
+def check_python_environment(
+    python_path: Path,
+    workspace_root: Path,
+    install: SkillPaths | None = None,
+) -> dict[str, Any]:
+    install = install or skill_paths()
+    check_script = install.check_script
+    requirements_file = install.requirements_file
     if not check_script.exists():
-        raise EVError(f"dependency check script does not exist: {check_script}")
+        raise EVError(f"依赖检查脚本不存在：{check_script}")
     if not requirements_file.exists():
-        raise EVError(f"requirements file does not exist: {requirements_file}")
+        raise EVError(f"requirements 文件不存在：{requirements_file}")
     try:
         completed = subprocess.run(
-            [str(python_path), str(check_script), "--requirements", str(requirements_file), "--json"],
+            [str(python_path), "-B", str(check_script), "--requirements", str(requirements_file), "--json"],
             cwd=str(workspace_root),
             capture_output=True,
             text=True,
@@ -126,8 +140,12 @@ def check_python_environment(python_path: Path, workspace_root: Path) -> dict[st
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    install = skill_paths()
+    install_check = inspect_skill_install(install)
+    workspace_root = Path(args.workspace).resolve() if args.workspace else Path.cwd().resolve()
     try:
         workspace_root = discover_workspace_root(args.workspace)
+        install_check = require_skill_install(install)
         paths = paths_for_workspace(workspace_root)
         reset = KnowledgeReset(paths.state_root)
         if args.confirm and not args.reset_knowledge:
@@ -142,30 +160,44 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
             return 2
-        python_path = require_absolute_path(args.python_path, "--python", must_exist=True) if args.python_path else Path(sys.executable).resolve()
+        python_path = (
+            require_absolute_path(args.python_path, "--python", must_exist=True)
+            if args.python_path
+            else Path(sys.executable).resolve()
+        )
         if not python_path.exists():
             raise EVError(f"python does not exist: {python_path}")
-        dependency_check = check_python_environment(python_path, workspace_root)
+        dependency_check = check_python_environment(python_path, workspace_root, install)
         port = normalize_port(args.port)
         knowledge = reset.apply(args.confirm) if args.reset_knowledge else reset.ensure()
         ensure_runtime_dirs(paths)
-        environment = write_environment(paths, python_path=python_path, port=port)
+        environment = write_environment(paths, python_path=python_path, port=port, skill_root=install.root)
         ensure_token(paths)
         secure_mode(paths.state_root, 0o700)
         secure_mode(paths.token_file, 0o600)
         config = config_to_data(paths, environment)
         config["runsDir"] = str(paths.state_root / "runs")
         write_json(paths.config_file, config)
-        write_json(paths.server_file, {"status": "initialized", "host": "127.0.0.1", "port": port, "processManagerService": "electron-ui-verifier"})
+        write_json(
+            paths.server_file,
+            {
+                "status": "initialized",
+                "host": "127.0.0.1",
+                "port": port,
+                "processManagerService": "electron-ui-verifier",
+            },
+        )
         if not paths.sessions_file.exists():
             write_json(paths.sessions_file, {"schemaVersion": 1, "sessions": []})
-        write_json(paths.service_file, service_config(workspace_root, python_path, paths.config_file, port))
+        write_json(paths.service_file, service_config(workspace_root, python_path, paths.config_file, port, install))
         print_json(
             {
                 "ok": True,
                 "environment": str(paths.environment_file),
                 "config": str(paths.config_file),
                 "service": str(paths.service_file),
+                "roots": {"skill": str(install.root), "workspace": str(workspace_root)},
+                "installCheck": install_check,
                 "python": str(python_path),
                 "dependencyCheck": dependency_check,
                 "knowledge": knowledge,
@@ -176,7 +208,13 @@ def main(argv: list[str] | None = None) -> int:
     except (EVError, VerifierError) as exc:
         code = exc.code if isinstance(exc, VerifierError) else "init_failed"
         details = exc.details if isinstance(exc, VerifierError) else None
-        result = {"ok": False, "code": code, "error": str(exc)}
+        result = {
+            "ok": False,
+            "code": code,
+            "error": str(exc),
+            "roots": {"skill": str(install.root), "workspace": str(workspace_root)},
+            "installCheck": install_check,
+        }
         if details:
             result["details"] = details
         print_json(result)

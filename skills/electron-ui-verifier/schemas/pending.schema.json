@@ -3,19 +3,64 @@
   "$id": "https://local.electron-ui-verifier/schemas/pending.schema.json",
   "title": "Sealable knowledge approval bundle",
   "type": "object",
-  "required": ["schemaVersion", "pendingId", "runId", "status", "workflow", "evidence", "bundleFingerprint"],
+  "required": [
+    "schemaVersion", "pendingId", "runId", "status", "appId", "appVersion", "screenDigest", "preState",
+    "proposals", "actionAssetIds", "workflowAssetId", "evidence", "risks", "report", "reportDigest", "bundleFingerprint"
+  ],
   "properties": {
-    "schemaVersion": {"const": 1},
+    "schemaVersion": {"const": 2},
     "pendingId": {"type": "string", "format": "uuid"},
     "runId": {"type": "string", "format": "uuid"},
-    "status": {"enum": ["pending", "approved", "rejected"]},
-    "workflow": {"$ref": "workflow.schema.json"},
-    "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
-    "parameterSchema": {"type": "object"},
+    "status": {"const": "pending"},
+    "appId": {"type": "string", "minLength": 1},
+    "appVersion": {"type": "string", "minLength": 1},
+    "screenDigest": {"type": "string", "minLength": 1},
+    "preState": {"type": "string", "minLength": 1},
+    "proposals": {"type": "array", "items": {"$ref": "knowledge.schema.json"}, "minItems": 2},
+    "actionAssetIds": {"type": "array", "items": {"type": "string", "pattern": "^action-[0-9a-f]{40}$"}, "minItems": 1, "maxItems": 200},
+    "workflowAssetId": {"type": "string", "pattern": "^workflow-[0-9a-f]{40}$"},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}, "minItems": 1},
+    "risks": {"type": "array", "items": {"$ref": "#/$defs/risk"}},
     "report": {"type": "string", "minLength": 1},
     "reportDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-    "risks": {"type": "array", "items": {"type": "object"}},
     "bundleFingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
   },
-  "additionalProperties": true
+  "$defs": {
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["artifactId", "sha256", "mediaType"],
+          "properties": {
+            "artifactId": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "mediaType": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["report", "reportDigest"],
+          "properties": {
+            "report": {"type": "string", "minLength": 1},
+            "reportDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "risk": {
+      "type": "object",
+      "required": ["code", "learnable", "stepId", "confirmed"],
+      "properties": {
+        "code": {"enum": ["coordinate_action", "explicit_nth", "css_fallback"]},
+        "learnable": {"type": "boolean"},
+        "nth": {"type": "integer", "minimum": 0},
+        "stepId": {"type": "string", "format": "uuid"},
+        "confirmed": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
 }

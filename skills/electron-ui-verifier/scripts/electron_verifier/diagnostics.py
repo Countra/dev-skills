@@ -4,23 +4,17 @@ from __future__ import annotations
 
 import json
 import time
-import urllib.parse
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
 from .limits import DEFAULT_LIMITS, RuntimeLimits
 from .security import redact
+from .sensitivity import sanitize_url
 
 
 def _safe_url(value: str) -> str:
-    parsed = urllib.parse.urlsplit(value)
-    if parsed.scheme not in {"http", "https", "file", "app"}:
-        return f"{parsed.scheme}:"
-    host = parsed.hostname or ""
-    port = f":{parsed.port}" if parsed.port else ""
-    path = parsed.path[:2000]
-    return urllib.parse.urlunsplit((parsed.scheme, f"{host}{port}", path, "", ""))
+    return sanitize_url(value)
 
 
 @dataclass

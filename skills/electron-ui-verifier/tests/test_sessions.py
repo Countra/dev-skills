@@ -39,7 +39,7 @@ class FakeDriver:
         self.attach_count += 1
         self.health_results[session_id] = {"connected": True, "status": "connected"}
         return SimpleNamespace(
-            target=TargetCandidate("target-1", "Main", "app://main")
+            target=TargetCandidate("target-1", "Main", "app://main/private/account?secret=1")
         )
 
     async def close(self, session_id: str) -> list[str]:
@@ -97,6 +97,10 @@ class SessionManagerTests(unittest.TestCase):
             third = asyncio.run(manager.attach({"name": "app", "cdp": "http://127.0.0.1:9222"}))
             self.assertTrue(third["reconnected"])
             self.assertEqual(2, driver.attach_count)
+            persisted = (Path(folder) / "sessions.json").read_text(encoding="utf-8")
+            self.assertNotIn("Main", persisted)
+            self.assertNotIn("private/account", persisted)
+            self.assertIn("app://main/[PATH]", persisted)
 
     def test_detach_is_idempotent(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:

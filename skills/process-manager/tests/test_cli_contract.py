@@ -5,11 +5,13 @@ import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from helpers import workspace_directory  # noqa: E402
+import pm_ready  # noqa: E402
 
 
 PUBLIC_SCRIPTS = sorted(SCRIPTS_DIR.glob("pm_*.py"))
@@ -64,6 +66,37 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(value["operation"], "health")
         self.assertEqual(value["error"]["code"], "configuration_error")
         self.assertEqual(set(value), {"ok", "operation", "error", "meta"})
+
+    def test_ready_client_covers_service_timeout_when_override_is_omitted(self) -> None:
+        client = mock.Mock()
+        client.request.return_value = (200, {"ok": True})
+        with (
+            mock.patch.object(pm_ready, "make_client", return_value=client) as make_client,
+            mock.patch.object(pm_ready, "output_remote", return_value=0),
+        ):
+            result = pm_ready.main(["--config", "manager.json", "--service", "demo"])
+
+        self.assertEqual(0, result)
+        make_client.assert_called_once_with("manager.json", timeout=605)
+        client.request.assert_called_once_with(
+            "POST",
+            "/processes/ready",
+            {"service": "demo", "processKey": None, "timeoutSeconds": None},
+        )
+
+    def test_ready_client_uses_explicit_timeout_with_transport_margin(self) -> None:
+        client = mock.Mock()
+        client.request.return_value = (200, {"ok": True})
+        with (
+            mock.patch.object(pm_ready, "make_client", return_value=client) as make_client,
+            mock.patch.object(pm_ready, "output_remote", return_value=0),
+        ):
+            result = pm_ready.main(
+                ["--config", "manager.json", "--process-key", "demo.run-1", "--timeout", "75"]
+            )
+
+        self.assertEqual(0, result)
+        make_client.assert_called_once_with("manager.json", timeout=80.0)
 
 
 if __name__ == "__main__":

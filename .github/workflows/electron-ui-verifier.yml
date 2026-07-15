@@ -38,18 +38,33 @@ jobs:
         run: python -m playwright install chromium
       - name: Unit and component tests
         env:
-          EV_TEST_ROOT: ${{ runner.temp }}/electron-verifier-unit
+          EV_TEST_ROOT: .harness/electron-ui-verifier-ci/${{ matrix.os }}/unit
         run: python -u -X utf8 -B -m unittest discover -s skills/electron-ui-verifier/tests -p "test_*.py" -v
       - name: Static contract
         run: python -u -X utf8 -B evals/electron-ui-verifier/run_static_checks.py
+      - name: Skill public surface
+        run: >-
+          python -u -X utf8 -B evals/electron-ui-verifier/run_evals.py
+          --work-dir ".harness/electron-ui-verifier-ci/${{ matrix.os }}/task/tmp/evals"
       - name: Fixture CDP lifecycle
         run: >-
           python -u -X utf8 -B skills/electron-ui-verifier/tests/run_fixture_cdp_smoke.py
-          --work-dir "${{ runner.temp }}/electron-verifier-fixture"
-          --output "${{ runner.temp }}/electron-verifier-fixture-result.json"
+          --work-dir ".harness/electron-ui-verifier-ci/${{ matrix.os }}/public-fixture"
+          --output ".harness/electron-ui-verifier-ci/${{ matrix.os }}/public-fixture/result.json"
+      - name: Copy install and retention
+        run: >-
+          python -u -X utf8 -B evals/electron-ui-verifier/run_portability_retention.py
+          --work-dir ".harness/electron-ui-verifier-ci/${{ matrix.os }}/portable"
+          --output ".harness/electron-ui-verifier-ci/${{ matrix.os }}/portable/result.json"
+      - name: Retrieval quality and performance
+        if: runner.os == 'Linux'
+        run: >-
+          python -u -X utf8 -B evals/electron-ui-verifier/run_retrieval_benchmark.py
+          --work-dir ".harness/electron-ui-verifier-ci/${{ matrix.os }}/retrieval"
+          --output ".harness/electron-ui-verifier-ci/${{ matrix.os }}/retrieval/result.json"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: electron-ui-verifier-${{ matrix.os }}
-          path: ${{ runner.temp }}/electron-verifier-fixture-result.json
+          path: .harness/electron-ui-verifier-ci/${{ matrix.os }}/
           if-no-files-found: warn

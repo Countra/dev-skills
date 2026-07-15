@@ -40,6 +40,21 @@ class ContractTests(unittest.TestCase):
         )
         self.assertEqual("click", action.action_type)
 
+    def test_removed_mutation_bypasses_and_unknown_fields_are_rejected(self) -> None:
+        base = {
+            "type": "click",
+            "locator": {"text": "保存"},
+            "postconditions": [{"type": "visible", "locator": {"text": "完成"}}],
+        }
+        for field in ("allowWithoutPostcondition", "confirmRisk"):
+            with self.subTest(field=field), self.assertRaises(VerifierError) as caught:
+                ActionSpec.decode({**base, field: True})
+            self.assertEqual("invalid_action", caught.exception.code)
+        for field in ("allowWithoutPostcondition", "confirmRisk", "allowCoordinate"):
+            with self.subTest(option=field), self.assertRaises(VerifierError) as caught:
+                ActionSpec.decode({**base, "options": {field: True}})
+            self.assertEqual("invalid_action", caught.exception.code)
+
     def test_loopback_endpoint_is_literal_and_normalized(self) -> None:
         self.assertEqual("http://127.0.0.1:9222", normalize_loopback_endpoint("http://127.0.0.1:9222/"))
         self.assertEqual("http://[::1]:9222", normalize_loopback_endpoint("http://[::1]:9222"))
@@ -54,6 +69,16 @@ class ContractTests(unittest.TestCase):
             {"Authorization": "[REDACTED]", "nested": {"password": "[REDACTED]", "value": "ok"}},
             redact({"Authorization": "Bearer value", "nested": {"password": "x", "value": "ok"}}),
         )
+
+    def test_public_error_envelope_removes_paths_urls_and_secret_fields(self) -> None:
+        error = VerifierError(
+            "fixture_error",
+            "读取 D:\\private\\profile\\state.json 失败，来源 https://user:pass@example.test/private?q=x",
+            details={"path": "/Users/alice/private/state.json", "credential": "secret-value"},
+        ).envelope()
+        serialized = str(error)
+        for forbidden in ("D:\\private", "/Users/alice", "user:pass", "secret-value", "?q=x"):
+            self.assertNotIn(forbidden, serialized)
 
     def test_discovered_websocket_cannot_escape_loopback(self) -> None:
         self.assertEqual(

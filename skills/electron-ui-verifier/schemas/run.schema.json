@@ -3,20 +3,108 @@
   "$id": "https://local.electron-ui-verifier/schemas/run.schema.json",
   "title": "Verifier run journal",
   "type": "object",
-  "required": ["schemaVersion", "runId", "sessionId", "state", "steps", "artifacts"],
+  "required": [
+    "schemaVersion", "runId", "sessionId", "sessionName", "appId", "appVersion", "screenDigest",
+    "preState", "maxRisk", "goal", "aliases", "state", "createdAt", "updatedAt",
+    "parameterSchema", "sensitiveInputObserved", "steps", "artifacts"
+  ],
   "properties": {
     "schemaVersion": {"const": 1},
     "runId": {"type": "string", "format": "uuid"},
     "sessionId": {"type": "string", "minLength": 1},
+    "sessionName": {"type": "string", "minLength": 1},
     "appId": {"type": ["string", "null"]},
+    "appVersion": {"type": ["string", "null"]},
+    "screenDigest": {"type": ["string", "null"]},
+    "preState": {"type": ["string", "null"]},
+    "maxRisk": {"enum": ["low", "medium", "high"]},
     "goal": {"type": ["string", "null"]},
+    "aliases": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
     "state": {"enum": ["prepared", "running", "finalizing", "passed", "failed", "aborted"]},
     "createdAt": {"type": "string", "format": "date-time"},
     "updatedAt": {"type": "string", "format": "date-time"},
-    "steps": {"type": "array", "items": {"type": "object"}, "maxItems": 200},
-    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}}
+    "parameterSchema": {
+      "type": "object",
+      "additionalProperties": {"$ref": "workflow.schema.json#/$defs/parameter"}
+    },
+    "sensitiveInputObserved": {"type": "boolean"},
+    "workflow": {
+      "type": "object",
+      "required": ["goal", "expectedSteps"],
+      "properties": {
+        "goal": {"type": ["string", "null"]},
+        "expectedSteps": {"type": "integer", "minimum": 1, "maximum": 200},
+        "assetId": {"type": "string", "pattern": "^workflow-[0-9a-f]{40}$"}
+      },
+      "additionalProperties": false
+    },
+    "steps": {"type": "array", "items": {"$ref": "#/$defs/step"}, "maxItems": 200},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "report": {"type": "string"},
+    "pending": {"type": ["string", "null"]},
+    "recovery": {"type": "string"},
+    "abortReason": {"type": "string"}
   },
   "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["stepId", "label", "status", "optional", "detour", "action", "boundParameters", "startedAt"],
+      "properties": {
+        "stepId": {"type": "string", "format": "uuid"},
+        "label": {"type": "string", "maxLength": 200},
+        "status": {"enum": ["running", "passed", "failed", "unknown", "skipped"]},
+        "optional": {"type": "boolean"},
+        "detour": {"type": "boolean"},
+        "action": {"$ref": "action.schema.json"},
+        "boundParameters": {"type": "array", "items": {"type": "string"}},
+        "parameterBindings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type", "bound", "sensitive"],
+            "properties": {
+              "name": {"type": "string"},
+              "type": {"enum": ["string", "number", "integer", "boolean"]},
+              "bound": {"type": "boolean"},
+              "sensitive": {"type": "boolean"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "assetId": {"type": "string", "pattern": "^action-[0-9a-f]{40}$"},
+        "preState": {"type": "string", "minLength": 1},
+        "postState": {"type": "string", "minLength": 1},
+        "riskLevel": {"enum": ["low", "medium", "high"]},
+        "riskAuthorization": {
+          "type": "object",
+          "required": ["receiptId", "risks", "consumed"],
+          "properties": {
+            "receiptId": {"type": "string", "format": "uuid"},
+            "risks": {"type": "array", "items": {"$ref": "#/$defs/risk"}, "minItems": 1},
+            "consumed": {"const": true}
+          },
+          "additionalProperties": false
+        },
+        "result": {"type": "object"},
+        "risks": {"type": "array", "items": {"$ref": "#/$defs/risk"}},
+        "error": {"type": "object"},
+        "artifacts": {"type": "array", "items": {"type": "string"}},
+        "startedAt": {"type": "string", "format": "date-time"},
+        "finishedAt": {"type": "string", "format": "date-time"},
+        "durationMs": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "risk": {
+      "type": "object",
+      "required": ["code", "learnable"],
+      "properties": {
+        "code": {"enum": ["coordinate_action", "explicit_nth", "css_fallback"]},
+        "learnable": {"type": "boolean"},
+        "nth": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
     "artifact": {
       "type": "object",
       "required": ["artifactId", "path", "sha256", "bytes"],
@@ -30,5 +118,5 @@
       "additionalProperties": false
     }
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

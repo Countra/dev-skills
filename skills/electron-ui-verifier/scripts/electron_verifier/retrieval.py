@@ -3,73 +3,22 @@
 from __future__ import annotations
 
 import json
-import re
-from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Any
 
 from .canonical_store import CanonicalStore
+from .compatibility import RuntimeContext, compatibility_reasons, optional_text
 from .errors import VerifierError
 from .knowledge_index import KnowledgeIndex
-from .knowledge_models import bind_parameters, normalize_parameter_schema, placeholders
+from .sensitivity import bind_parameters, normalize_parameter_schema, placeholders
 from .text_normalization import all_ngrams, latin_tokens, normalize_text
 
 
 RRF_K = 60
 DEFAULT_MIN_SCORE = 0.62
 DEFAULT_MIN_MARGIN = 0.05
-RISK_ORDER = {"low": 0, "medium": 1, "high": 2}
-VERSION_PART = re.compile(r"\d+")
-
-
-@dataclass(frozen=True)
-class RetrievalContext:
-    app_id: str
-    app_version: str | None = None
-    screen_digest: str | None = None
-    pre_state: str | None = None
-    max_risk: str = "low"
-
-    @classmethod
-    def decode(cls, value: Any) -> "RetrievalContext":
-        if not isinstance(value, dict):
-            raise VerifierError("invalid_retrieval_context", "retrieval context 必须是 object")
-        app_id = str(value.get("appId") or "").strip()
-        risk = str(value.get("maxRisk") or "low").lower()
-        if not app_id:
-            raise VerifierError("app_id_required", "knowledge query 需要 appId")
-        if len(app_id) > 200:
-            raise VerifierError("invalid_retrieval_context", "appId 超过 200 字符上限")
-        if risk not in RISK_ORDER:
-            raise VerifierError("invalid_risk_level", f"maxRisk 不受支持：{risk}")
-        return cls(
-            app_id=app_id,
-            app_version=_optional_text(value.get("appVersion")),
-            screen_digest=_optional_text(value.get("screenDigest")),
-            pre_state=_optional_text(value.get("preState")),
-            max_risk=risk,
-        )
-
-
-def _optional_text(value: Any) -> str | None:
-    text = str(value or "").strip()
-    return text or None
-
-
-def _version(value: str) -> tuple[int, ...]:
-    parts = tuple(int(item) for item in VERSION_PART.findall(value))
-    if not parts:
-        raise VerifierError("invalid_app_version", f"appVersion 无法比较：{value}")
-    return parts
-
-
-def _compare_versions(left: str, right: str) -> int:
-    left_parts = _version(left)
-    right_parts = _version(right)
-    width = max(len(left_parts), len(right_parts))
-    padded_left = left_parts + (0,) * (width - len(left_parts))
-    padded_right = right_parts + (0,) * (width - len(right_parts))
-    return (padded_left > padded_right) - (padded_left < padded_right)
+RetrievalContext = RuntimeContext
+_optional_text = optional_text
 
 
 def _set_similarity(left: set[str], right: set[str]) -> float:
@@ -134,30 +83,34 @@ class HybridRetriever:
         self.close()
 
     def _compatibility_reasons(self, row: dict[str, Any], context: RetrievalContext) -> list[str]:
-        reasons: list[str] = []
-        minimum = _optional_text(row.get("app_version_min"))
-        maximum = _optional_text(row.get("app_version_max"))
-        if minimum or maximum:
-            if context.app_version is None:
-                reasons.append("app_version_required")
-            else:
-                if minimum and _compare_versions(context.app_version, minimum) < 0:
-                    reasons.append("app_version_below_minimum")
-                if maximum and _compare_versions(context.app_version, maximum) > 0:
-                    reasons.append("app_version_above_maximum")
-        screen = _optional_text(row.get("screen_digest"))
-        if screen and context.screen_digest != screen:
-            reasons.append("screen_digest_mismatch" if context.screen_digest else "screen_digest_required")
-        state = _optional_text(row.get("pre_state"))
-        if state and context.pre_state != state:
-            reasons.append("pre_state_mismatch" if context.pre_state else "pre_state_required")
-        risk = str(row.get("risk_level") or "low").lower()
-        if risk not in RISK_ORDER or RISK_ORDER[risk] > RISK_ORDER[context.max_risk]:
-            reasons.append("risk_not_allowed")
-        return reasons
+        return compatibility_reasons(
+            {
+                "appVersionMin": row.get("app_version_min"),
+                "appVersionMax": row.get("app_version_max"),
+                "screenDigest": row.get("screen_digest"),
+                "preState": row.get("pre_state"),
+                "risk": row.get("risk_level"),
+            },
+            context,
+        )
 
     def get_asset(self, asset_id: str) -> dict[str, Any]:
-        return {"ok": True, "asset": self.store.get_asset(asset_id).to_dict()}
+        asset = self.store.get_asset(asset_id)
+        compatibility = asset.payload["compatibility"]
+        result = {
+            "assetId": asset.asset_id,
+            "kind": asset.kind,
+            "appId": asset.app_id,
+            "goal": asset.goal,
+            "aliases": list(asset.aliases),
+            "requiredParams": asset.payload["requiredParameters"],
+            "parameterSchema": asset.payload["parameterSchema"],
+            "compatibility": compatibility,
+            "createdAt": asset.created_at,
+        }
+        if asset.kind == "workflow":
+            result["actionIds"] = asset.payload["actionIds"]
+        return {"ok": True, "asset": result}
 
     def list_assets(self, app_id: str | None, kind: str | None, limit: int = 50) -> dict[str, Any]:
         if kind not in {None, "action", "workflow"}:
@@ -175,6 +128,9 @@ class HybridRetriever:
                 "risk": row.get("risk_level") or "low",
                 "preState": row.get("pre_state"),
                 "postState": row.get("post_state"),
+                "successCount": int(row.get("success_count") or 0),
+                "failureCount": int(row.get("failure_count") or 0),
+                "lastVerifiedAt": row.get("last_verified_at"),
                 "createdAt": row["created_at"],
             }
             for row in rows
@@ -183,6 +139,9 @@ class HybridRetriever:
 
     def stats(self) -> dict[str, Any]:
         return {"ok": True, **self.index.stats()}
+
+    def record_outcome(self, asset_id: str, succeeded: bool, verified_at: str) -> dict[str, Any]:
+        return self.index.record_outcome(asset_id, succeeded, verified_at)
 
     def search(
         self,
@@ -244,10 +203,10 @@ class HybridRetriever:
             successes = max(0, int(row.get("success_count") or 0))
             failures = max(0, int(row.get("failure_count") or 0))
             reliability = (successes + 1) / (successes + failures + 2)
-            score = exact_score or min(1.0, 0.66 * lexical + 0.24 * rrf + 0.10 * reliability)
+            score = exact_score or min(1.0, 0.74 * lexical + 0.26 * rrf)
             payload = _row_payload(row)
             parameter_schema = normalize_parameter_schema(payload.get("parameterSchema"))
-            required_params = sorted(placeholders(payload.get("action") or payload.get("workflow") or {}))
+            required_params = list(payload.get("requiredParameters") or [])
             candidate: dict[str, Any] = {
                 "assetId": asset_id,
                 "kind": row["kind"],
@@ -259,6 +218,7 @@ class HybridRetriever:
                 "postState": row.get("post_state"),
                 "requiredParams": required_params,
                 "executable": not (set(required_params) - set(parameter_schema)),
+                "_reliability": reliability,
             }
             if explain:
                 candidate["explain"] = {
@@ -268,7 +228,13 @@ class HybridRetriever:
                     "reliability": round(reliability, 6),
                 }
             accepted.append(candidate)
-        accepted.sort(key=lambda item: (-float(item["score"]), str(item["assetId"])))
+        accepted.sort(
+            key=lambda item: (
+                -float(item["score"]),
+                -float(item["_reliability"]),
+                str(item["assetId"]),
+            )
+        )
         selected = accepted[: int(limit)]
         top = float(selected[0]["score"]) if selected else 0.0
         second = float(selected[1]["score"]) if len(selected) > 1 else 0.0
@@ -288,6 +254,8 @@ class HybridRetriever:
         }
         if reason:
             result["abstain"] = {"reason": reason, "topScore": round(top, 6), "margin": round(top - second, 6)}
+        for candidate in selected:
+            candidate.pop("_reliability", None)
         if explain:
             result["explain"] = {
                 "channelCandidateCounts": {name: len(values) for name, values in channels.items()},
@@ -308,7 +276,7 @@ class HybridRetriever:
         selected = []
         previous_state = context.pre_state
         merged_schema: dict[str, dict[str, Any]] = {}
-        steps: list[dict[str, Any]] = []
+        templates: list[dict[str, Any]] = []
         for position, raw_goal in enumerate(subgoals):
             goal = str(raw_goal).strip()
             local_context = dict(payload)
@@ -335,21 +303,19 @@ class HybridRetriever:
                 if name in merged_schema and merged_schema[name] != definition:
                     raise VerifierError("parameter_schema_conflict", f"组合参数 schema 冲突：{name}", status=409)
                 merged_schema[name] = definition
-            bind_parameters(action, bindings, schema)
-            steps.append(action)
+            local_bindings = {name: bindings[name] for name in schema if name in bindings}
+            bind_parameters(action, local_bindings, schema)
+            templates.append(action)
             selected.append(candidate["assetId"])
             previous_state = str(candidate["postState"])
+        undeclared = sorted(set(bindings) - set(merged_schema))
+        if undeclared:
+            raise VerifierError("undeclared_parameter", f"bindings 包含未声明参数：{undeclared}")
         return {
             "ok": True,
             "decision": "compose",
             "assetIds": selected,
-            "requiredParams": sorted(placeholders(steps)),
-            "workflow": {
-                "schemaVersion": 1,
-                "appId": context.app_id,
-                "goal": str(payload.get("goal") or " / ".join(str(item) for item in subgoals))[:500],
-                "parameterSchema": merged_schema,
-                "steps": steps,
-            },
+            "requiredParams": sorted(placeholders(templates)),
+            "parameterSchema": merged_schema,
             "postState": previous_state,
         }

@@ -22,7 +22,9 @@ from electron_verifier.approval import ApprovalService  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.evidence import PendingArtifact  # noqa: E402
+from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
+from electron_verifier.models import canonical_digest  # noqa: E402
 from electron_verifier.runs import RunService  # noqa: E402
 
 
@@ -64,7 +66,12 @@ class ApprovalTests(unittest.TestCase):
                 {
                     "session": "demo",
                     "appId": "demo",
+                    "appVersion": "1.0.0",
+                    "screenDigest": "screen-main",
+                    "preState": "home",
+                    "maxRisk": "low",
                     "goal": "填写用户名并保存",
+                    "aliases": ["保存用户名"],
                     "parameterSchema": {"username": {"type": "string", "required": True}},
                 }
             )
@@ -107,9 +114,42 @@ class ApprovalTests(unittest.TestCase):
             second = approvals.approve(run_id, preview["bundleFingerprint"], "用户确认")
             self.assertFalse(first["alreadyApproved"])
             self.assertTrue(second["alreadyApproved"])
-            self.assertEqual(first["decision"]["assetId"], second["decision"]["assetId"])
+            self.assertEqual(first["decision"]["assetIds"], second["decision"]["assetIds"])
             verification = CanonicalStore(root).verify()
-            self.assertEqual(1, verification["canonicalAssetCount"])
+            self.assertEqual(2, verification["activeAssetCount"])
+            self.assertEqual(1, len(first["actionAssets"]))
+            self.assertEqual("workflow", first["workflowAsset"]["kind"])
+
+    def test_restart_repairs_index_after_decision_and_retry_returns_same_bundle(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder) / "state"
+            KnowledgeReset(root).ensure()
+            runs, run_id, _ = self._parameterized_run(root)
+
+            def fail_after_decision(phase: str) -> None:
+                if phase == "after_decision":
+                    raise RuntimeError("injected approval interruption")
+
+            approvals = ApprovalService(CanonicalStore(root), runs, fail_after_decision)
+            fingerprint = approvals.validate(run_id)["bundleFingerprint"]
+            with self.assertRaisesRegex(RuntimeError, "injected approval interruption"):
+                approvals.approve(run_id, fingerprint, "用户确认")
+
+            interrupted = CanonicalStore(root)
+            decision = interrupted.get_decision(fingerprint)
+            self.assertIsNotNone(decision)
+            self.assertEqual("approved", decision["status"])
+            with self.assertRaises(VerifierError) as stale:
+                interrupted.verify(repair_index=False)
+            self.assertEqual("knowledge_index_activation_mismatch", stale.exception.code)
+
+            restarted = CanonicalStore(root)
+            recovered = restarted.verify()
+            retry = ApprovalService(restarted, runs).approve(run_id, fingerprint, "用户确认")
+            self.assertEqual(2, recovered["activeAssetCount"])
+            self.assertTrue(retry["alreadyApproved"])
+            self.assertEqual(decision["decisionDigest"], retry["decision"]["decisionDigest"])
+            self.assertEqual(decision["assetIds"], retry["decision"]["assetIds"])
 
     def test_modified_pending_invalidates_fingerprint(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
@@ -120,11 +160,40 @@ class ApprovalTests(unittest.TestCase):
             approvals.validate(run_id)
             path = Path(pending_path)
             pending = json.loads(path.read_text(encoding="utf-8"))
-            pending["workflow"]["goal"] = "被修改"
+            pending["proposals"][-1]["goal"] = "被修改"
             path.write_text(json.dumps(pending), encoding="utf-8")
             with self.assertRaises(VerifierError) as caught:
                 approvals.validate(run_id)
             self.assertEqual("pending_fingerprint_invalid", caught.exception.code)
+
+    def test_recomputed_fingerprint_cannot_replace_verified_proposal(self) -> None:
+        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+            root = Path(folder) / "state"
+            KnowledgeReset(root).ensure()
+            runs, run_id, pending_path = self._parameterized_run(root)
+            path = Path(pending_path)
+            pending = json.loads(path.read_text(encoding="utf-8"))
+            workflow = CanonicalAsset.decode(pending["proposals"][-1])
+            replacement = CanonicalAsset.create(
+                kind=workflow.kind,
+                app_id=workflow.app_id,
+                goal="替换后的未验证目标",
+                aliases=list(workflow.aliases),
+                payload=workflow.payload,
+                evidence=list(workflow.evidence),
+                created_at=workflow.created_at,
+            )
+            pending["proposals"][-1] = replacement.to_dict()
+            pending["workflowAssetId"] = replacement.asset_id
+            fingerprint_payload = dict(pending)
+            fingerprint_payload.pop("bundleFingerprint")
+            pending["bundleFingerprint"] = canonical_digest(fingerprint_payload)
+            path.write_text(json.dumps(pending), encoding="utf-8")
+
+            preview = ApprovalService(CanonicalStore(root), runs).validate(run_id)
+
+            self.assertFalse(preview["approvable"])
+            self.assertIn("proposal_derivation_mismatch", {item["code"] for item in preview["issues"]})
 
     def test_missing_artifact_blocks_approval(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
@@ -138,12 +207,24 @@ class ApprovalTests(unittest.TestCase):
             self.assertFalse(preview["approvable"])
             self.assertIn("path_not_found", {item["code"] for item in preview["issues"]})
 
-    def test_unconfirmed_high_risk_action_is_not_approvable(self) -> None:
+    def test_consumed_high_risk_receipt_is_approvable(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs = RunService(config(root), FakeSessions())
-            prepared = asyncio.run(runs.prepare({"session": "demo", "appId": "demo", "goal": "坐标点击"}))
+            prepared = asyncio.run(
+                runs.prepare(
+                    {
+                        "session": "demo",
+                        "appId": "demo",
+                        "appVersion": "1.0.0",
+                        "screenDigest": "screen-main",
+                        "preState": "home",
+                        "maxRisk": "high",
+                        "goal": "坐标点击",
+                    }
+                )
+            )
 
             async def fake_execute(live, action):
                 return ActionExecution(
@@ -153,14 +234,18 @@ class ApprovalTests(unittest.TestCase):
 
             action = {
                 "type": "click",
-                "options": {"allowCoordinate": True, "coordinates": {"x": 10, "y": 10}},
+                "options": {"coordinates": {"x": 10, "y": 10}},
                 "postconditions": [{"type": "visible", "locator": {"text": "完成"}}],
             }
+            preview = runs.preview_risk(prepared["runId"], action)
+            receipt = runs.approve_risk(preview["previewId"], preview["fingerprint"], "确认坐标点击测试")
             with mock.patch("electron_verifier.runs.execute_action", side_effect=fake_execute):
-                asyncio.run(runs.append_action(prepared["runId"], action))
+                asyncio.run(
+                    runs.append_action(prepared["runId"], action, risk_receipt=receipt["receiptId"])
+                )
             asyncio.run(runs.finalize(prepared["runId"]))
             preview = ApprovalService(CanonicalStore(root), runs).validate(prepared["runId"])
-            self.assertIn("risk_confirmation_required", {item["code"] for item in preview["issues"]})
+            self.assertNotIn("risk_confirmation_required", {item["code"] for item in preview["issues"]})
 
     def test_reject_is_idempotent_and_seals_against_approval(self) -> None:
         with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:

@@ -44,6 +44,7 @@ class ServiceConfig:
     logs_dir: Path
     tmp_dir: Path
     runs_dir: Path
+    operations_dir: Path
 
     @classmethod
     def load(cls, path: Path) -> "ServiceConfig":
@@ -81,6 +82,10 @@ class ServiceConfig:
             "logs_dir": _absolute(data.get("logsDir"), "config.logsDir"),
             "tmp_dir": _absolute(data.get("tmpDir"), "config.tmpDir"),
             "runs_dir": _absolute(data.get("runsDir") or str(state_root / "runs"), "config.runsDir"),
+            "operations_dir": _absolute(
+                data.get("operationsDir") or str(state_root / "operations"),
+                "config.operationsDir",
+            ),
         }
         escaped = [name for name, candidate in paths.items() if not _within(candidate, state_root)]
         if escaped:
@@ -110,6 +115,7 @@ class ServiceConfig:
             self.logs_dir,
             self.tmp_dir,
             self.runs_dir,
+            self.operations_dir,
         ):
             path.mkdir(parents=True, exist_ok=True)
 

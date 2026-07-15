@@ -6,6 +6,7 @@
 
 - Electron GUI 由普通前台命令或用户启动，不交给 `process-manager`。
 - verifier service 由 `process-manager` 托管，内部只有一个 automation owner thread/event loop。
+- skill 安装根由入口脚本自身位置解析，workspace 是独立可写根；复制安装不得依赖仓库相对路径或把 runtime 状态写回安装目录。
 - HTTP adapter 只监听 literal loopback，除 `/health` 外都要求 bearer token。
 - service 只通过 Playwright `connect_over_cdp` 工作，不提供 raw transport fallback。
 
@@ -15,7 +16,7 @@
 python <skill>/scripts/ev_init.py --workspace <absolute-workspace> --python <absolute-python>
 ```
 
-初始化会检查 locked requirements，创建 `.harness/electron-ui-verifier/` 下的 config、token、sessions、runs、pending、artifacts、logs、tmp、knowledge 和 process-manager service 配置。环境或 Python 改变后重新运行。
+初始化会先校验当前安装所需脚本、schema、requirements 和 references，再检查 locked runtime，最后在 workspace 的 `.harness/electron-ui-verifier/` 下创建 config、token、sessions、runs、operations、pending、artifacts、logs、tmp、knowledge 和 process-manager service 配置。生成的 service 指向当前安装内 `ev_server.py`，cwd 指向 workspace，并设置 `PYTHONDONTWRITEBYTECODE=1`，避免污染只读复制安装。环境、安装根或 Python 改变后重新运行。
 
 若检测到旧知识布局，普通 init 会返回 `knowledge_reinitialize_required`。先运行预览：
 
@@ -36,6 +37,8 @@ python <skill>/scripts/ev_init.py --workspace <absolute-workspace> --reset-knowl
 - manager 记录稳定 processKey 和 bounded logs。
 - stop 返回 `cleanupVerified:true` 与 `ownerEmpty:true`。
 
+mutation 只由 service 内唯一 automation owner 执行。CLI/HTTP 只提交 durable operation 或查询状态；不要在另一个进程中直接导入 driver/run 模块，也不要绕过 operation store 启动第二个 owner。
+
 不要用手写后台 PowerShell、shell `&` 或任意 PID 搜索替代 manager ownership。
 
 ## Target 与 Session
@@ -55,4 +58,5 @@ python <skill>/scripts/ev_probe.py --workspace <absolute-workspace> --cdp http:/
 - 仅接受 `127.0.0.1` 或 `[::1]`，拒绝 `localhost` DNS、query token、redirect 和非 browser WebSocket path。
 - 请求体、响应体、JSON 深度、command queue、事件缓冲和 operation timeout 均有上限。
 - Windows 使用受限 DACL，POSIX 使用 owner-only mode；token 不进入命令行或日志。
+- 安装根应可视为只读；所有 report、operation、knowledge、缓存和临时文件只写 workspace state root。
 - GUI 测试只清理本轮明确启动的进程树，不终止无关实例。

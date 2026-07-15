@@ -3,19 +3,131 @@
   "$id": "https://local.electron-ui-verifier/schemas/knowledge.schema.json",
   "title": "Canonical approved verifier asset",
   "type": "object",
-  "required": ["schemaVersion", "format", "assetId", "kind", "appId", "goal", "aliases", "status", "payload", "evidence"],
+  "required": ["schemaVersion", "format", "assetId", "kind", "appId", "goal", "aliases", "status", "payload", "evidence", "createdAt"],
   "properties": {
-    "schemaVersion": {"const": 1},
-    "format": {"const": "electron-verifier-canonical"},
-    "assetId": {"type": "string", "pattern": "^[a-z]+-[0-9a-f]{24,64}$"},
+    "schemaVersion": {"const": 2},
+    "format": {"const": "electron-verifier-sealed"},
+    "assetId": {"type": "string", "pattern": "^(action|workflow)-[0-9a-f]{40}$"},
     "kind": {"enum": ["action", "workflow"]},
     "appId": {"type": "string", "minLength": 1},
+    "goal": {"type": "string", "minLength": 1},
+    "aliases": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
     "status": {"const": "approved"},
     "payload": {"type": "object"},
-    "goal": {"type": "string", "minLength": 1},
-    "aliases": {"type": "array", "items": {"type": "string"}},
-    "evidence": {"type": "array", "items": {"type": "object"}, "minItems": 1},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}, "minItems": 1},
     "createdAt": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "action"}}},
+      "then": {
+        "properties": {
+          "assetId": {"pattern": "^action-[0-9a-f]{40}$"},
+          "payload": {"$ref": "#/$defs/actionPayload"}
+        }
+      },
+      "else": {
+        "properties": {
+          "assetId": {"pattern": "^workflow-[0-9a-f]{40}$"},
+          "payload": {"$ref": "#/$defs/workflowPayload"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "required": ["type", "required", "description", "sensitive"],
+      "properties": {
+        "type": {"enum": ["string", "number", "integer", "boolean"]},
+        "required": {"type": "boolean"},
+        "description": {"type": "string", "maxLength": 500},
+        "sensitive": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "parameterSchema": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/parameter"}
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["appVersionMin", "appVersionMax", "screenDigest", "preState", "postState", "risk"],
+      "properties": {
+        "appVersionMin": {"type": "string", "minLength": 1},
+        "appVersionMax": {"type": "string", "minLength": 1},
+        "screenDigest": {"type": "string", "minLength": 1},
+        "preState": {"type": "string", "minLength": 1},
+        "postState": {"type": "string", "minLength": 1},
+        "risk": {"enum": ["low", "medium", "high"]}
+      },
+      "additionalProperties": false
+    },
+    "stats": {
+      "type": "object",
+      "required": ["successCount", "failureCount", "lastVerifiedAt"],
+      "properties": {
+        "successCount": {"type": "integer", "minimum": 1},
+        "failureCount": {"type": "integer", "minimum": 0},
+        "lastVerifiedAt": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["artifactId", "sha256"],
+          "properties": {
+            "artifactId": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            "mediaType": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["reportDigest"],
+          "properties": {"reportDigest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+          "additionalProperties": false
+        }
+      ]
+    },
+    "actionPayload": {
+      "type": "object",
+      "required": ["action", "parameterSchema", "requiredParameters", "compatibility", "stats"],
+      "properties": {
+        "action": {"$ref": "action.schema.json"},
+        "parameterSchema": {"$ref": "#/$defs/parameterSchema"},
+        "requiredParameters": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "compatibility": {"$ref": "#/$defs/compatibility"},
+        "stats": {"$ref": "#/$defs/stats"}
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": ["actionId", "preState", "postState"],
+      "properties": {
+        "actionId": {"type": "string", "pattern": "^action-[0-9a-f]{40}$"},
+        "preState": {"type": "string", "minLength": 1},
+        "postState": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "workflowPayload": {
+      "type": "object",
+      "required": ["actionIds", "parameterSchema", "requiredParameters", "compatibility", "transitions", "stats"],
+      "properties": {
+        "actionIds": {"type": "array", "items": {"type": "string", "pattern": "^action-[0-9a-f]{40}$"}, "minItems": 1, "maxItems": 200},
+        "parameterSchema": {"$ref": "#/$defs/parameterSchema"},
+        "requiredParameters": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "compatibility": {"$ref": "#/$defs/compatibility"},
+        "transitions": {"type": "array", "items": {"$ref": "#/$defs/transition"}, "minItems": 1, "maxItems": 200},
+        "stats": {"$ref": "#/$defs/stats"}
+      },
+      "additionalProperties": false
+    }
   },
   "additionalProperties": false
 }

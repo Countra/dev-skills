@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -13,19 +12,12 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+HARNESS_ROOT = (ROOT / ".harness").resolve()
 SCRIPTS = ROOT / "skills" / "electron-ui-verifier" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.atomic_io import canonical_json_bytes  # noqa: E402
-from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
-from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
-from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
-from electron_verifier.retrieval import HybridRetriever  # noqa: E402
-
-
-INGEST_BASELINE_MS = 4480.26
-INGEST_LIMIT_MS = 1500.0
-QUERY_LIMIT_MS = 100.0
+from performance_support import knowledge_performance  # noqa: E402
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -52,76 +44,13 @@ def canonical_throughput() -> dict[str, Any]:
     }
 
 
-def knowledge_performance(work_dir: Path) -> tuple[dict[str, Any], list[str]]:
-    state = work_dir / "knowledge-state"
-    if state.exists():
-        shutil.rmtree(state)
-    KnowledgeReset(state).ensure()
-    store = CanonicalStore(state)
-    assets: list[CanonicalAsset] = []
-    cases: list[tuple[str, str, str]] = []
-    for index in range(308):
-        app_id = f"perf-app-{index % 14}"
-        goal = f"Execute operation {index}"
-        alias = f"Run task code {index}"
-        asset = CanonicalAsset.create(
-            kind="workflow",
-            app_id=app_id,
-            goal=goal,
-            aliases=[alias],
-            payload={
-                "workflow": {"schemaVersion": 1, "appId": app_id, "goal": goal, "steps": [{"type": "snapshot"}]},
-                "stats": {"successCount": 5, "failureCount": 0},
-            },
-            evidence=[{"reportDigest": "d" * 64}],
-            created_at="2026-07-11T00:00:00Z",
-        )
-        assets.append(asset)
-        cases.append((app_id, alias, asset.asset_id))
-    started = time.perf_counter()
-    store.persist(assets)
-    ingest_ms = (time.perf_counter() - started) * 1000
-    timings: list[float] = []
-    query_failures = 0
-    with HybridRetriever(store) as retriever:
-        for index in range(10000):
-            app_id, query, expected = cases[index % len(cases)]
-            query_started = time.perf_counter_ns()
-            result = retriever.search(query, {"appId": app_id}, limit=3)
-            timings.append((time.perf_counter_ns() - query_started) / 1_000_000)
-            if result["decision"] != "reuse" or not result["candidates"] or result["candidates"][0]["assetId"] != expected:
-                query_failures += 1
-    timings.sort()
-    p95_ms = timings[max(0, int(len(timings) * 0.95) - 1)]
-    speedup = INGEST_BASELINE_MS / ingest_ms
-    failures = []
-    if ingest_ms > INGEST_LIMIT_MS:
-        failures.append("308 asset ingestion 超过 1.5 秒")
-    if speedup < 3.0:
-        failures.append("308 asset ingestion 未达到基线 3 倍加速")
-    if p95_ms > QUERY_LIMIT_MS:
-        failures.append("10k query P95 超过 100ms")
-    if query_failures:
-        failures.append(f"10k query 出现 {query_failures} 次错误命中")
-    return (
-        {
-            "assetCount": len(assets),
-            "ingestMs": round(ingest_ms, 3),
-            "ingestLimitMs": INGEST_LIMIT_MS,
-            "baselineMs": INGEST_BASELINE_MS,
-            "speedup": round(speedup, 3),
-            "queryCount": len(timings),
-            "queryP95Ms": round(p95_ms, 3),
-            "queryLimitMs": QUERY_LIMIT_MS,
-            "queryFailures": query_failures,
-        },
-        failures,
-    )
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", required=True)
     args = parser.parse_args()
     work_dir = Path(args.work_dir).resolve()
+    if work_dir == HARNESS_ROOT or HARNESS_ROOT not in work_dir.parents:
+        raise SystemExit("--work-dir 必须位于当前仓库 .harness 的隔离子目录")
     task_dir = work_dir.parent.parent
     termous_path = task_dir / "artifacts" / "validation" / "termous-smoke.json"
     failures: list[str] = []

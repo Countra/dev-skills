@@ -15,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cdp", help="首次 attach 或重新连接时使用的 loopback CDP endpoint")
     parser.add_argument("--app-id")
     parser.add_argument("--goal")
+    parser.add_argument("--alias", action="append", default=[], help="知识检索别名，可重复，最多 50 项")
     parser.add_argument("--app-version", help="用于资产版本硬过滤")
     parser.add_argument("--screen-digest", help="用于资产屏幕指纹硬过滤")
     parser.add_argument("--pre-state", help="用于资产前置状态硬过滤")
@@ -49,6 +50,8 @@ def main(argv: list[str] | None = None) -> int:
                 payload[key] = value
         if args.parameter_schema:
             payload["parameterSchema"] = read_json_arg(args.parameter_schema, "--parameter-schema")
+        if args.alias:
+            payload["aliases"] = args.alias
         config = load_config(resolve_config_path(args))
         result = request_json(config, "POST", "/runs/prepare", payload, timeout=60.0)
         print_json(result)

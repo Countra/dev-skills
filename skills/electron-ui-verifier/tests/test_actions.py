@@ -14,7 +14,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.actions import execute_action  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
-from electron_verifier.models import ActionSpec  # noqa: E402
+from electron_verifier.models import ActionSpec, LocatorSpec  # noqa: E402
 
 
 class FakeLocator:
@@ -65,6 +65,7 @@ class FakePage:
 
     def __init__(self, locator: FakeLocator) -> None:
         self.locator_value = locator
+        self.screenshot_calls: list[list[FakeLocator]] = []
 
     def get_by_role(self, role: str, **options):
         return self.locator_value
@@ -74,6 +75,10 @@ class FakePage:
 
     async def title(self) -> str:
         return "Demo"
+
+    async def screenshot(self, *, timeout: int, mask: list[FakeLocator]) -> bytes:
+        self.screenshot_calls.append(mask)
+        return b"masked-png"
 
 
 class ActionTests(unittest.TestCase):
@@ -105,7 +110,7 @@ class ActionTests(unittest.TestCase):
         result = asyncio.run(execute_action(live, action))
         self.assertEqual([True, False], locator.clicks)
         self.assertEqual(1, len(result.result["postconditions"]))
-        self.assertEqual("file:///[LOCAL]/index.html", result.result["preState"]["url"])
+        self.assertEqual("file:///[LOCAL]", result.result["preState"]["url"])
 
     def test_fill_uses_typed_api_and_value_assertion(self) -> None:
         locator = FakeLocator()
@@ -121,6 +126,7 @@ class ActionTests(unittest.TestCase):
         result = asyncio.run(execute_action(live, action))
         self.assertEqual("alice", locator.value)
         self.assertEqual("fill", result.result["action"])
+        self.assertNotIn("alice", str(result.result["postconditions"]))
 
     def test_failed_postcondition_does_not_replay_click(self) -> None:
         locator = FakeLocator(fail_wait=True)
@@ -136,6 +142,25 @@ class ActionTests(unittest.TestCase):
             asyncio.run(execute_action(live, action))
         self.assertEqual("postcondition_error", caught.exception.code)
         self.assertEqual([True, False], locator.clicks)
+
+    def test_screenshot_masks_sensitive_locator(self) -> None:
+        locator = FakeLocator()
+        page = FakePage(locator)
+        action = ActionSpec.decode({"type": "screenshot"})
+        mask = LocatorSpec.decode({"label": "密码"})
+        result = asyncio.run(execute_action(SimpleNamespace(page=page), action, sensitive_masks=(mask,)))
+        self.assertEqual(1, result.result["maskedLocatorCount"])
+        self.assertEqual([[locator]], page.screenshot_calls)
+
+    def test_screenshot_fails_closed_when_sensitive_locator_is_missing(self) -> None:
+        locator = FakeLocator(count=0)
+        page = FakePage(locator)
+        action = ActionSpec.decode({"type": "screenshot"})
+        mask = LocatorSpec.decode({"label": "密码"})
+        with self.assertRaises(VerifierError) as caught:
+            asyncio.run(execute_action(SimpleNamespace(page=page), action, sensitive_masks=(mask,)))
+        self.assertEqual("sensitive_evidence_blocked", caught.exception.code)
+        self.assertEqual([], page.screenshot_calls)
 
 
 if __name__ == "__main__":

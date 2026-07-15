@@ -1,0 +1,470 @@
+{
+  "task_id": "2026-07-14-feature-electron-ui-verifier-safety-knowledge-closure",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "把 electron-ui-verifier 升级为安全边界、长操作、批准写入、知识生产复用、安装可移植性和状态保留均有公共端到端证据的 Electron 验证 Skill"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "以 input-only 瞬时绑定上下文和统一安全投影阻止敏感值进入响应、状态、日志、知识与视觉证据"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "删除无后置条件和动作自签风险旁路，以服务端绑定的一次性短期 receipt 授权风险动作"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "用 durable operation 提供 mutation 的幂等提交、查询、取消、服务端 deadline、检查点和恢复"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "以 immutable objects 和 sealed decision activation 实现 crash-safe 批准，并直接切换新 knowledge layout"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "从 production passed steps 生成完整 action assets，并生成只引用有序 action IDs 的 workflow asset"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "由服务端加载和校验 asset ID，并闭合 search、compose、reuse 与 reliability stats"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "从模块位置派生 skill root，使安装目录与 workspace 状态目录独立且可移植"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "提供默认 dry-run、fingerprint-gated、引用保护且逐项报告的 retention/prune"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "同步 Skill、文档、schema、assets、CLI、eval 和 CI，并以公共 fixture、Termous 和最终重评证明交付"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "真实成功和失败链路中的 sentinel binding、credential、URL query/fragment 与 file path 不出现在任何文本输出、持久状态、日志或知识对象"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-01"],
+      "summary": "敏感输入对应区域自动 mask 并通过视觉证据检查，无法稳定 mask 时 fail closed 且不提交 artifact"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-02"],
+      "summary": "缺失 postcondition、自签旁路、非法或重放 receipt 均以零 mutation 拒绝，合法 receipt 只能执行一次"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-03"],
+      "summary": "mutation 快速返回 operationId，相同 requestId 与 digest 幂等，冲突 digest 拒绝，get/cancel 可查询最终状态"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-03"],
+      "summary": "queued、running、deadline、等待超时和重启场景均不自动 replay，取消后后续 mutation 数为零"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-04"],
+      "summary": "批准各写入 phase 故障后，无 decision 对象不可检索，有 decision 时 index 可重建，重复批准返回同一 bundle"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-04"],
+      "summary": "旧 knowledge 仅能通过 exact fingerprint reset 整体退役，不读取、迁移或双写旧资产"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-05"],
+      "summary": "真实 passed workflow 产出完整 action assets 和仅引用有序 action IDs 的 workflow asset"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-06"],
+      "summary": "服务端对 asset 当前 app、version、screen、state、risk、params 与 receipt 重新校验，错误上下文拒绝"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-06"],
+      "summary": "production-approved corpus 可搜索、组合、复用并更新统计，检索质量与性能门槛不退化"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-07"],
+      "summary": "复制 Skill 到临时安装根后可在另一 workspace 完成 init、start、health、stop，状态不写安装根且 owner-empty"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-08"],
+      "summary": "prune preview 不删除，错误 fingerprint 拒绝，apply 只删过期 terminal unprotected 候选并逐项报告"
+    },
+    {
+      "id": "AC-13",
+      "requirement_ids": ["REQ-09"],
+      "summary": "Skill eval、quick validate、static、公共 fixture 与 CI 定义均与新契约一致且不绕过公共 service/HTTP/CLI"
+    },
+    {
+      "id": "AC-14",
+      "requirement_ids": ["REQ-09"],
+      "summary": "Termous 隔离只读 smoke、required gates、source-bound 重评和最终审查闭环，默认数据无污染且进程 owner-empty"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "binding、token、URL query/fragment、file path 与用户内容默认不持久化、不回显"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "不确定的 compatibility、risk、postcondition、deadline 或 index state 必须 default deny"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "requestId、operation、run、receipt 和 decision 在超时、取消、重启与重复请求下可靠且幂等"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "object hash、sealed activation、derived index、reset 与 prune 可恢复并可验证"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "queue、deadline、operation、history、artifact、output 与 retrieval 资源有界并满足性能门槛"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "遵循项目和 Google Python 规范，保持高内聚、单向依赖、薄 CLI 与文件规模预算"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "统一 process-manager 接口、锁定 runtime、分离 skill/workspace 并保持三平台公共契约"
+    },
+    {
+      "id": "NFR-08",
+      "summary": "稳定 error/state、safe progress、operation/run/asset IDs、hash、generation 与 cleanup 可审计"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/domain-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/target-architecture.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-critique.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "敏感数据与 Mutation 契约地基",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-06", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-04"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["skills/process-manager/**", "raw CDP/WebSocket backend", "binding/trace/raw URL persistence", "mutation without postcondition", "self-authorized risk"],
+      "entry_conditions": ["批准 attestation 有效且 STG-01 scope 未发生漂移", "当前 unit/static baseline 已记录", "仅使用 task tmp 作为测试状态根"],
+      "exit_conditions": ["closed schemas 拒绝删除的旁路字段", "sentinel 和 URL 安全投影回归通过", "postcondition 与独立 risk receipt 矩阵通过"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-02",
+      "title": "Durable Operation、Deadline 与 Cancel",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-03"],
+      "acceptance_ids": ["AC-04", "AC-05"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-05", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-03", "VAL-05"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["background scheduler or broker", "automatic mutation replay", "client-authored operation state", "skills/process-manager/**"],
+      "entry_conditions": ["STG-01 完成且安全 action contract 稳定", "operation state graph 和 error mapping 已由测试 fixture 固定"],
+      "exit_conditions": ["requestId 幂等和冲突语义通过", "queued/running/deadline/restart cancel 矩阵通过", "取消后后续 mutation count 为零"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-03",
+      "title": "Sealed Activation 与 Knowledge Direct Cutover",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-04"],
+      "acceptance_ids": ["AC-06", "AC-07"],
+      "nonfunctional_ids": ["NFR-03", "NFR-04", "NFR-06", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-06", "VAL-12"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["SQLite canonical truth", "legacy knowledge reader/migration/double-write", "unactivated object retrieval", "live knowledge mutation during tests"],
+      "entry_conditions": ["STG-02 完成且 operation outcome 可作为 approval 输入", "fault injection phase 清单已固定"],
+      "exit_conditions": ["object/decision/index phase 故障恢复矩阵通过", "decision 是唯一 activation commit point", "旧 layout exact fingerprint reset 回归通过"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-04",
+      "title": "Production Knowledge 与服务端复用闭环",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-05", "REQ-06"],
+      "acceptance_ids": ["AC-08", "AC-09", "AC-10"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-03", "VAL-07", "VAL-08"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["synthetic-only evidence", "client-trusted asset execution", "unactivated object retrieval", "LLM/vector retrieval"],
+      "entry_conditions": ["STG-03 完成且 activation/rebuild contract 已通过", "production proposal 字段与 object schema 已固定"],
+      "exit_conditions": ["真实 action/workflow proposal-approve-search-reuse roundtrip 通过", "server-side asset context gate 通过", "检索质量和性能门槛通过"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-05",
+      "title": "安装可移植性与有界保留",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-07", "REQ-08"],
+      "acceptance_ids": ["AC-11", "AC-12"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-09", "VAL-10"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**"],
+      "forbidden_changes": ["skills/process-manager/**", "symbolic-link-only portability", "automatic prune", "path escape or unreferenced bulk deletion"],
+      "entry_conditions": ["STG-04 完成且 object reference graph 可查询", "所有 portability/retention 测试使用 task tmp"],
+      "exit_conditions": ["真实复制安装根和独立 workspace lifecycle 通过", "prune preview/apply/idempotency/reference protection 通过", "process-manager owner-empty"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-06",
+      "title": "Public Contract、真实 Fixture 与文档收敛",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-09"],
+      "acceptance_ids": ["AC-13"],
+      "nonfunctional_ids": ["NFR-03", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "validation_ids": ["VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**", ".github/workflows/electron-ui-verifier.yml", "README.md", "CHANGELOG.md"],
+      "forbidden_changes": ["other skills", "agent execution", "remote push or workflow dispatch", "default user profile", "fabricated hosted evidence"],
+      "entry_conditions": ["STG-05 完成且 public API/schema 稳定", "fixture 所有进程和状态根可精确归属"],
+      "exit_conditions": ["required VAL-02 至 VAL-12 本地闭环", "Skill/help/schema/assets/docs/CI 与新契约一致", "fixture cleanupVerified 且 owner-empty"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-07",
+      "title": "Termous 隔离实测、最终评估与交付审查",
+      "depends_on": ["STG-06"],
+      "requirement_ids": ["REQ-09"],
+      "acceptance_ids": ["AC-14"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-13", "VAL-14", "VAL-15"],
+      "allowed_changes": ["skills/electron-ui-verifier/**", "evals/electron-ui-verifier/**", ".github/workflows/electron-ui-verifier.yml", "README.md", "CHANGELOG.md", "artifacts/validation/**", "artifacts/reviews/**"],
+      "forbidden_changes": ["Termous mutation or default-profile access", "external write or remote push", "unauthorized commit", "scope expansion beyond approved files"],
+      "entry_conditions": ["STG-06 完成且全部 required automated gates 先通过", "Termous elevated-tool authorization 有效", "实际 executable 与隔离 profile 已确认"],
+      "exit_conditions": ["VAL-01 至 VAL-14 passed 且 source hash 一致", "Termous 默认数据无访问或污染", "最终审查无 blocker 且所有进程 owner-empty"],
+      "risk": "high",
+      "commit_expectation": "stage"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/electron-ui-verifier/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/unit-component-tests.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-03", "AC-04", "AC-06", "AC-07", "AC-08", "AC-11", "AC-13", "NFR-01", "NFR-02", "NFR-04", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_static_checks.py",
+      "evidence_path": "artifacts/validation/static-checks.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-08", "AC-09", "AC-11", "AC-13", "NFR-02", "NFR-03", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/electron-ui-verifier/tests/run_fixture_cdp_smoke.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/public-fixture --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/public-fixture.json",
+      "evidence_path": "artifacts/validation/public-fixture.json"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "NFR-01", "NFR-02", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_security_regression.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/security --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/security-regression.json",
+      "evidence_path": "artifacts/validation/security-regression.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-04", "AC-05", "NFR-02", "NFR-03", "NFR-05", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_operation_regression.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/operations --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/operation-regression.json",
+      "evidence_path": "artifacts/validation/operation-regression.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-06", "NFR-03", "NFR-04", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_approval_recovery.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/approval --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/approval-recovery.json",
+      "evidence_path": "artifacts/validation/approval-recovery.json"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-08", "AC-09", "AC-10", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_knowledge_roundtrip.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/knowledge --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/knowledge-roundtrip.json",
+      "evidence_path": "artifacts/validation/knowledge-roundtrip.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "other",
+      "required": true,
+      "covers": ["AC-10", "NFR-05", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_retrieval_benchmark.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/retrieval --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/retrieval-performance.json",
+      "evidence_path": "artifacts/validation/retrieval-performance.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-11", "AC-12", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_portability_retention.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/portable --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/portability-retention.json",
+      "evidence_path": "artifacts/validation/portability-retention.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-11", "AC-13", "NFR-03", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/electron-ui-verifier/tests/run_process_manager_smoke.py --workspace .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/pm-workspace --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/process-manager-smoke.json",
+      "evidence_path": "artifacts/validation/process-manager-smoke.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "other",
+      "required": true,
+      "covers": ["AC-13", "NFR-06", "NFR-07", "NFR-08"],
+      "command": "sequential static workflow: run evals/electron-ui-verifier/run_evals.py with task work-dir, then run skill-creator quick_validate.py for skills/electron-ui-verifier; agent execution is forbidden",
+      "evidence_path": "artifacts/validation/skill-contract.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-07", "NFR-03", "NFR-04", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_knowledge_reset_regression.py --work-dir .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/reset --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/knowledge-reset.json",
+      "evidence_path": "artifacts/validation/knowledge-reset.json"
+    },
+    {
+      "id": "VAL-13",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/electron-ui-verifier/tests/run_termous_smoke.py --exe D:/SoftWare/Termous/Termous.exe --isolated-profile .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/tmp/termous-profile --no-learn --output .harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/artifacts/validation/termous-smoke.json",
+      "evidence_path": "artifacts/validation/termous-smoke.json"
+    },
+    {
+      "id": "VAL-14",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "command": "skill-evaluation-lab static and semantic source-bound workflow for skills/electron-ui-verifier without agent execution, followed by final code review and git diff --check",
+      "evidence_path": "artifacts/reviews/final-code-review.md"
+    },
+    {
+      "id": "VAL-15",
+      "kind": "other",
+      "required": false,
+      "covers": ["AC-13", "NFR-07"],
+      "command": "user-triggered .github/workflows/electron-ui-verifier.yml Windows Ubuntu macOS matrix after user push",
+      "evidence_path": "artifacts/validation/platform-matrix.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02", "ART-03", "ART-04", "ART-05"],
+    "unresolved": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "新增 raw CDP、native launcher、第二 driver、backend、broker、scheduler、vector、LLM 或 SQLite canonical truth",
+    "持久化 binding、trace 或完整 URL，允许无 postcondition mutation，或削弱独立 risk receipt",
+    "增加旧 knowledge compatibility、migration、双写，或允许未激活 object 参与检索",
+    "修改其它 Skill、公共权限模型、依赖、stage DAG、required validation 或批准 artifacts",
+    "访问或修改 Termous 默认 profile/data，执行外部写、远端 push/CI 或未授权 commit",
+    "批准文件、attestation 或 source-bound evidence hash 出现不匹配"
+  ],
+  "stop_conditions": [
+    "用户请求暂停或撤销授权",
+    "命中任一 reapproval trigger",
+    "required permission、Termous 隔离能力或 process-manager ownership 证明不可用",
+    "required validation 在修复尝试后仍失败",
+    "发现可能泄露敏感值、越界删除或继续执行 mutation 的证据",
+    "workspace 出现无法安全归因或合并的并发修改"
+  ]
+}

@@ -7,6 +7,7 @@ import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -108,6 +109,65 @@ class AutomationWorkerTests(unittest.TestCase):
             worker.start()
         self.assertEqual("automation_start_failed", caught.exception.code)
         self.assertTrue(StartupFailureRuntime.stopped)
+
+    def test_startup_timeout_cancels_worker_and_runs_cleanup(self) -> None:
+        class BlockingStartupRuntime:
+            stopped = threading.Event()
+
+            def __init__(self, config) -> None:
+                pass
+
+            async def start(self) -> None:
+                await asyncio.Event().wait()
+
+            async def stop(self) -> None:
+                self.__class__.stopped.set()
+
+        limits = RuntimeLimits(
+            automation_start_timeout_seconds=0.02,
+            readiness_timeout_margin_seconds=0.03,
+            shutdown_grace_seconds=1.0,
+        )
+        worker = AutomationWorker(object(), limits=limits, runtime_factory=BlockingStartupRuntime)
+
+        with self.assertRaises(VerifierError) as caught:
+            worker.start()
+
+        self.assertEqual("automation_start_timeout", caught.exception.code)
+        self.assertEqual(0.02, caught.exception.details["timeoutSeconds"])
+        self.assertTrue(caught.exception.details["cleanupCompleted"])
+        self.assertTrue(BlockingStartupRuntime.stopped.is_set())
+        self.assertFalse(worker._thread.is_alive())
+        self.assertAlmostEqual(0.05, limits.service_readiness_timeout_seconds)
+
+    def test_default_start_timeout_comes_from_runtime_limits(self) -> None:
+        limits = RuntimeLimits(automation_start_timeout_seconds=12.5, shutdown_grace_seconds=1.0)
+        worker = AutomationWorker(object(), limits=limits, runtime_factory=FakeRuntime)
+
+        with mock.patch.object(worker._ready, "wait", wraps=worker._ready.wait) as wait:
+            worker.start()
+        worker.shutdown()
+
+        wait.assert_called_once_with(12.5)
+
+    def test_timeout_boundary_stops_worker_that_just_became_ready(self) -> None:
+        limits = RuntimeLimits(automation_start_timeout_seconds=1.0, shutdown_grace_seconds=1.0)
+        worker = AutomationWorker(object(), limits=limits, runtime_factory=FakeRuntime)
+        real_wait = worker._ready.wait
+
+        def lose_timeout_race(timeout: float) -> bool:
+            self.assertTrue(real_wait(timeout))
+            return False
+
+        with (
+            mock.patch.object(worker._ready, "wait", side_effect=lose_timeout_race),
+            self.assertRaises(VerifierError) as caught,
+        ):
+            worker.start()
+
+        self.assertEqual("automation_start_timeout", caught.exception.code)
+        self.assertTrue(caught.exception.details["cleanupCompleted"])
+        self.assertFalse(worker._thread.is_alive())
 
     def test_shutdown_cleanup_failure_is_reported(self) -> None:
         class ShutdownFailureRuntime(FakeRuntime):

@@ -17,8 +17,8 @@ SCHEMAS = SKILL / "schemas"
 PUBLIC_SCRIPTS = (
     "ev_init.py", "ev_probe.py", "ev_prepare.py", "ev_action.py", "ev_workflow.py",
     "ev_finalize.py", "ev_pending.py", "ev_persist.py", "ev_knowledge.py",
-    "ev_suggest.py", "ev_assets.py", "ev_asset_extract.py", "ev_asset_runner.py",
-    "ev_export_workflow.py", "ev_server.py",
+    "ev_suggest.py", "ev_assets.py", "ev_risk.py", "ev_server.py",
+    "ev_operation.py", "ev_prune.py",
 )
 
 
@@ -115,8 +115,48 @@ def main() -> int:
         if not identifier or identifier in schema_ids:
             failures.append(f"Schema $id 缺失或重复：{path}")
         schema_ids.add(str(identifier))
-    if len(schema_ids) < 6:
+    required_schemas = {
+        "risk-receipt.schema.json",
+        "operation.schema.json",
+        "knowledge-decision.schema.json",
+    }
+    missing_schemas = sorted(name for name in required_schemas if not (SCHEMAS / name).exists())
+    if len(schema_ids) < 9 or missing_schemas:
         failures.append("当前契约 schema 数量不足")
+    knowledge_schema = json.loads((SCHEMAS / "knowledge.schema.json").read_text(encoding="utf-8"))
+    knowledge_properties = knowledge_schema.get("properties", {})
+    sealed_format = knowledge_properties.get("format", {}).get("const")
+    if sealed_format != "electron-verifier-sealed":
+        failures.append("knowledge schema 未固定 sealed direct-cutover format")
+    required_security_modules = (
+        PACKAGE / "sensitivity.py",
+        PACKAGE / "risk_authorization.py",
+        PACKAGE / "operations.py",
+        PACKAGE / "compatibility.py",
+        PACKAGE / "asset_execution.py",
+        PACKAGE / "run_context.py",
+        PACKAGE / "paths.py",
+        PACKAGE / "retention.py",
+        PACKAGE / "retention_policy.py",
+    )
+    missing_security_modules = [path.name for path in required_security_modules if not path.exists()]
+    if missing_security_modules:
+        failures.append(f"安全、安装或 operation 边界模块缺失：{missing_security_modules}")
+    legacy_knowledge_markers = (
+        '"canonicalDir"',
+        "electron-verifier-canonical",
+        'paths["canonical"]',
+        "def persist(",
+    )
+    legacy_knowledge_hits = [marker for marker in legacy_knowledge_markers if marker in package_text]
+    if legacy_knowledge_hits:
+        failures.append(f"生产代码仍包含旧 canonical truth 路径：{legacy_knowledge_hits}")
+    forbidden_bypasses = ("allowWithoutPostcondition", "confirmRisk", "allowCoordinate", "riskConfirmed")
+    bypass_hits = [marker for marker in forbidden_bypasses if marker in package_text]
+    action_schema_text = (SCHEMAS / "action.schema.json").read_text(encoding="utf-8")
+    bypass_hits.extend(f"action.schema.json:{marker}" for marker in forbidden_bypasses if marker in action_schema_text)
+    if bypass_hits:
+        failures.append(f"旧 mutation 自签旁路仍存在：{bypass_hits}")
     public_legacy_hits = []
     public_parse_failures = []
     for name in PUBLIC_SCRIPTS:
@@ -127,15 +167,30 @@ def main() -> int:
         except (OSError, SyntaxError) as exc:
             public_parse_failures.append(f"{name}:{exc}")
             continue
-        for marker in ("ev_knowledge_store", "ev_knowledge_extract", "supplemental_actions"):
+        for marker in (
+            "ev_knowledge_store",
+            "ev_knowledge_extract",
+            "supplemental_actions",
+            "ev_asset_runner",
+            "executable_from_asset",
+        ):
             if marker in text:
                 public_legacy_hits.append(f"{name}:{marker}")
     if public_parse_failures:
         failures.append(f"公共 CLI 缺失或语法错误：{public_parse_failures}")
     if public_legacy_hits:
         failures.append(f"公共 CLI 仍依赖旧知识路径：{public_legacy_hits}")
+    id_only_clis = ("ev_action.py", "ev_workflow.py", "ev_risk.py")
+    missing_id_handoff = [
+        name
+        for name in id_only_clis
+        if 'payload["assetId"]' not in (SKILL / "scripts" / name).read_text(encoding="utf-8")
+    ]
+    if missing_id_handoff:
+        failures.append(f"资产复用 CLI 未把 assetId 原样交给服务端：{missing_id_handoff}")
     removed_paths = (
         "ev_knowledge_store.py", "ev_knowledge_extract.py", "ev_learn.py", "ev_promote.py",
+        "ev_asset_extract.py", "ev_asset_runner.py", "ev_export_workflow.py",
         "ev_asset_extract_smoke.py", "ev_asset_reuse_smoke.py", "ev_knowledge_smoke.py",
         "ev_pending_smoke.py", "ev_progressive_suggest_smoke.py",
     )
@@ -154,6 +209,30 @@ def main() -> int:
     linked_references = {name for name in required_references if f"references/{name}" in skill_text}
     if linked_references != required_references or "不要在普通任务中预先加载全部 references" not in skill_text:
         failures.append("SKILL.md 条件 reference 索引不完整")
+    reference_text = "\n".join(
+        (SKILL / "references" / name).read_text(encoding="utf-8") for name in sorted(required_references)
+    )
+    stale_doc_markers = [
+        marker
+        for marker in ("knowledge/canonical", "canonical 原子提交、derived 单事务更新、sealed decision")
+        if marker in skill_text or marker in reference_text
+    ]
+    if stale_doc_markers:
+        failures.append(f"Skill 文档仍描述旧知识布局或激活顺序：{stale_doc_markers}")
+    required_doc_markers = (
+        "knowledge/objects",
+        "knowledge/decisions",
+        "sealed approved decision",
+        "ev_operation.py",
+        "ev_risk.py",
+        "ev_prune.py",
+        "PYTHONDONTWRITEBYTECODE=1",
+    )
+    missing_doc_markers = [
+        marker for marker in required_doc_markers if marker not in skill_text and marker not in reference_text
+    ]
+    if missing_doc_markers:
+        failures.append(f"Skill 文档未覆盖 current 公共契约：{missing_doc_markers}")
     old_asset_markers = []
     for path in sorted((SKILL / "assets").glob("*.json")):
         text = path.read_text(encoding="utf-8")
@@ -170,17 +249,123 @@ def main() -> int:
         failures.append("agents/openai.yaml 与 skill 名称不同步")
     matrix_path = ROOT / ".github" / "workflows" / "electron-ui-verifier.yml"
     matrix_text = matrix_path.read_text(encoding="utf-8") if matrix_path.exists() else ""
-    required_matrix = ("windows-latest", "ubuntu-latest", "macos-latest", 'branches: ["**"]', "run_fixture_cdp_smoke.py")
+    required_matrix = (
+        "windows-latest",
+        "ubuntu-latest",
+        "macos-latest",
+        'branches: ["**"]',
+        "run_fixture_cdp_smoke.py",
+        "run_portability_retention.py",
+        "run_retrieval_benchmark.py",
+        "actions/upload-artifact@v4",
+        ".harness/electron-ui-verifier-ci",
+    )
     if not matrix_text or any(marker not in matrix_text for marker in required_matrix):
         failures.append("三平台 Electron fixture workflow 缺失或触发范围不完整")
+    if "runner.temp" in matrix_text:
+        failures.append("Electron workflow 仍把受管 fixture/eval 输出写到仓库外 runner.temp")
     fixture_path = SKILL / "tests" / "run_fixture_cdp_smoke.py"
+    fixture_support = SKILL / "tests" / "public_contract_support.py"
+    fixture_internal_hits: list[str] = []
+    missing_fixture_markers: list[str] = []
     if not fixture_path.exists():
         failures.append("跨平台 fixture CDP smoke 缺失")
     else:
         try:
-            ast.parse(fixture_path.read_text(encoding="utf-8"), filename=str(fixture_path))
+            fixture_text = fixture_path.read_text(encoding="utf-8")
+            ast.parse(fixture_text, filename=str(fixture_path))
         except SyntaxError as exc:
             failures.append(f"fixture CDP smoke 语法错误：{exc}")
+        else:
+            forbidden_fixture_markers = (
+                "PlaywrightCdpDriver",
+                "RunService",
+                "SessionManager",
+                "electron_verifier.",
+            )
+            fixture_internal_hits = [marker for marker in forbidden_fixture_markers if marker in fixture_text]
+            if fixture_internal_hits:
+                failures.append(f"公共 fixture 仍直接调用 verifier 内部实现：{fixture_internal_hits}")
+            required_fixture_markers = (
+                "ManagedVerifier",
+                "ev_probe.py",
+                "/sessions/attach",
+                "ev_operation.py",
+                "ev_persist.py",
+                "ev_knowledge.py",
+                "ev_assets.py",
+                "--workflow-id",
+                '"cancel"',
+                "installImmutable",
+            )
+            missing_fixture_markers = [marker for marker in required_fixture_markers if marker not in fixture_text]
+            if missing_fixture_markers:
+                failures.append(f"公共 fixture 未覆盖完整用户入口：{missing_fixture_markers}")
+    if not fixture_support.exists():
+        failures.append("公共 fixture 复制安装/process-manager 支撑缺失")
+        support_text = ""
+    else:
+        support_text = fixture_support.read_text(encoding="utf-8")
+        try:
+            ast.parse(support_text, filename=str(fixture_support))
+        except SyntaxError as exc:
+            failures.append(f"公共 fixture 支撑语法错误：{exc}")
+        required_support_markers = (
+            "shutil.copytree",
+            "pm_manager.py",
+            "pm_start.py",
+            "pm_stop.py",
+            "guarded_harness_path",
+            "install_digest",
+        )
+        missing_support_markers = [marker for marker in required_support_markers if marker not in support_text]
+        if missing_support_markers:
+            failures.append(f"公共 fixture 支撑未闭合复制安装或进程生命周期：{missing_support_markers}")
+    termous_paths = (
+        SKILL / "tests" / "run_termous_smoke.py",
+        SKILL / "tests" / "termous_contract_support.py",
+    )
+    termous_text = "\n".join(
+        path.read_text(encoding="utf-8") for path in termous_paths if path.exists()
+    )
+    missing_termous_files = [path.name for path in termous_paths if not path.exists()]
+    if missing_termous_files:
+        failures.append(f"Termous 公共契约模块缺失：{missing_termous_files}")
+    termous_internal_hits = [
+        marker
+        for marker in (
+            "subprocess.Popen",
+            "taskkill",
+            "VerifierApplication",
+            "_bind_server",
+            "electron_verifier.",
+            "threading.Thread",
+        )
+        if marker in termous_text
+    ]
+    if termous_internal_hits:
+        failures.append(f"Termous smoke 仍绕过统一公共生命周期：{termous_internal_hits}")
+    missing_termous_markers = [
+        marker
+        for marker in (
+            "ManagedVerifier",
+            "start_managed_service",
+            "stop_managed_service",
+            "guarded_harness_path",
+            "wait_operation",
+            "--no-learn",
+            '"processOwnership": "process-manager"',
+        )
+        if marker not in termous_text and marker not in support_text
+    ]
+    if missing_termous_markers:
+        failures.append(f"Termous smoke 未覆盖 current 公共契约：{missing_termous_markers}")
+    for termous_path in termous_paths:
+        if termous_path.exists():
+            try:
+                ast.parse(termous_path.read_text(encoding="utf-8"), filename=str(termous_path))
+            except SyntaxError as exc:
+                failures.append(f"Termous smoke 语法错误：{exc}")
     metrics["productionFiles"] = len(files)
     metrics["schemaFiles"] = len(schema_ids)
     metrics["oversized"] = oversized
@@ -188,10 +373,28 @@ def main() -> int:
     metrics["legacyKnowledgeReader"] = store_facade.exists()
     metrics["publicScriptCount"] = len(PUBLIC_SCRIPTS)
     metrics["publicLegacyHits"] = public_legacy_hits
+    metrics["idOnlyAssetHandoff"] = not missing_id_handoff
     metrics["skillLines"] = len(skill_text.splitlines())
     metrics["linkedReferences"] = sorted(linked_references)
     metrics["removedLegacyPaths"] = stale_paths
     metrics["platformMatrixDefined"] = bool(matrix_text)
+    metrics["publicFixtureInternalHits"] = fixture_internal_hits if fixture_path.exists() else []
+    metrics["missingFixtureMarkers"] = missing_fixture_markers if fixture_path.exists() else []
+    metrics["missingFixtureSupportMarkers"] = missing_support_markers if fixture_support.exists() else []
+    metrics["termousInternalHits"] = termous_internal_hits
+    metrics["missingTermousMarkers"] = missing_termous_markers
+    metrics["staleDocMarkers"] = stale_doc_markers
+    metrics["missingDocMarkers"] = missing_doc_markers
+    metrics["securityBoundaryModules"] = [path.name for path in required_security_modules if path.exists()]
+    metrics["mutationBypassHits"] = bypass_hits
+    metrics["missingRequiredSchemas"] = missing_schemas
+    metrics["knowledgeFormat"] = sealed_format
+    metrics["legacyKnowledgeMarkers"] = legacy_knowledge_hits
+    metrics["knowledgeLayoutModules"] = [
+        name
+        for name in ("canonical_store.py", "knowledge_index.py", "knowledge_reset.py")
+        if (PACKAGE / name).exists()
+    ]
     result = {"ok": not failures, "failures": failures, "metrics": metrics}
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

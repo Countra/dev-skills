@@ -1,15 +1,16 @@
-# Canonical Knowledge
+# Sealed Knowledge
 
 只在查询、组合、reset、pending 审核或批准资产时读取本文件。
 
 ## 存储模型
 
-- `knowledge/canonical/*.json` 是 approved truth，assetId 由内容摘要生成。
-- `knowledge/manifest.json` 是 durable commit 与 canonical 摘要。
+- `knowledge/objects/*.json` 保存 content-addressed immutable action/workflow object；对象写入本身不代表可用。
+- `knowledge/decisions/*.json` 保存 exclusive-create 的 sealed approve/reject 决定。只有 approved decision 引用的 object 才是 active truth。
+- `knowledge/manifest.json` 保存 active object 与 decision 摘要，便于完整性校验；它不是独立授权入口。
 - `knowledge/derived/index.sqlite3` 是可删除、可重建的检索索引，使用 rollback journal，不使用 WAL。
 - 旧布局不读取、不导入、不转换；retired 目录不参与 current 查询。
 
-批准顺序固定为 canonical 原子提交、derived 单事务更新、sealed decision。derived 损坏时隔离旧文件并从 canonical 重建。
+批准顺序固定为：幂等写 immutable objects、exclusive-create sealed decision、从全部 approved decisions 重建 derived index 和 manifest。若在 decision 后崩溃，object 已由 decision 激活，重启校验会重建 derived；若在 decision 前崩溃，未引用 object 保持不可见并由显式 retention 处理。derived 损坏时先隔离旧文件，再从 objects + decisions 重建。
 
 ## 检索
 
@@ -50,7 +51,7 @@ python <skill>/scripts/ev_assets.py --workspace <absolute-workspace> get --asset
 python <skill>/scripts/ev_workflow.py --workspace <absolute-workspace> --run-id <run-id> --workflow-id <id> --bindings <json>
 ```
 
-`get` 从 canonical 文件读取并重新校验 content-addressed identity。执行时 parameter values 只在内存绑定，journal 只记录 placeholder 和 bound parameter name。
+`get` 从 current approved object 读取并重新校验 content-addressed identity。执行 asset ID 时，服务端重新校验 sealed decision、compatibility、risk 和 parameter schema；客户端不能提交解包后的对象绕过门禁。parameter values 只在内存绑定，journal 只记录 placeholder 和 bound parameter name。
 
 ## Pending 与批准
 
@@ -61,6 +62,17 @@ python <skill>/scripts/ev_pending.py --workspace <absolute-workspace> --run-id <
 python <skill>/scripts/ev_persist.py --workspace <absolute-workspace> approve --run-id <run-id> --fingerprint <exact> --note <reason>
 ```
 
-批准前再次校验 report digest、evidence manifest、parameterSchema、risk confirmation 和 bundle fingerprint。decision 使用 exclusive create；重复同一批准幂等，其它决定冲突。
+批准前再次校验 report digest、evidence manifest、parameterSchema、risk confirmation 和 bundle fingerprint。action object 先逐步生成，workflow object 只引用 action IDs，不复制 steps。decision 使用 exclusive create；重复同一批准幂等，其它决定冲突。risk receipt 只授权本轮动作，不等于知识批准。
 
-旧的 direct learn、promote 和 store facade 已删除，不存在兼容入口。
+## 保留与清理
+
+retention 不在后台自动执行，默认只做引用安全预览：
+
+```powershell
+python <skill>/scripts/ev_prune.py --workspace <absolute-workspace> preview
+python <skill>/scripts/ev_prune.py --workspace <absolute-workspace> apply --fingerprint <exact> --confirm
+```
+
+apply 必须使用当前 preview 的 exact fingerprint；候选集合、引用关系或 policy 变化都会拒绝旧 fingerprint。默认保护 active objects、sealed decisions、pending 引用和未到期 operation。orphan object 只有显式 `--include-orphans` 且超过 grace period 才进入候选。
+
+旧的 direct learn、promote、canonical 目录和 store facade 已删除，不存在兼容入口。

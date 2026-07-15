@@ -4,99 +4,153 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from . import KNOWLEDGE_FORMAT, SCHEMA_VERSION
 from .errors import VerifierError
-from .models import canonical_digest
+from .models import ActionSpec, canonical_digest
+from .sensitivity import normalize_parameter_schema, placeholders
 
 
-PLACEHOLDER = re.compile(r"^\$\{([A-Za-z][A-Za-z0-9_.-]{0,63})\}$")
+ASSET_FIELDS = {
+    "schemaVersion",
+    "format",
+    "assetId",
+    "kind",
+    "appId",
+    "goal",
+    "aliases",
+    "status",
+    "payload",
+    "evidence",
+    "createdAt",
+}
+ACTION_ID = re.compile(r"^action-[0-9a-f]{40}$")
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
+RISK_LEVELS = {"low", "medium", "high"}
+COMPATIBILITY_FIELDS = {
+    "appVersionMin",
+    "appVersionMax",
+    "screenDigest",
+    "preState",
+    "postState",
+    "risk",
+}
+STATS_FIELDS = {"successCount", "failureCount", "lastVerifiedAt"}
 
 
-def placeholder_name(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    match = PLACEHOLDER.fullmatch(value)
-    return match.group(1) if match else None
+def _timestamp(value: Any, label: str) -> str:
+    text = str(value or "").strip()
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise VerifierError("invalid_asset", f"{label} 必须是 RFC3339 时间") from exc
+    if parsed.tzinfo is None:
+        raise VerifierError("invalid_asset", f"{label} 必须包含时区")
+    return text
 
 
-def placeholders(value: Any) -> set[str]:
-    result: set[str] = set()
-    if isinstance(value, dict):
-        for item in value.values():
-            result.update(placeholders(item))
-    elif isinstance(value, list):
-        for item in value:
-            result.update(placeholders(item))
-    elif isinstance(value, str):
-        name = placeholder_name(value)
-        if name:
-            result.add(name)
-        elif "${" in value:
-            raise VerifierError("invalid_placeholder", "参数占位符必须占据完整字符串")
-    return result
+def _closed(value: Any, fields: set[str], label: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != fields:
+        raise VerifierError("invalid_asset", f"{label} 字段不完整或包含未知字段")
+    return value
 
 
-def normalize_parameter_schema(value: Any) -> dict[str, dict[str, Any]]:
-    if value in (None, {}):
-        return {}
-    if not isinstance(value, dict):
-        raise VerifierError("invalid_parameter_schema", "parameterSchema 必须是 object")
-    result: dict[str, dict[str, Any]] = {}
-    for name, raw in value.items():
-        if not PLACEHOLDER.fullmatch(f"${{{name}}}"):
-            raise VerifierError("invalid_parameter_schema", f"参数名无效：{name}")
-        if not isinstance(raw, dict):
-            raise VerifierError("invalid_parameter_schema", f"参数 {name} schema 必须是 object")
-        parameter_type = str(raw.get("type") or "string")
-        if parameter_type not in {"string", "number", "integer", "boolean"}:
-            raise VerifierError("invalid_parameter_schema", f"参数 {name} type 不受支持：{parameter_type}")
-        result[str(name)] = {
-            "type": parameter_type,
-            "required": raw.get("required", True) is not False,
-            "description": str(raw.get("description") or "")[:500],
-        }
-    return result
+def _validate_compatibility(value: Any) -> dict[str, Any]:
+    compatibility = _closed(value, COMPATIBILITY_FIELDS, "compatibility")
+    for field in ("appVersionMin", "appVersionMax", "screenDigest", "preState", "postState"):
+        if not isinstance(compatibility.get(field), str) or not compatibility[field].strip():
+            raise VerifierError("invalid_asset", f"compatibility.{field} 必须是非空字符串")
+    if compatibility.get("risk") not in RISK_LEVELS:
+        raise VerifierError("invalid_asset", "compatibility.risk 必须是 low/medium/high")
+    return compatibility
 
 
-def _validate_binding(name: str, value: Any, schema: dict[str, Any]) -> None:
-    expected = schema.get("type", "string")
-    valid = {
-        "string": isinstance(value, str),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
-        "integer": isinstance(value, int) and not isinstance(value, bool),
-        "boolean": isinstance(value, bool),
-    }[expected]
-    if not valid:
-        raise VerifierError("invalid_parameter_binding", f"参数 {name} 必须是 {expected}")
+def _validate_stats(value: Any) -> None:
+    stats = _closed(value, STATS_FIELDS, "stats")
+    for field in ("successCount", "failureCount"):
+        count = stats.get(field)
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            raise VerifierError("invalid_asset", f"stats.{field} 必须是非负整数")
+    if stats["successCount"] < 1:
+        raise VerifierError("invalid_asset", "批准资产的 successCount 基线至少为 1")
+    _timestamp(stats.get("lastVerifiedAt"), "stats.lastVerifiedAt")
 
 
-def bind_parameters(
-    value: Any,
-    bindings: Any,
-    schema: dict[str, dict[str, Any]],
-) -> tuple[Any, set[str]]:
-    binding_map = bindings if isinstance(bindings, dict) else {}
-    required = placeholders(value)
-    undeclared = required - set(schema)
-    if undeclared:
-        raise VerifierError("undeclared_parameter", f"占位符未在 parameterSchema 声明：{sorted(undeclared)}")
-    missing = {name for name in required if name not in binding_map}
-    if missing:
-        raise VerifierError("parameter_binding_required", f"缺少参数绑定：{sorted(missing)}")
-    for name in required:
-        _validate_binding(name, binding_map[name], schema[name])
+def _validate_evidence(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value:
+        raise VerifierError("invalid_asset", "canonical asset 至少需要一项 evidence")
+    for item in value:
+        if not isinstance(item, dict):
+            raise VerifierError("invalid_asset", "evidence item 必须是 object")
+        if "artifactId" in item:
+            if set(item) - {"artifactId", "sha256", "mediaType"} or not item.get("artifactId"):
+                raise VerifierError("invalid_asset", "artifact evidence 字段无效")
+            if not SHA256.fullmatch(str(item.get("sha256") or "")):
+                raise VerifierError("invalid_asset", "artifact evidence sha256 无效")
+        elif set(item) == {"reportDigest"}:
+            if not SHA256.fullmatch(str(item.get("reportDigest") or "")):
+                raise VerifierError("invalid_asset", "report evidence digest 无效")
+        else:
+            raise VerifierError("invalid_asset", "evidence item 类型不受支持")
+    return value
 
-    def replace(item: Any) -> Any:
-        if isinstance(item, dict):
-            return {key: replace(child) for key, child in item.items()}
-        if isinstance(item, list):
-            return [replace(child) for child in item]
-        name = placeholder_name(item)
-        return binding_map[name] if name else item
 
-    return replace(value), required
+def _validate_payload(kind: str, value: Any) -> dict[str, Any]:
+    if kind == "action":
+        payload = _closed(
+            value,
+            {"action", "parameterSchema", "requiredParameters", "compatibility", "stats"},
+            "action payload",
+        )
+        action = payload.get("action")
+        ActionSpec.decode(action)
+        required = sorted(placeholders(action))
+    elif kind == "workflow":
+        payload = _closed(
+            value,
+            {"actionIds", "parameterSchema", "requiredParameters", "compatibility", "transitions", "stats"},
+            "workflow payload",
+        )
+        action_ids = payload.get("actionIds")
+        transitions = payload.get("transitions")
+        if (
+            not isinstance(action_ids, list)
+            or not action_ids
+            or any(not isinstance(item, str) or not ACTION_ID.fullmatch(item) for item in action_ids)
+        ):
+            raise VerifierError("invalid_asset", "workflow actionIds 必须是有序 action asset IDs")
+        if not isinstance(transitions, list) or len(transitions) != len(action_ids):
+            raise VerifierError("invalid_asset", "workflow transitions 必须与 actionIds 一一对应")
+        previous = None
+        for index, transition in enumerate(transitions):
+            item = _closed(transition, {"actionId", "preState", "postState"}, "transition")
+            if any(not isinstance(item.get(field), str) or not item[field].strip() for field in item):
+                raise VerifierError("invalid_asset", "workflow transition 字段必须是非空字符串")
+            if item["actionId"] != action_ids[index]:
+                raise VerifierError("invalid_asset", "workflow transition actionId 顺序不一致")
+            if previous is not None and item["preState"] != previous:
+                raise VerifierError("invalid_asset", "workflow transition state 无法衔接")
+            previous = item["postState"]
+        raw_required = payload.get("requiredParameters")
+        if not isinstance(raw_required, list) or any(not isinstance(item, str) for item in raw_required):
+            raise VerifierError("invalid_asset", "workflow requiredParameters 必须是字符串数组")
+        required = sorted(set(raw_required))
+    else:
+        raise VerifierError("invalid_asset", f"knowledge kind 不受支持：{kind}")
+    schema = normalize_parameter_schema(payload.get("parameterSchema"))
+    if payload.get("parameterSchema") != schema:
+        raise VerifierError("invalid_asset", "parameterSchema 必须使用规范化 closed 结构")
+    if payload.get("requiredParameters") != required or set(required) - set(schema):
+        raise VerifierError("invalid_asset", "requiredParameters 与 payload placeholders/schema 不一致")
+    compatibility = _validate_compatibility(payload.get("compatibility"))
+    if kind == "workflow":
+        transitions = payload["transitions"]
+        if transitions[0]["preState"] != compatibility["preState"] or transitions[-1]["postState"] != compatibility["postState"]:
+            raise VerifierError("invalid_asset", "workflow compatibility 与 transition chain 不一致")
+    _validate_stats(payload.get("stats"))
+    return payload
 
 
 @dataclass(frozen=True)
@@ -124,33 +178,41 @@ class CanonicalAsset:
     ) -> "CanonicalAsset":
         if kind not in {"action", "workflow"}:
             raise VerifierError("invalid_asset", f"knowledge kind 不受支持：{kind}")
-        if not app_id.strip() or not goal.strip() or not evidence:
+        if not isinstance(app_id, str) or not isinstance(goal, str) or not app_id.strip() or not goal.strip():
             raise VerifierError("invalid_asset", "canonical asset 需要 appId、goal 和 evidence")
+        if not isinstance(aliases, list) or any(not isinstance(item, str) for item in aliases):
+            raise VerifierError("invalid_asset", "canonical aliases 必须是字符串数组")
         normalized_aliases = sorted(set(item.strip() for item in aliases if item.strip()))
+        normalized_payload = _validate_payload(kind, payload)
+        normalized_evidence = _validate_evidence(evidence)
+        normalized_created_at = _timestamp(created_at, "createdAt")
         identity = {
             "kind": kind,
-            "appId": app_id,
-            "goal": goal,
+            "appId": app_id.strip(),
+            "goal": goal.strip(),
             "aliases": normalized_aliases,
-            "payload": payload,
-            "evidence": evidence,
+            "payload": normalized_payload,
+            "evidence": normalized_evidence,
+            "createdAt": normalized_created_at,
         }
         asset_id = f"{kind}-{canonical_digest(identity)[:40]}"
         return cls(
             asset_id=asset_id,
             kind=kind,
-            app_id=app_id,
-            goal=goal,
+            app_id=app_id.strip(),
+            goal=goal.strip(),
             aliases=tuple(normalized_aliases),
-            payload=payload,
-            evidence=tuple(evidence),
-            created_at=created_at,
+            payload=normalized_payload,
+            evidence=tuple(normalized_evidence),
+            created_at=normalized_created_at,
         )
 
     @classmethod
     def decode(cls, value: Any) -> "CanonicalAsset":
         if not isinstance(value, dict):
             raise VerifierError("invalid_asset", "canonical asset 必须是 object")
+        if set(value) != ASSET_FIELDS:
+            raise VerifierError("invalid_asset", "canonical asset 字段不完整或包含未知字段")
         if value.get("schemaVersion") != SCHEMA_VERSION or value.get("format") != KNOWLEDGE_FORMAT:
             raise VerifierError("invalid_asset", "canonical asset format/schema 不匹配")
         if value.get("status") != "approved":
@@ -158,7 +220,12 @@ class CanonicalAsset:
         payload = value.get("payload")
         evidence = value.get("evidence")
         aliases = value.get("aliases") or []
-        if not isinstance(payload, dict) or not isinstance(evidence, list) or not isinstance(aliases, list):
+        if (
+            not isinstance(payload, dict)
+            or not isinstance(evidence, list)
+            or not isinstance(aliases, list)
+            or any(not isinstance(item, str) for item in aliases)
+        ):
             raise VerifierError("invalid_asset", "canonical asset payload/evidence/aliases 结构无效")
         asset = cls(
             asset_id=str(value.get("assetId") or ""),
@@ -167,10 +234,10 @@ class CanonicalAsset:
             goal=str(value.get("goal") or ""),
             aliases=tuple(str(item) for item in aliases),
             payload=payload,
-            evidence=tuple(item for item in evidence if isinstance(item, dict)),
+            evidence=tuple(evidence),
             created_at=str(value.get("createdAt") or ""),
         )
-        expected = cls.create(
+        canonical = cls.create(
             kind=asset.kind,
             app_id=asset.app_id,
             goal=asset.goal,
@@ -178,10 +245,12 @@ class CanonicalAsset:
             payload=asset.payload,
             evidence=list(asset.evidence),
             created_at=asset.created_at,
-        ).asset_id
-        if asset.asset_id != expected:
+        )
+        if asset.asset_id != canonical.asset_id:
             raise VerifierError("invalid_asset", "canonical assetId 与内容摘要不匹配")
-        return asset
+        if canonical.to_dict() != value:
+            raise VerifierError("invalid_asset", "canonical asset 使用了非规范表示")
+        return canonical
 
     def to_dict(self) -> dict[str, Any]:
         return {

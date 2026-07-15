@@ -3,7 +3,7 @@
 from .errors import VerifierError
 
 
-SCHEMA_VERSION = 1
-KNOWLEDGE_FORMAT = "electron-verifier-canonical"
+SCHEMA_VERSION = 2
+KNOWLEDGE_FORMAT = "electron-verifier-sealed"
 
 __all__ = ["KNOWLEDGE_FORMAT", "SCHEMA_VERSION", "VerifierError"]

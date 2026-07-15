@@ -13,24 +13,25 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+HARNESS_ROOT = (ROOT / ".harness").resolve()
 SKILL = ROOT / "skills" / "electron-ui-verifier"
 SCRIPTS = SKILL / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
-from electron_verifier.knowledge_models import CanonicalAsset  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
 from electron_verifier.models import ActionSpec  # noqa: E402
 from electron_verifier.retrieval import HybridRetriever  # noqa: E402
+from knowledge_fixtures import action_asset, runtime_context  # noqa: E402
 
 
 PUBLIC_CLIS = (
-    "ev_action.py", "ev_artifact.py", "ev_asset_extract.py", "ev_assets.py", "ev_attach.py",
+    "ev_action.py", "ev_artifact.py", "ev_assets.py", "ev_attach.py",
     "ev_check_env.py", "ev_console.py", "ev_detach.py", "ev_doctor.py", "ev_exceptions.py",
-    "ev_export_workflow.py", "ev_finalize.py", "ev_health.py", "ev_init.py", "ev_knowledge.py",
+    "ev_finalize.py", "ev_health.py", "ev_init.py", "ev_knowledge.py",
     "ev_network.py", "ev_pending.py", "ev_persist.py", "ev_prepare.py", "ev_probe.py",
     "ev_report.py", "ev_screenshot.py", "ev_server.py", "ev_sessions.py", "ev_snapshot.py",
-    "ev_suggest.py", "ev_workflow.py",
+    "ev_suggest.py", "ev_workflow.py", "ev_risk.py", "ev_operation.py", "ev_prune.py",
 )
 
 
@@ -58,19 +59,16 @@ def compact_retrieval(work_dir: Path) -> dict[str, Any]:
     assets = []
     for index in range(12):
         assets.append(
-            CanonicalAsset.create(
-                kind="workflow",
-                app_id="eval-app",
-                goal=f"打开设置面板 {index}",
-                aliases=[f"Open settings panel {index}"],
-                payload={"workflow": {"goal": f"打开设置面板 {index}", "steps": [{"type": "snapshot"}]}},
-                evidence=[{"reportDigest": f"{index % 10}" * 64}],
-                created_at="2026-07-11T00:00:00Z",
+            action_asset(
+                "eval-app",
+                f"打开设置面板 {index}",
+                [f"Open settings panel {index}"],
+                evidence_digest=f"{index % 10}" * 64,
             )
         )
-    store.persist(assets)
+    store.activate(assets)
     with HybridRetriever(store) as retriever:
-        result = retriever.search("Please open settings panel 3", {"appId": "eval-app"})
+        result = retriever.search("Please open settings panel 3", runtime_context("eval-app"))
     return {
         "decision": result["decision"],
         "candidateCount": len(result["candidates"]),
@@ -95,8 +93,8 @@ def main() -> int:
     parser.add_argument("--work-dir", required=True)
     args = parser.parse_args()
     work_dir = Path(args.work_dir).resolve()
-    if ROOT not in work_dir.parents:
-        raise SystemExit("--work-dir 必须位于当前仓库内")
+    if work_dir == HARNESS_ROOT or HARNESS_ROOT not in work_dir.parents:
+        raise SystemExit("--work-dir 必须位于当前仓库 .harness 的隔离子目录")
     if work_dir.exists():
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True)
@@ -107,7 +105,19 @@ def main() -> int:
         "skillLines": len(skill_text.splitlines()),
         "referencesLinked": all(f"references/{name}" in skill_text for name in references),
         "conditionalLoading": "不要在普通任务中预先加载全部 references" in skill_text,
-        "coreFlow": all(item in skill_text for item in ("ev_prepare.py", "ev_finalize.py", "bundleFingerprint", "abstain")),
+        "coreFlow": all(
+            item in skill_text
+            for item in (
+                "ev_prepare.py",
+                "ev_operation.py",
+                "ev_risk.py",
+                "ev_finalize.py",
+                "bundleFingerprint",
+                "ev_prune.py",
+                "abstain",
+                "sealed approved decision",
+            )
+        ),
         "rawFallbackAbsent": "raw CDP fallback" not in skill_text and "raw WebSocket/CDP fallback" in skill_text,
     }
     if progressive["skillLines"] > 500 or not all(value for key, value in progressive.items() if key != "skillLines"):
@@ -117,7 +127,20 @@ def main() -> int:
         [
             cli_help("ev_knowledge.py", ("search",)),
             cli_help("ev_knowledge.py", ("compose",)),
+            cli_help("ev_knowledge.py", ("stats",)),
+            cli_help("ev_knowledge.py", ("verify",)),
+            cli_help("ev_knowledge.py", ("rebuild",)),
             cli_help("ev_assets.py", ("list",)),
+            cli_help("ev_assets.py", ("get",)),
+            cli_help("ev_operation.py", ("get",)),
+            cli_help("ev_operation.py", ("wait",)),
+            cli_help("ev_operation.py", ("cancel",)),
+            cli_help("ev_risk.py", ("preview",)),
+            cli_help("ev_risk.py", ("approve",)),
+            cli_help("ev_persist.py", ("approve",)),
+            cli_help("ev_persist.py", ("reject",)),
+            cli_help("ev_prune.py", ("preview",)),
+            cli_help("ev_prune.py", ("apply",)),
         ]
     )
     bad_help = [item["script"] for item in help_results if item["returnCode"] != 0 or item["stdoutBytes"] == 0]

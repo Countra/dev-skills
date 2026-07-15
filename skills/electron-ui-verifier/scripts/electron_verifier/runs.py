@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
@@ -9,14 +10,26 @@ from pathlib import Path
 from typing import Any
 
 from .actions import DIAGNOSTIC_ACTIONS, execute_action
-from .atomic_io import atomic_write_json, atomic_write_text, resolve_under
+from .atomic_io import atomic_write_json, atomic_write_text
 from .config import ServiceConfig
 from .errors import VerifierError
 from .evidence import EvidenceStore
-from .knowledge_models import bind_parameters, normalize_parameter_schema, placeholder_name
-from .models import ActionSpec, RunState, monotonic_ms
-from .reports import build_pending, build_report, summary_markdown
-from .security import redact
+from .models import ActionSpec, MUTATING_ACTIONS, RunState, canonical_digest, monotonic_ms
+from .operations import OperationContext
+from .reports import build_pending, build_report, summary_markdown, verified_post_state
+from .run_context import configure_asset_workflow, current_run_state, normalize_prepare_context, validate_asset_usage
+from .run_outputs import finalize_result, get_artifact, get_report, latest_report
+from .risk_authorization import (
+    RiskAuthorizationService,
+    authorization_risks,
+    target_identity,
+)
+from .sensitivity import (
+    BindingContext,
+    normalize_parameter_schema,
+    safe_action_template,
+    transient_input_values,
+)
 from .sessions import SessionManager
 
 
@@ -24,28 +37,63 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _safe_action(raw_action: Any) -> Any:
-    value = redact(raw_action)
-    if not isinstance(value, dict):
-        return value
-    if value.get("type") == "fill" and "value" in value:
-        text = value.get("value")
-        if placeholder_name(text) is None:
-            value["value"] = "[REDACTED_INPUT]"
-            value["inputCharacters"] = len(text) if isinstance(text, str) else None
-    postconditions = value.get("postconditions")
-    if isinstance(postconditions, list):
-        for assertion in postconditions:
-            if isinstance(assertion, dict) and assertion.get("type") == "value" and "expected" in assertion:
-                if placeholder_name(assertion.get("expected")) is None:
-                    assertion["expected"] = "[REDACTED_INPUT]"
-    return value
-
-
 class RunService:
-    def __init__(self, config: ServiceConfig, sessions: SessionManager) -> None:
+    def __init__(
+        self,
+        config: ServiceConfig,
+        sessions: SessionManager,
+        risk_authorizations: RiskAuthorizationService | None = None,
+    ) -> None:
         self.config = config
         self.sessions = sessions
+        self.risk_authorizations = risk_authorizations or RiskAuthorizationService(config.state_root)
+        self._sensitive_masks: dict[str, list[Any]] = {}
+
+    def _target_identity(self, journal: dict[str, Any]) -> str:
+        intent = self.sessions.intent(journal["sessionId"])
+        return target_identity(
+            intent.session_id,
+            getattr(intent, "target_id", None),
+            journal.get("appId") or getattr(intent, "app_id", None),
+        )
+
+    @staticmethod
+    def _action_digest(raw_action: Any) -> str:
+        if not isinstance(raw_action, dict):
+            raise VerifierError("invalid_action", "action 必须是 JSON object")
+        return canonical_digest(raw_action)
+
+    def preview_risk(self, run_id: str, raw_action: Any) -> dict[str, Any]:
+        journal = self.load(run_id)
+        action = ActionSpec.decode(raw_action)
+        return self.risk_authorizations.preview(
+            run_id=run_id,
+            action_digest=self._action_digest(raw_action),
+            target=self._target_identity(journal),
+            risks=authorization_risks(action),
+        )
+
+    def approve_risk(self, preview_id: str, fingerprint: str, note: str) -> dict[str, Any]:
+        return self.risk_authorizations.approve(preview_id, fingerprint, note)
+
+    def _mask_specs(
+        self,
+        run_id: str,
+        journal: dict[str, Any],
+        context: BindingContext,
+    ) -> tuple[Any, ...]:
+        masks = list(self._sensitive_masks.get(run_id, []))
+        if journal.get("sensitiveInputObserved") and not masks:
+            for prior in journal.get("steps", []):
+                try:
+                    masks.extend(context.sensitive_mask_specs(prior.get("action")))
+                except VerifierError as exc:
+                    if exc.code != "parameter_binding_required":
+                        raise
+        unique: dict[str, Any] = {}
+        for spec in masks:
+            unique[canonical_digest(spec.to_dict())] = spec
+        return tuple(unique.values())
 
     def _run_dir(self, run_id: str) -> Path:
         try:
@@ -75,6 +123,18 @@ class RunService:
     def _save(self, journal: dict[str, Any]) -> None:
         journal["updatedAt"] = _now()
         atomic_write_json(self._journal_path(journal["runId"]), journal)
+
+    def begin_asset_workflow(
+        self,
+        run_id: str,
+        asset_id: str,
+        goal: str,
+        expected_steps: int,
+        parameter_schema: Any,
+    ) -> None:
+        journal = self.load(run_id)
+        configure_asset_workflow(journal, asset_id, goal, expected_steps, parameter_schema)
+        self._save(journal)
 
     async def recover(self) -> dict[str, Any]:
         recovered = []
@@ -110,9 +170,8 @@ class RunService:
                 self._save(journal)
 
     async def prepare(self, payload: dict[str, Any]) -> dict[str, Any]:
-        session_name = str(payload.get("session") or payload.get("name") or "").strip()
-        if not session_name:
-            raise VerifierError("session_name_required", "prepare 需要 session name")
+        context = normalize_prepare_context(payload)
+        session_name = str(context["sessionName"])
         if payload.get("cdp"):
             attach_payload = {
                 key: payload[key]
@@ -144,14 +203,20 @@ class RunService:
             "runId": run_id,
             "sessionId": session["sessionId"],
             "sessionName": session["name"],
-            "appId": str(payload.get("appId")) if payload.get("appId") else None,
-            "goal": str(payload.get("goal"))[:500] if payload.get("goal") else None,
-            "parameterSchema": normalize_parameter_schema(payload.get("parameterSchema")),
+            "appId": context["appId"],
+            "appVersion": context["appVersion"],
+            "screenDigest": context["screenDigest"],
+            "preState": context["preState"],
+            "maxRisk": context["maxRisk"],
+            "goal": context["goal"],
+            "aliases": context["aliases"],
+            "parameterSchema": context["parameterSchema"],
             "state": RunState.PREPARED.value,
             "createdAt": now,
             "updatedAt": now,
             "steps": [],
             "artifacts": [],
+            "sensitiveInputObserved": False,
         }
         EvidenceStore(run_dir).initialize(run_id)
         self._save(journal)
@@ -174,10 +239,18 @@ class RunService:
         raw_action: Any,
         bindings: Any = None,
         parameter_schema: Any = None,
+        risk_receipt: str | None = None,
+        operation_context: OperationContext | None = None,
+        asset_usage: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if operation_context is not None:
+            operation_context.checkpoint()
         journal = self.load(run_id)
         if journal.get("state") not in {RunState.PREPARED.value, RunState.RUNNING.value}:
             raise VerifierError("run_not_appendable", f"run 当前状态不可追加：{journal.get('state')}", status=409)
+        current_state = current_run_state(journal)
+        if asset_usage is not None:
+            asset_usage = validate_asset_usage(asset_usage, current_state)
         asset_schema = normalize_parameter_schema(parameter_schema)
         current_schema = normalize_parameter_schema(journal.get("parameterSchema"))
         if asset_schema and current_schema and asset_schema != current_schema:
@@ -194,49 +267,108 @@ class RunService:
         live = self.sessions.driver.live(intent.session_id)
         if live is None:
             raise VerifierError("stale_session", "run 缺少 live Playwright handle", status=409)
-        bound_action, bound_names = bind_parameters(raw_action, bindings, journal.get("parameterSchema") or {})
+        context = BindingContext.create(journal.get("parameterSchema") or {}, bindings).with_transient_values(
+            transient_input_values(raw_action)
+        )
+        bound_action, bound_names = context.bind(raw_action)
+        if operation_context is not None:
+            bound_action = operation_context.constrain_action(bound_action)
         action = ActionSpec.decode(bound_action)
+        risks = authorization_risks(action)
+        risk_authorization = self.risk_authorizations.consume(
+            risk_receipt,
+            run_id=run_id,
+            action_digest=self._action_digest(raw_action),
+            target=self._target_identity(journal),
+            risks=risks,
+        )
+        current_masks = context.sensitive_mask_specs(raw_action)
+        if current_masks:
+            journal["sensitiveInputObserved"] = True
+            self._sensitive_masks.setdefault(run_id, []).extend(current_masks)
+        screenshot_masks = self._mask_specs(run_id, journal, context) if action.action_type == "screenshot" else ()
+        if action.action_type == "screenshot" and journal.get("sensitiveInputObserved") and not screenshot_masks:
+            raise VerifierError(
+                "sensitive_evidence_blocked",
+                "run 已处理敏感绑定但当前进程无法重建 mask，拒绝生成 screenshot",
+                status=409,
+            )
         step_id = str(uuid.uuid4())
         label = str(raw_action.get("id") or step_id) if isinstance(raw_action, dict) else step_id
         step = {
             "stepId": step_id,
-            "label": label[:200],
+            "label": str(context.project(label))[:200],
             "status": "running",
             "optional": bool(isinstance(raw_action, dict) and raw_action.get("continueOnFailure") is True),
             "detour": bool(isinstance(raw_action, dict) and raw_action.get("detour") is True),
-            "action": _safe_action(raw_action),
+            "action": context.project(safe_action_template(raw_action)),
             "boundParameters": sorted(bound_names),
+            "parameterBindings": context.parameter_summary(bound_names),
             "startedAt": _now(),
         }
+        if current_state is not None:
+            step["preState"] = current_state
+        if asset_usage is not None:
+            step["assetId"] = asset_usage["assetId"]
+            step["riskLevel"] = asset_usage["risk"]
+        if risk_authorization is not None:
+            step["riskAuthorization"] = risk_authorization
         journal["state"] = RunState.RUNNING.value
         journal["steps"].append(step)
         self._save(journal)
         started_ms = monotonic_ms()
+        mutating = action.action_type in MUTATING_ACTIONS
+        if operation_context is not None and mutating:
+            operation_context.begin_mutation()
         try:
-            execution = await execute_action(live, action)
+            if screenshot_masks:
+                execution = await execute_action(live, action, sensitive_masks=screenshot_masks)
+            else:
+                execution = await execute_action(live, action)
             committed = []
             evidence = EvidenceStore(self._run_dir(run_id))
             for artifact in execution.artifacts:
-                committed.append(evidence.commit(artifact, step_id))
+                committed.append(evidence.commit(context.sanitize_artifact(artifact), step_id))
             step.update(
                 {
                     "status": "passed",
-                    "result": execution.result,
+                    "result": context.project(execution.result),
                     "risks": execution.risks,
                     "artifacts": [item["artifactId"] for item in committed],
                 }
             )
+            step["postState"] = (
+                asset_usage["postState"] if asset_usage is not None else verified_post_state(step["action"])
+            )
+        except asyncio.CancelledError:
+            unknown = mutating
+            if operation_context is not None and unknown:
+                operation_context.mark_outcome_unknown()
+            step["status"] = "unknown" if unknown else "failed"
+            step["error"] = {"ok": False, "code": "operation_interrupted", **({"outcome": "unknown"} if unknown else {})}
+            journal["state"] = RunState.ABORTED.value
+            step["durationMs"] = max(0, monotonic_ms() - started_ms)
+            step["finishedAt"] = _now()
+            self._save(journal)
+            raise
         except VerifierError as exc:
             unknown = exc.code in {"action_outcome_unknown", "operation_timeout"} or exc.details.get("outcome") == "unknown"
+            if unknown and operation_context is not None:
+                operation_context.mark_outcome_unknown()
             step["status"] = "unknown" if unknown else "failed"
-            step["error"] = exc.envelope()
+            step["error"] = context.project(exc.envelope())
             if unknown:
                 journal["state"] = RunState.ABORTED.value
         except Exception as exc:
-            step["status"] = "unknown" if action.action_type in {"click", "doubleClick", "fill", "select", "check", "uncheck", "press", "keyChord"} else "failed"
+            step["status"] = "unknown" if mutating else "failed"
             step["error"] = {"ok": False, "code": "internal_action_error", "error": type(exc).__name__}
             if step["status"] == "unknown":
+                if operation_context is not None:
+                    operation_context.mark_outcome_unknown()
                 journal["state"] = RunState.ABORTED.value
+        finally:
+            if operation_context is not None and mutating:
+                operation_context.end_mutation()
         step["durationMs"] = max(0, monotonic_ms() - started_ms)
         step["finishedAt"] = _now()
         self._save(journal)
@@ -255,7 +387,11 @@ class RunService:
         workflow: Any,
         auto_finalize: bool = True,
         bindings: Any = None,
+        risk_receipts: Any = None,
+        operation_context: OperationContext | None = None,
     ) -> dict[str, Any]:
+        if operation_context is not None:
+            operation_context.checkpoint()
         if not isinstance(workflow, dict) or not isinstance(workflow.get("steps"), list):
             raise VerifierError("invalid_workflow", "workflow.steps 必须是数组")
         if not workflow["steps"] or len(workflow["steps"]) > 200:
@@ -278,9 +414,27 @@ class RunService:
             "expectedSteps": len(workflow["steps"]),
         }
         self._save(journal)
+        if risk_receipts in (None, {}):
+            receipt_map: dict[str, Any] = {}
+        elif isinstance(risk_receipts, dict):
+            receipt_map = risk_receipts
+        else:
+            raise VerifierError("invalid_risk_receipts", "riskReceipts 必须是 object")
         results = []
-        for raw_action in workflow["steps"]:
-            result = await self.append_action(run_id, raw_action, bindings)
+        for index, raw_action in enumerate(workflow["steps"]):
+            if operation_context is not None:
+                operation_context.checkpoint()
+            label = str(raw_action.get("id") or index) if isinstance(raw_action, dict) else str(index)
+            receipt = receipt_map.get(label, receipt_map.get(str(index)))
+            if receipt is not None and not isinstance(receipt, str):
+                raise VerifierError("invalid_risk_receipts", f"riskReceipts.{label} 必须是 receiptId 字符串")
+            result = await self.append_action(
+                run_id,
+                raw_action,
+                bindings,
+                risk_receipt=receipt,
+                operation_context=operation_context,
+            )
             results.append(result["step"])
             if not result["ok"]:
                 action_type = raw_action.get("type") if isinstance(raw_action, dict) else None
@@ -288,6 +442,8 @@ class RunService:
                 if not may_continue:
                     break
         if auto_finalize:
+            if operation_context is not None:
+                operation_context.checkpoint()
             return await self.finalize(run_id)
         return {"ok": all(step["status"] == "passed" for step in results), "runId": run_id, "steps": results}
 
@@ -298,7 +454,7 @@ class RunService:
         summary_path = run_dir / "summary.md"
         if report_path.exists() and journal.get("state") in {RunState.PASSED.value, RunState.FAILED.value, RunState.ABORTED.value}:
             report = json.loads(report_path.read_text(encoding="utf-8"))
-            return self._finalize_result(journal, report, report_path, summary_path)
+            return finalize_result(journal, report, report_path, summary_path)
         for step in journal.get("steps", []):
             if step.get("status") == "running":
                 step["status"] = "unknown"
@@ -326,48 +482,13 @@ class RunService:
         if journal.get("state") != RunState.ABORTED.value:
             journal["state"] = RunState.PASSED.value if report["status"] == "passed" else RunState.FAILED.value
         self._save(journal)
-        return self._finalize_result(journal, report, report_path, summary_path)
-
-    def _finalize_result(
-        self,
-        journal: dict[str, Any],
-        report: dict[str, Any],
-        report_path: Path,
-        summary_path: Path,
-    ) -> dict[str, Any]:
-        return {
-            "ok": report.get("status") == "passed",
-            "runId": journal["runId"],
-            "state": journal["state"],
-            "report": str(report_path),
-            "summary": str(summary_path),
-            "pending": journal.get("pending"),
-            "result": report,
-        }
+        return finalize_result(journal, report, report_path, summary_path)
 
     def latest_report(self, session: str) -> dict[str, Any]:
-        candidates = []
-        for path in self.config.runs_dir.glob("*/journal.json"):
-            try:
-                journal = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                continue
-            if session not in {journal.get("sessionId"), journal.get("sessionName")} or not journal.get("report"):
-                continue
-            candidates.append(journal)
-        if not candidates:
-            raise VerifierError("report_not_found", f"session 尚无 finalized report：{session}", status=404)
-        latest = max(candidates, key=lambda item: str(item.get("updatedAt") or ""))
-        return self.get_report(str(latest["report"]))
+        return latest_report(self.config.runs_dir, self.config.state_root, session)
 
     def get_report(self, value: str) -> dict[str, Any]:
-        path = resolve_under(self.config.state_root, Path(value), must_exist=True)
-        if path.name != "report.json":
-            raise VerifierError("invalid_report_path", "report path 必须指向 report.json")
-        return {"ok": True, "report": str(path), "result": json.loads(path.read_text(encoding="utf-8"))}
+        return get_report(self.config.state_root, value)
 
     def get_artifact(self, value: str) -> dict[str, Any]:
-        path = resolve_under(self.config.state_root, Path(value), must_exist=True)
-        if not path.is_file():
-            raise VerifierError("invalid_artifact_path", "artifact path 必须是文件")
-        return {"ok": True, "artifact": str(path), "bytes": path.stat().st_size}
+        return get_artifact(self.config.state_root, value)
