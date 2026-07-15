@@ -133,9 +133,10 @@ def task_relative_file(bundle: TaskBundle, raw: str, label: str) -> Path:
             "EXEC_DEPENDENCY_RECEIPT_INVALID",
             f"{label} 必须是 task-dir 内相对路径。",
         )
-    resolved = (bundle.task_dir / candidate).resolve()
+    task_root = bundle.task_dir.resolve()
+    resolved = (task_root / candidate).resolve()
     try:
-        resolved.relative_to(bundle.task_dir)
+        resolved.relative_to(task_root)
     except ValueError as exc:
         raise DependencyGateError(
             "EXEC_DEPENDENCY_RECEIPT_INVALID",
@@ -467,7 +468,7 @@ def validate_runtime_receipt(
             require_manifest=require_manifest,
         )
     return {
-        "path": path.relative_to(bundle.task_dir).as_posix(),
+        "path": path.relative_to(bundle.task_dir.resolve()).as_posix(),
         "observed_at": observed.isoformat(),
         "decision_ids": sorted(expected_map),
     }

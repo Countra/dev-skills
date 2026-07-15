@@ -134,16 +134,22 @@ class DependencyGateTest(unittest.TestCase):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
 
-    def bundle(self, contract: dict[str, object] | None = None) -> TaskBundle:
+    def bundle(
+        self,
+        contract: dict[str, object] | None = None,
+        *,
+        task_dir: Path | None = None,
+    ) -> TaskBundle:
+        selected_task_dir = task_dir or self.task_dir
         return TaskBundle(
             workspace=self.workspace,
             pointer_path=self.workspace / ".harness" / "active-task.json",
-            task_dir=self.task_dir,
-            plan_path=self.task_dir / "execution-plan.md",
-            contract_path=self.task_dir / "plan-contract.json",
-            attestation_path=self.task_dir / "attestation.json",
-            run_state_path=self.task_dir / "run-state.json",
-            ledger_path=self.task_dir / "ledger.jsonl",
+            task_dir=selected_task_dir,
+            plan_path=selected_task_dir / "execution-plan.md",
+            contract_path=selected_task_dir / "plan-contract.json",
+            attestation_path=selected_task_dir / "attestation.json",
+            run_state_path=selected_task_dir / "run-state.json",
+            ledger_path=selected_task_dir / "ledger.jsonl",
             pointer=None,
             contract=contract or self.contract,
         )
@@ -174,6 +180,22 @@ class DependencyGateTest(unittest.TestCase):
             today=TODAY,
         )
         self.assertEqual("passed", stage["result"])
+
+    def test_equivalent_task_root_alias_passes_both_dependency_gates(self) -> None:
+        aliased_task_dir = self.task_dir.parent / "unused" / ".." / self.task_dir.name
+        bundle = self.bundle(task_dir=aliased_task_dir)
+
+        preflight = evaluate_dependency_preflight(bundle, today=TODAY)
+        stage = evaluate_dependency_stage(
+            bundle,
+            "STG-01",
+            RUNTIME_PATH,
+            today=TODAY,
+        )
+
+        self.assertEqual("passed", preflight["result"])
+        self.assertEqual("passed", stage["result"])
+        self.assertEqual(RUNTIME_PATH, stage["runtime_receipt"]["path"])
 
     def test_stale_approval_requires_complete_runtime_recheck(self) -> None:
         self.write_json(self.artifact_path, approved_artifact("2026-01-01"))
