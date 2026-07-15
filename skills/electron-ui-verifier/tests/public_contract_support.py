@@ -147,6 +147,30 @@ class ManagedVerifier:
             "--pretty",
         )
 
+    def _service_readiness_timeout(self, service_file: Path) -> float:
+        """从已校验的 service 契约读取 readiness 预算。"""
+        data = json.loads(service_file.read_text(encoding="utf-8"))
+        readiness = data.get("readiness")
+        if not isinstance(readiness, dict):
+            raise RuntimeError("service 配置缺少 readiness")
+        value = readiness.get("timeoutSeconds")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+            raise RuntimeError("service readiness.timeoutSeconds 无效")
+        return float(value)
+
+    def _log_tail(self, value: Any, limit: int = 4_000) -> str:
+        """只收集 fixture workspace 内的有界启动日志。"""
+        if not isinstance(value, str) or not value:
+            return ""
+        path = Path(value).resolve()
+        workspace = self.workspace.resolve()
+        if path != workspace and workspace not in path.parents:
+            return "[workspace 外日志已忽略]"
+        try:
+            return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+        except OSError as exc:
+            return f"[日志不可读：{type(exc).__name__}]"
+
     def reset(self) -> None:
         if self.work_dir.exists():
             shutil.rmtree(self.work_dir)
@@ -185,15 +209,15 @@ class ManagedVerifier:
             "--pretty",
         )
         self.process_key = str(started["data"]["processKey"])
+        readiness_timeout = self._service_readiness_timeout(self.service_file)
         ready = self._pm(
             "pm_ready.py",
             "--config",
             str(self.manager_config),
             "--process-key",
             self.process_key,
-            "--timeout",
-            "30",
             "--pretty",
+            timeout=readiness_timeout + 15,
         )
         return {"initialized": initialized, "started": started.get("data"), "ready": ready.get("data")}
 
@@ -293,6 +317,12 @@ class ManagedVerifier:
                 )
                 service_stop = stopped.get("data", {})
                 checks["serviceStop"] = service_stop
+                logs = service_stop.get("logs")
+                if isinstance(logs, dict):
+                    checks["serviceLogs"] = {
+                        stream: self._log_tail(logs.get(stream))
+                        for stream in ("stdout", "stderr")
+                    }
                 if service_stop.get("cleanupVerified") is not True:
                     failures.append("verifier service cleanupVerified 不为 true")
                 if service_stop.get("stopResult", {}).get("ownerEmpty") is not True:

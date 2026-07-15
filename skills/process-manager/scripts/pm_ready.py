@@ -8,6 +8,9 @@ import argparse
 from process_manager.cli import add_common_args, make_client, output_remote, run_cli
 
 
+MAX_SERVICE_READINESS_TIMEOUT_SECONDS = 600
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="等待 managed process ready")
     add_common_args(parser)
@@ -18,7 +21,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     def execute() -> int:
-        timeout = args.timeout if args.timeout is not None else 35
+        # 未覆盖时 manager 会采用 service 配置，transport 必须覆盖 schema 的完整上限。
+        timeout = args.timeout if args.timeout is not None else MAX_SERVICE_READINESS_TIMEOUT_SECONDS
         status, value = make_client(args.config, timeout=timeout + 5).request(
             "POST",
             "/processes/ready",

@@ -24,7 +24,14 @@ class RuntimeLimits:
     operation_record_bytes: int = 4 * 1024 * 1024
     operation_history_limit: int = 1_000
     operation_cancel_grace_seconds: float = 2.0
+    automation_start_timeout_seconds: float = 60.0
+    readiness_timeout_margin_seconds: float = 15.0
     shutdown_grace_seconds: float = 8.0
+
+    @property
+    def service_readiness_timeout_seconds(self) -> float:
+        """确保外层 readiness 晚于 automation 启动预算到期。"""
+        return self.automation_start_timeout_seconds + self.readiness_timeout_margin_seconds
 
 
 DEFAULT_LIMITS = RuntimeLimits()

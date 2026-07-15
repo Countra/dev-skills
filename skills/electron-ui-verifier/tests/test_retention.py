@@ -21,6 +21,7 @@ sys.path.insert(0, str(SCRIPTS))
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
+from electron_verifier.limits import DEFAULT_LIMITS  # noqa: E402
 from electron_verifier.paths import SkillPaths, inspect_skill_install, skill_paths  # noqa: E402
 from electron_verifier.retention import RetentionService  # noqa: E402
 from electron_verifier.retention_policy import RetentionPolicy  # noqa: E402
@@ -288,6 +289,14 @@ class InstallPathTests(unittest.TestCase):
             self.assertEqual(str(workspace), value["cwd"])
             self.assertNotIn(str(workspace / "skills"), value["launcher"]["script"])
             self.assertEqual("1", value["environment"]["set"]["PYTHONDONTWRITEBYTECODE"])
+            self.assertEqual(
+                DEFAULT_LIMITS.service_readiness_timeout_seconds,
+                value["readiness"]["timeoutSeconds"],
+            )
+            self.assertGreater(
+                value["readiness"]["timeoutSeconds"],
+                DEFAULT_LIMITS.automation_start_timeout_seconds,
+            )
 
 
 if __name__ == "__main__":

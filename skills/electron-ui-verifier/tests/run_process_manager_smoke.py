@@ -163,6 +163,7 @@ def main() -> int:
             failures.append("复制安装完整性检查未通过")
         if service_environment.get("PYTHONDONTWRITEBYTECODE") != "1":
             failures.append("生成的 service 未禁用安装目录字节码写入")
+        readiness_timeout = float(service_data["readiness"]["timeoutSeconds"])
         run_json([str(PM_SCRIPTS / "pm_validate.py"), "--service", str(service), "--pretty"])
         run_json([str(PM_SCRIPTS / "pm_manager.py"), "start", "--config", str(manager_config), "--pretty"])
         manager_started = True
@@ -180,10 +181,9 @@ def main() -> int:
                 str(manager_config),
                 "--process-key",
                 process_key,
-                "--timeout",
-                "30",
                 "--pretty",
-            ]
+            ],
+            timeout=readiness_timeout + 15,
         )
         server_state = json.loads(
             (workspace / ".harness" / "electron-ui-verifier" / "server.json").read_text(encoding="utf-8")

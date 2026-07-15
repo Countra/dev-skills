@@ -32,6 +32,29 @@ class ManagedVerifierCommandTests(unittest.TestCase):
             "--pretty",
         )
 
+    def test_readiness_timeout_comes_from_service_contract(self) -> None:
+        managed = ManagedVerifier(HARNESS_ROOT / "public-contract-support-unit")
+        service_file = mock.Mock()
+        service_file.read_text.return_value = '{"readiness":{"timeoutSeconds":75}}'
+
+        timeout = managed._service_readiness_timeout(service_file)
+
+        self.assertEqual(75.0, timeout)
+        service_file.read_text.assert_called_once_with(encoding="utf-8")
+
+    def test_log_tail_is_bounded_and_workspace_scoped(self) -> None:
+        managed = ManagedVerifier(HARNESS_ROOT / "public-contract-support-unit")
+        log_file = managed.workspace / "logs" / "stderr.log"
+
+        with mock.patch("pathlib.Path.read_text", return_value="abcdef"):
+            tail = managed._log_tail(str(log_file), limit=4)
+
+        self.assertEqual("cdef", tail)
+        self.assertEqual(
+            "[workspace 外日志已忽略]",
+            managed._log_tail(str(HARNESS_ROOT / "outside.log")),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

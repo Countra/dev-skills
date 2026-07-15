@@ -23,10 +23,11 @@ from ev_common import (
     write_environment,
     write_json,
 )
-from electron_verifier.security import secure_mode
 from electron_verifier.errors import VerifierError
 from electron_verifier.knowledge_reset import KnowledgeReset
+from electron_verifier.limits import DEFAULT_LIMITS
 from electron_verifier.paths import SkillPaths, inspect_skill_install, require_skill_install, skill_paths
+from electron_verifier.security import secure_mode
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -73,7 +74,7 @@ def service_config(
             "pattern": "EV_READY\\s+(?P<url>http://127\\.0\\.0\\.1:\\d+/health)",
             "extract": {"urls": ["url"]},
             "scanBytes": 262144,
-            "timeoutSeconds": 30,
+            "timeoutSeconds": DEFAULT_LIMITS.service_readiness_timeout_seconds,
         },
         "logs": {"maxBytes": 10485760, "backups": 3},
     }

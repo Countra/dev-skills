@@ -289,17 +289,43 @@ class AutomationWorker:
         self._ready = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._queue: asyncio.Queue[_Command] | None = None
+        self._startup_task: asyncio.Task[None] | None = None
         self._startup_error: BaseException | None = None
         self._shutdown_error: BaseException | None = None
         self._closing = False
 
-    def start(self, timeout: float = 30.0) -> None:
+    def start(self, timeout: float | None = None) -> None:
+        wait_timeout = self.limits.automation_start_timeout_seconds if timeout is None else timeout
         self._thread.start()
-        if not self._ready.wait(timeout):
-            raise VerifierError("automation_start_timeout", "automation worker 启动超时", status=503)
+        if not self._ready.wait(wait_timeout):
+            self._closing = True
+            if self._loop is not None:
+                try:
+                    self._loop.call_soon_threadsafe(self._cancel_startup)
+                except RuntimeError:
+                    # 超时边界上 worker 可能已自行关闭 event loop。
+                    pass
+            self._thread.join(timeout=self.limits.shutdown_grace_seconds)
+            raise VerifierError(
+                "automation_start_timeout",
+                "automation worker 启动超时",
+                status=503,
+                details={
+                    "timeoutSeconds": wait_timeout,
+                    "cleanupCompleted": not self._thread.is_alive(),
+                },
+            )
         if self._startup_error is not None:
             cleanup = f"；cleanup 失败：{self._shutdown_error}" if self._shutdown_error is not None else ""
             raise VerifierError("automation_start_failed", f"automation worker 启动失败：{self._startup_error}{cleanup}", status=503)
+
+    def _cancel_startup(self) -> None:
+        if self._startup_task is not None and not self._startup_task.done():
+            self._startup_task.cancel()
+            return
+        if self._queue is not None:
+            future: concurrent.futures.Future[dict[str, Any]] = concurrent.futures.Future()
+            self._enqueue(_Command("__shutdown__", {}, future))
 
     def _thread_main(self) -> None:
         loop = asyncio.new_event_loop()
@@ -307,8 +333,9 @@ class AutomationWorker:
         self._loop = loop
         self._queue = asyncio.Queue(maxsize=self.limits.command_queue_size)
         runtime = self.runtime_factory(self.config)
+        self._startup_task = loop.create_task(runtime.start())
         try:
-            loop.run_until_complete(runtime.start())
+            loop.run_until_complete(self._startup_task)
         except BaseException as exc:
             self._startup_error = exc
             try:
@@ -319,9 +346,12 @@ class AutomationWorker:
             loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
             return
+        finally:
+            self._startup_task = None
         self._ready.set()
         try:
-            loop.run_until_complete(self._consume(runtime))
+            if not self._closing:
+                loop.run_until_complete(self._consume(runtime))
         except BaseException as exc:
             self._shutdown_error = exc
         finally:
