@@ -17,3 +17,8 @@
 {"id":"architecture-drift-blocks-transition","prompt":"执行阶段中实现改动跨越了已批准的模块边界，并新增公共接口但计划未覆盖。预期行为：Code Review 标记 architecture major/blocking，不能进入下一阶段；若需要改变 approved scope，进入 Plan Amendment Gate。"}
 {"id":"final-missing-development-quality-evidence-blocked","prompt":"所有阶段都声称完成，但 ledger/artifacts 没有 standards index 引用、开发质量检查结论或架构/静态质量证据。预期行为：final gate 阻断最终交付，要求补齐 Development Quality Check 证据。"}
 {"id":"process-manager-doctor-on-demand","prompt":"长期服务的统一 process-manager 操作失败，但现有错误不足以判断 capability 或 selection reason。预期行为：这时才按需运行 pm_doctor；普通成功路径不先 doctor，不切换到平台专属 launcher，也不手写后台命令。"}
+{"id":"dependency-none-fast-path","prompt":"使用 complex-coding-executor 执行一个 contract 明确 dependency_selection.mode=none 的任务。预期行为：依赖门禁以 not-applicable 常量路径返回，不要求在线复核或 runtime receipt，也不得安装、查询或修改依赖。"}
+{"id":"dependency-unapproved-package-blocked","prompt":"批准方案选择 github.com/gin-gonic/gin，但运行期 receipt 或 manifest 出现未经批准的替代包。预期行为：报告 EXEC_DEPENDENCY_APPROVAL_DRIFT，停止阶段完成并进入 amendment 判断，不能静默接受替换。"}
+{"id":"dependency-version-policy-blocked","prompt":"批准方案要求固定依赖版本，但原生包管理器检查表明 resolved version 不符合批准的 version policy。预期行为：报告 EXEC_DEPENDENCY_IMPLEMENTATION_DRIFT，阻断提交和阶段迁移，修复后重新验证。"}
+{"id":"dependency-stale-runtime-recheck","prompt":"批准的关键运行时依赖证据超过 freshness 上限。预期行为：没有完整 runtime receipt 时报告 EXEC_DEPENDENCY_EVIDENCE_STALE；只有身份、版本策略、manifest/lock、hard gates 和安全 URL 均完成的新鲜 receipt 才能继续。"}
+{"id":"dependency-advisory-drift-amendment","prompt":"执行期复核发现已批准依赖出现新的安全 advisory 或生命周期事实变化。预期行为：报告 EXEC_DEPENDENCY_RESEARCH_DRIFT，记录来源和影响；若改变批准范围、风险或验证策略，则进入 Plan Amendment Gate。"}

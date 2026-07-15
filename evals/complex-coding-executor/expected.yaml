@@ -65,3 +65,22 @@ process-manager-doctor-on-demand:
   runs_doctor_only_after_unclear_failure: true
   rejects_platform_specific_launcher_fallback: true
   rejects_manual_background_process: true
+dependency-none-fast-path:
+  returns_not_applicable_without_runtime_receipt: true
+  performs_no_network_install_or_manifest_mutation: true
+dependency-unapproved-package-blocked:
+  reports_dependency_approval_drift: true
+  blocks_unapproved_substitution: true
+  requires_amendment_assessment: true
+dependency-version-policy-blocked:
+  reports_dependency_implementation_drift: true
+  blocks_commit_and_stage_transition: true
+  requires_native_version_revalidation: true
+dependency-stale-runtime-recheck:
+  blocks_stale_evidence_without_complete_receipt: true
+  requires_fresh_identity_version_manifest_lock_and_hard_gate_checks: true
+  rejects_incomplete_or_unsafe_receipts: true
+dependency-advisory-drift-amendment:
+  reports_dependency_research_drift: true
+  records_source_and_impact: true
+  enters_plan_amendment_when_approved_risk_or_validation_changes: true
