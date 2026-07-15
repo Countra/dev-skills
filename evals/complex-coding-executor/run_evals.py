@@ -8,6 +8,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable
@@ -20,6 +21,10 @@ EXECUTOR_SCRIPTS = REPO_ROOT / "skills" / "complex-coding-executor" / "scripts"
 sys.path.insert(0, str(EXECUTOR_SCRIPTS))
 
 from harness_attestation import build_attestation, write_attestation  # noqa: E402
+from harness_dependency_evaluation import (  # noqa: E402
+    evaluate_dependency_preflight,
+    evaluate_dependency_stage,
+)
 from harness_event_writer import append_event_and_update  # noqa: E402
 from harness_execution import (  # noqa: E402
     check_final,
@@ -30,6 +35,10 @@ from harness_execution import (  # noqa: E402
     status_payload,
 )
 from harness_task_bundle import resolve_task_bundle  # noqa: E402
+
+
+EVAL_TODAY = date(2026, 7, 15)
+DEPENDENCY_RUNTIME_PATH = "artifacts/execution/dependency-runtime.json"
 
 
 def load_planner_factory() -> ModuleType:
@@ -164,6 +173,106 @@ def expect_error(expected_code: str, action: Callable[[], Any]) -> str:
     raise AssertionError(f"期望错误 {expected_code}，但操作成功。")
 
 
+def write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def configure_dependency_case(
+    bundle: Any,
+    *,
+    approved_observed_at: str = "2026-07-10",
+    runtime_overrides: dict[str, Any] | None = None,
+    hard_gate_overrides: dict[str, str] | None = None,
+) -> str:
+    artifact_id = "ART-DEP-01"
+    artifact_path = "artifacts/dependencies/dependency-selection.json"
+    decision = {
+        "id": "DEP-01",
+        "action": "add",
+        "criticality": "runtime",
+        "package": "github.com/gin-gonic/gin",
+        "source_repository": "https://github.com/gin-gonic/gin",
+        "selection_class": "ecosystem-mainstream",
+        "selected_version": "v1.10.1",
+        "version_policy": "pin exact v1.10.1",
+        "manifest_paths": ["go.mod", "go.sum"],
+        "freshness_max_age_days": 60,
+        "evidence_artifact_id": artifact_id,
+        "validation_ids": ["VAL-01"],
+    }
+    bundle.contract["dependency_selection"] = {
+        "mode": "change",
+        "decisions": [decision],
+    }
+    bundle.contract["artifacts"] = [
+        *bundle.contract.get("artifacts", []),
+        {"id": artifact_id, "path": artifact_path},
+    ]
+    allowed_changes = bundle.contract["stages"][0]["allowed_changes"]
+    for manifest_path in decision["manifest_paths"]:
+        if manifest_path not in allowed_changes:
+            allowed_changes.append(manifest_path)
+    write_json(
+        bundle.task_dir / artifact_path,
+        {
+            "observed_at": approved_observed_at,
+            "decisions": [
+                {
+                    "decision_id": "DEP-01",
+                    "candidates": [
+                        {
+                            "disposition": "selected",
+                            "trust_signals": {
+                                "stable_version": {"as_of": approved_observed_at},
+                                "adoption_scale": {"as_of": approved_observed_at},
+                            },
+                        }
+                    ],
+                }
+            ],
+        },
+    )
+    hard_gates = {
+        "authenticity": "unchanged",
+        "compatibility": "unchanged",
+        "stable_support": "unchanged",
+        "lifecycle": "unchanged",
+        "security": "unchanged",
+        "license": "unchanged",
+        "reproducibility": "unchanged",
+    }
+    hard_gates.update(hard_gate_overrides or {})
+    runtime_decision = {
+        "decision_id": "DEP-01",
+        "package": "github.com/gin-gonic/gin",
+        "source_repository": "https://github.com/gin-gonic/gin",
+        "selection_class": "ecosystem-mainstream",
+        "approved_selected_version": "v1.10.1",
+        "approved_version_policy": "pin exact v1.10.1",
+        "resolved_version": "v1.10.1",
+        "manifest_paths": ["go.mod", "go.sum"],
+        "version_policy_result": "passed",
+        "manifest_result": "passed",
+        "lock_result": "passed",
+        "hard_gate_checks": hard_gates,
+        "evidence_urls": ["https://github.com/gin-gonic/gin/releases"],
+        "summary": "Native manifest and approved dependency checks passed.",
+    }
+    runtime_decision.update(runtime_overrides or {})
+    write_json(
+        bundle.task_dir / DEPENDENCY_RUNTIME_PATH,
+        {
+            "observed_at": EVAL_TODAY.isoformat(),
+            "decisions": [runtime_decision],
+        },
+    )
+    return DEPENDENCY_RUNTIME_PATH
+
+
 def run_complete(bundle: Any, case: dict[str, Any]) -> dict[str, Any]:
     authorized = case["commit_authorized"]
     approve(bundle, commit_authorized=authorized)
@@ -195,8 +304,75 @@ def run_snapshot_reconcile(bundle: Any) -> dict[str, Any]:
 
 def run_regression(bundle: Any, case: dict[str, Any]) -> dict[str, Any]:
     scenario = case["scenario"]
+    if scenario == "dependency-none-fast":
+        result = evaluate_dependency_preflight(bundle, today=EVAL_TODAY)
+        if (result["mode"], result["result"]) != ("none", "not-applicable"):
+            raise AssertionError(f"none 快路径返回异常：{result}")
+        return {"mode": result["mode"], "result": result["result"]}
+    if scenario == "dependency-stale-recheck":
+        runtime_path = configure_dependency_case(
+            bundle,
+            approved_observed_at="2026-01-01",
+        )
+        result = evaluate_dependency_preflight(
+            bundle,
+            runtime_path,
+            today=EVAL_TODAY,
+        )
+        return {
+            "result": result["result"],
+            "stale_decision_ids": result["stale_approved_decision_ids"],
+            "runtime_recheck": result["runtime_recheck"] is not None,
+        }
     expected = case["expected_code"]
-    if scenario == "missing-attestation":
+    if scenario == "dependency-unapproved-package":
+        runtime_path = configure_dependency_case(
+            bundle,
+            runtime_overrides={"package": "github.com/example/substitute"},
+        )
+        code = expect_error(
+            expected,
+            lambda: evaluate_dependency_preflight(
+                bundle,
+                runtime_path,
+                today=EVAL_TODAY,
+            ),
+        )
+    elif scenario == "dependency-version-out-of-policy":
+        runtime_path = configure_dependency_case(
+            bundle,
+            runtime_overrides={"version_policy_result": "failed"},
+        )
+        stage_id = bundle.contract["stages"][0]["id"]
+        code = expect_error(
+            expected,
+            lambda: evaluate_dependency_stage(
+                bundle,
+                stage_id,
+                runtime_path,
+                today=EVAL_TODAY,
+            ),
+        )
+    elif scenario == "dependency-stale-without-recheck":
+        configure_dependency_case(bundle, approved_observed_at="2026-01-01")
+        code = expect_error(
+            expected,
+            lambda: evaluate_dependency_preflight(bundle, today=EVAL_TODAY),
+        )
+    elif scenario == "dependency-advisory-drift":
+        runtime_path = configure_dependency_case(
+            bundle,
+            hard_gate_overrides={"security": "changed"},
+        )
+        code = expect_error(
+            expected,
+            lambda: evaluate_dependency_preflight(
+                bundle,
+                runtime_path,
+                today=EVAL_TODAY,
+            ),
+        )
+    elif scenario == "missing-attestation":
         code = expect_error(expected, lambda: check_preflight(bundle))
     elif scenario == "tampered-plan":
         approve(bundle)

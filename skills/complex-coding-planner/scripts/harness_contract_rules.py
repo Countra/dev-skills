@@ -8,6 +8,7 @@ from typing import Any
 
 from harness_contract import (
     ROOT_FIELDS,
+    ROOT_REQUIRED_FIELDS,
     STAGE_FIELDS,
     ValidationIssue,
     add_issue,
@@ -21,6 +22,7 @@ from harness_contract import (
     graph_has_cycle,
 )
 from harness_contract_artifacts import validate_artifacts
+from harness_contract_dependencies import validate_dependency_selection
 from harness_contract_policy import validate_policy_and_profile
 
 
@@ -53,7 +55,13 @@ def validate_contract(
     mode: str,
 ) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
-    check_closed_object(contract, "$", ROOT_FIELDS, issues)
+    check_closed_object(
+        contract,
+        "$",
+        ROOT_FIELDS,
+        issues,
+        required=ROOT_REQUIRED_FIELDS,
+    )
     check_string(contract.get("task_id"), "$.task_id", issues)
 
     revision = contract.get("plan_revision")
@@ -302,6 +310,17 @@ def validate_contract(
         check_references(
             refs, validation_ids, f"$.stages[{index}].validation_ids", issues
         )
+
+    validate_dependency_selection(
+        contract,
+        task_dir,
+        mode,
+        requirement_ids=requirement_ids,
+        validation_ids=validation_ids,
+        artifacts=artifacts,
+        artifact_ids=artifact_ids,
+        issues=issues,
+    )
 
     must_ids = {
         str(item.get("id"))

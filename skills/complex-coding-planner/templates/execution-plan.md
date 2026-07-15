@@ -118,6 +118,48 @@ standards index:
 
 开发质量结论（Development quality result）：`pending`
 
+## 依赖选型门禁（Dependency Selection Gate）
+
+选择模式（Selection mode）：`none / retain / change / mixed`
+
+触发面（Trigger surfaces）:
+
+- manifest / lock / vendor / base image / CI Action / framework / ORM / SDK / driver / codegen / build plugin / critical retain / none
+
+必要性结论（Necessity result）：`not-triggered / dependency-required / existing-sufficient / standard-or-official-sufficient / blocked`
+
+优先级检查（Priority check）:
+
+- 用户/组织政策：
+- 现有项目栈：
+- 标准库/平台/官方 SDK：
+- 生态主流基线：
+- specialized exception：
+
+决策摘要（Decision summary）:
+
+| DEP ID | Action | Category / criticality | Selected identity | Selection class | Version policy | Manifest paths | Evidence artifact | Validation |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| DEP-01 | retain / add / upgrade / replace |  |  | existing-stack / standard-or-official / ecosystem-mainstream / specialized-exception |  |  | ART-XX | VAL-XX |
+
+可信度摘要（Trust summary）:
+
+| DEP ID | Stable version | Adoption scale | Update recency | Maintenance | Adoption trend | As of / max age | Caveat |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| DEP-01 | pass / concern / fail / insufficient-data |  |  |  |  | YYYY-MM-DD / 30, 60 or 90 days |  |
+
+硬门槛与例外（Hard gates and exceptions）:
+
+- authenticity / compatibility / stable support / lifecycle / security / license / reproducibility：
+- specialized exception baseline、unmet REQ、risk acceptance、mitigation、rollback：
+
+依赖证据（Dependency evidence）:
+
+- `artifacts/dependencies/dependency-selection.json`，仅 mode 非 `none` 时创建。
+- mode 为 `none` 时说明零 decision、零 dependency artifact 与 stage scope 一致的依据。
+
+依赖选型结论（Dependency selection result）：`pending / passed / not-applicable / blocked`
+
 ## 上下文（Context）
 
 本地代码（Local code）:
@@ -332,6 +374,7 @@ Changelog 计划（Changelog plan）:
 | Research Gate 已完成（Research Gate complete） | pending |  |
 | Standards Discovery Gate 已完成（Standards discovery complete） | pending |  |
 | Development Quality Gate 已完成（Development quality complete） | pending |  |
+| Dependency Selection Gate 已完成（Dependency selection complete） | pending |  |
 | 影响面矩阵完整（Impact matrix complete） | pending |  |
 | 候选方案比较充分（Options compared enough） | pending |  |
 | 每阶段可独立验证（Stages independently verifiable） | pending |  |
@@ -373,6 +416,7 @@ Changelog 计划（Changelog plan）:
 | 调研门禁已通过（Research Gate passed） | pending |  |
 | 规范发现门禁已通过（Standards Discovery Gate passed） | pending |  |
 | 开发质量门禁已通过（Development Quality Gate passed） | pending |  |
+| 依赖选型门禁已通过（Dependency Selection Gate passed） | pending |  |
 | 候选方案已比较（Options compared） | pending |  |
 | 决策已记录（Decision recorded） | pending |  |
 | 实施阶段已细化（Implementation stages detailed） | pending |  |
@@ -431,7 +475,7 @@ Changelog 计划（Changelog plan）:
 
 | ID | Kind | Path | Required | Approval included | Trigger |
 | --- | --- | --- | --- | --- | --- |
-| ART-01 | research / standards / architecture / validation / review | artifacts/... | yes/no | yes/no | profile or risk rule |
+| ART-01 | research / standards / architecture / dependency / validation / review / other | artifacts/... | yes/no | yes/no | profile or risk rule |
 
 只列出实际创建的 artifact；每项必须与 `plan-contract.json` 一致。运行日志、review 结果和 commit evidence 由 executor 在批准后创建，不进入本表。
 

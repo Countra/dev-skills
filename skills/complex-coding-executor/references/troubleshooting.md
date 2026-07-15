@@ -52,6 +52,17 @@
 5. required VAL 和 review 未全部通过时不能追加 `stage_completed`。
 6. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
 
+## Dependency Execution Gate
+
+症状：`EXEC_DEPENDENCY_*`。
+
+1. 先运行 `harness_dependency_check.py --mode preflight --task-dir <dir> --format json`；`none` 应返回 `not-applicable`。
+2. `EVIDENCE_STALE` 要求在线刷新 task-local runtime receipt；不得改写批准 artifact 的日期或自动升级到 latest。
+3. `APPROVAL_DRIFT`、`RESEARCH_DRIFT` 或 hard gate 变化必须记录 Research Drift；影响批准选择时进入 amendment。
+4. `IMPLEMENTATION_DRIFT` 表示原生 package-manager 验证未通过，先把 manifest/lock/版本修正到批准策略，不用修改计划掩盖。
+5. `RECHECK_BLOCKED` 表示资料或原生工具不可访问；记录 `blocked-by-access`，有效批准证据仍在 freshness 窗口内时才可按计划证据继续。
+6. transition/final 时批准证据已过期，继续显式传同一份已验证 `--dependency-receipt`；checker 不自动搜索“最新”文件。
+
 ## Block、Research Drift 与 Amendment
 
 1. 普通可恢复阻塞写 `blocked`，解决后写 `resumed`。

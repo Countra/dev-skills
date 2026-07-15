@@ -5,10 +5,34 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from .errors import StateError
+
+
+WINDOWS_FILE_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32)
+WINDOWS_RETRYABLE_FILE_ERRORS = {5, 32, 33}
+
+
+def _windows_file_retry_enabled() -> bool:
+    return os.name == "nt"
+
+
+def retry_windows_file_operation(operation: Callable[[], object]) -> None:
+    for attempt in range(len(WINDOWS_FILE_RETRY_DELAYS) + 1):
+        try:
+            operation()
+            return
+        except OSError as exc:
+            winerror = getattr(exc, "winerror", None)
+            retryable = _windows_file_retry_enabled() and (
+                isinstance(exc, PermissionError) or winerror in WINDOWS_RETRYABLE_FILE_ERRORS
+            )
+            if not retryable or attempt >= len(WINDOWS_FILE_RETRY_DELAYS):
+                raise
+            time.sleep(WINDOWS_FILE_RETRY_DELAYS[attempt])
 
 
 def read_json_file(path: Path, *, max_bytes: int) -> Any:
@@ -35,7 +59,7 @@ def atomic_write_bytes(path: Path, data: bytes, *, mode: int = 0o600) -> None:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        retry_windows_file_operation(lambda: os.replace(temporary, path))
         os.chmod(path, mode)
         # Windows 不支持目录 fsync；其他平台尽力同步目录项。
         try:

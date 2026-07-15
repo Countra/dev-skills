@@ -17,6 +17,7 @@ PLAN_SECTIONS = [
     "问题定义",
     "需求与验收",
     "调研门禁",
+    "依赖选型门禁",
     "规范发现门禁",
     "开发质量门禁",
     "上下文",
@@ -39,6 +40,43 @@ PLAN_SECTIONS = [
     "Artifact Index",
     "Executor Handoff",
 ]
+
+STATIC_GATE_BODIES = {
+    "依赖选型门禁": (
+        "- Selection mode: `none`\n"
+        "- Dependency selection result: `not-applicable`"
+    ),
+    "规范发现门禁": (
+        "- Standards result: `passed`\n"
+        "- Decision: Use repository Python and closed JSON standards.\n"
+        "- Evidence: REQ-01, STG-01 and project rules.\n"
+        "- Impact: VAL-01 verifies structure and quality."
+    ),
+    "开发质量门禁": (
+        "- Development quality result: `passed`\n"
+        "- Decision: Keep cohesive modules and bounded interfaces.\n"
+        "- Evidence: STG-01 scope and VAL-01.\n"
+        "- Impact: Review covers architecture and static quality."
+    ),
+    "方案质量门禁": (
+        "- Quality result: `passed`\n"
+        "- Decision: Requirements, stages and validation are closed.\n"
+        "- Evidence: REQ-01, AC-01, STG-01 and VAL-01.\n"
+        "- Impact: The approved bundle is deterministic."
+    ),
+    "规划自查": (
+        "- Review result: `passed`\n"
+        "- Decision: No contradiction, scope leak or blocker remains.\n"
+        "- Evidence: STG-01 and VAL-01 traceability.\n"
+        "- Impact: Failures remain reviewable and recoverable."
+    ),
+    "就绪门禁": (
+        "- Readiness result: `ready_for_approval`\n"
+        "- Decision: Scope, tools and authorization request are explicit.\n"
+        "- Evidence: STG-01, VAL-01 and approval policy.\n"
+        "- Impact: Request approval without implementation."
+    ),
+}
 
 
 def artifact_specs(profile: str) -> list[dict[str, Any]]:
@@ -128,6 +166,13 @@ def build_contract(case_id: str, profile: str) -> dict[str, Any]:
         "artifacts": artifacts,
         "stages": stages,
         "validations": validations,
+        "dependency_selection": {
+            "mode": "none",
+            "necessity_result": "not-triggered",
+            "decision_ids": [],
+            "evidence_artifact_ids": [],
+            "decisions": [],
+        },
         "research": {
             "mode": "online-required" if profile == "full" else "local-only",
             "evidence_artifact_ids": research_ids,
@@ -163,7 +208,7 @@ def build_plan(contract: dict[str, Any]) -> str:
 
     sections = ["# Eval Plan"]
     for heading in PLAN_SECTIONS:
-        body = "passed"
+        body = STATIC_GATE_BODIES.get(heading, "passed")
         if heading == "规划摘要":
             body = (
                 f"Task ID: {contract['task_id']}\n\n"
@@ -175,6 +220,20 @@ def build_plan(contract: dict[str, Any]) -> str:
             body = "GOAL-01"
         elif heading == "需求与验收":
             body = " ".join(ids[1:4])
+        elif heading == "调研门禁":
+            research_result = (
+                "passed"
+                if contract["research"]["mode"] == "online-required"
+                else "not-applicable"
+            )
+            research_ids = contract["research"]["evidence_artifact_ids"]
+            research_evidence = research_ids[0] if research_ids else "REQ-01"
+            body = (
+                f"- Research result: `{research_result}`\n"
+                "- Decision: Evidence scope matches the task uncertainty.\n"
+                f"- Evidence: {research_evidence} with VAL-01 traceability.\n"
+                "- Impact: STG-01 follows the recorded source limits."
+            )
         elif heading == "候选方案":
             body = "### 方案 A\nMinimal\n\n### 方案 B\nStructured"
         elif heading == "实施计划":
@@ -212,7 +271,13 @@ def write_artifacts(
             "Status: complete\n"
         )
         if artifact["kind"] == "research" and include_online_source:
-            body += "\nPrimary source: https://example.com/official-spec\n"
+            body += (
+                "\nPrimary official source: https://example.com/official-spec\n"
+                "Observed: 2026-07-15\n"
+                "Evidence window: 12m\n"
+                f"Artifact receipt: {artifact['id']} artifacts/research/findings.md\n"
+                "Applicability and impact: applies to the planned API boundary.\n"
+            )
         if artifact["kind"] == "review":
             body += "\nOpen blocking findings: none\nReady for approval: yes\n"
         path.write_text(body, encoding="utf-8")
@@ -249,6 +314,36 @@ def apply_mutation(
         )
         (task_dir / review["path"]).write_text(
             "# Plan Critique\n\nOpen blocking findings: pending\n",
+            encoding="utf-8",
+        )
+    elif mutation == "empty-semantic-gate":
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8").replace(
+                STATIC_GATE_BODIES["方案质量门禁"],
+                "- Quality result: `passed`",
+            ),
+            encoding="utf-8",
+        )
+    elif mutation == "url-only-semantic-gate":
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8").replace(
+                STATIC_GATE_BODIES["方案质量门禁"],
+                "- Quality result: `passed`\n"
+                "- https://example.com/one\n"
+                "- https://example.com/two\n"
+                "- https://example.com/three",
+            ),
+            encoding="utf-8",
+        )
+    elif mutation == "dependency-mode-drift":
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8").replace(
+                "Selection mode: `none`",
+                "Selection mode: `change`",
+            ),
             encoding="utf-8",
         )
     elif mutation != "online-source-missing":

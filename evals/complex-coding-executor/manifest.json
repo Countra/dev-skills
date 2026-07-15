@@ -42,6 +42,16 @@
       "profile": "lite",
       "scenario": "amendment-cli",
       "commit_authorized": false
+    },
+    {
+      "id": "dependency-none-fast",
+      "profile": "lite",
+      "scenario": "dependency-none-fast"
+    },
+    {
+      "id": "dependency-stale-recheck",
+      "profile": "lite",
+      "scenario": "dependency-stale-recheck"
     }
   ],
   "regression": [
@@ -81,6 +91,30 @@
       "scenario": "missing-stage-commit",
       "commit_expectation": "stage",
       "expected_code": "RUN_STATE_COMMIT_EVIDENCE_MISSING"
+    },
+    {
+      "id": "dependency-unapproved-package",
+      "profile": "lite",
+      "scenario": "dependency-unapproved-package",
+      "expected_code": "EXEC_DEPENDENCY_APPROVAL_DRIFT"
+    },
+    {
+      "id": "dependency-version-out-of-policy",
+      "profile": "lite",
+      "scenario": "dependency-version-out-of-policy",
+      "expected_code": "EXEC_DEPENDENCY_IMPLEMENTATION_DRIFT"
+    },
+    {
+      "id": "dependency-stale-without-recheck",
+      "profile": "lite",
+      "scenario": "dependency-stale-without-recheck",
+      "expected_code": "EXEC_DEPENDENCY_EVIDENCE_STALE"
+    },
+    {
+      "id": "dependency-advisory-drift",
+      "profile": "lite",
+      "scenario": "dependency-advisory-drift",
+      "expected_code": "EXEC_DEPENDENCY_RESEARCH_DRIFT"
     }
   ]
 }

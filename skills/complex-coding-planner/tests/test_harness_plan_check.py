@@ -13,6 +13,12 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from harness_plan_check import validate_task  # noqa: E402
 
 
+RESEARCH_GATE_BODY = """- Research result: `not-applicable`
+- Decision: 本地事实足以支持 GOAL-01，当前无需在线调研。
+- Evidence: REQ-01 与 VAL-01 已形成结构化引用。
+- Impact: STG-01 只执行批准范围并保留验证证据。"""
+
+
 def valid_contract() -> dict[str, object]:
     return {
         "task_id": "test-task",
@@ -53,6 +59,13 @@ def valid_contract() -> dict[str, object]:
                 "evidence_path": "artifacts/validation/tests.md",
             }
         ],
+        "dependency_selection": {
+            "mode": "none",
+            "necessity_result": "not-triggered",
+            "decision_ids": [],
+            "evidence_artifact_ids": [],
+            "decisions": [],
+        },
         "research": {"mode": "local-only", "evidence_artifact_ids": [], "unresolved": []},
         "approval_policy": {
             "implementation_requires_user_approval": True,
@@ -71,6 +84,7 @@ def valid_plan(extra: str = "") -> str:
         "问题定义",
         "需求与验收",
         "调研门禁",
+        "依赖选型门禁",
         "规范发现门禁",
         "开发质量门禁",
         "上下文",
@@ -94,8 +108,45 @@ def valid_plan(extra: str = "") -> str:
         "Executor Handoff",
     ]
     sections: list[str] = ["# Test Plan"]
+    gate_bodies = {
+        "调研门禁": RESEARCH_GATE_BODY,
+        "依赖选型门禁": (
+            "- Selection mode: `none`\n"
+            "- Dependency selection result: `not-applicable`"
+        ),
+        "规范发现门禁": (
+            "- Standards result: `passed`\n"
+            "- Decision: 采用当前项目 Python 与 closed JSON 规范。\n"
+            "- Evidence: REQ-01、STG-01 与仓库规则。\n"
+            "- Impact: VAL-01 验证结构和实现质量。"
+        ),
+        "开发质量门禁": (
+            "- Development quality result: `passed`\n"
+            "- Decision: 保持单模块职责和最小耦合。\n"
+            "- Evidence: STG-01 的 scope 与 VAL-01。\n"
+            "- Impact: review 检查静态质量和架构边界。"
+        ),
+        "方案质量门禁": (
+            "- Quality result: `passed`\n"
+            "- Decision: 需求、阶段和验证已经闭环。\n"
+            "- Evidence: REQ-01、AC-01、STG-01、VAL-01。\n"
+            "- Impact: 批准后可以确定性执行。"
+        ),
+        "规划自查": (
+            "- Review result: `passed`\n"
+            "- Decision: 未发现矛盾、越界或开放 blocker。\n"
+            "- Evidence: STG-01 范围与 VAL-01 追踪。\n"
+            "- Impact: 保持最小修改和失败闭环。"
+        ),
+        "就绪门禁": (
+            "- Readiness result: `ready_for_approval`\n"
+            "- Decision: 工具、范围和授权请求已明确。\n"
+            "- Evidence: STG-01、VAL-01 与 approval policy。\n"
+            "- Impact: 只请求批准，不提前实施。"
+        ),
+    }
     for heading in headings:
-        body = "complete"
+        body = gate_bodies.get(heading, "complete")
         if heading == "规划摘要":
             body = (
                 "Task ID: test-task\n\n"
@@ -185,7 +236,7 @@ class PlannerBundleTest(unittest.TestCase):
         self.assertIn("TASK_ARTIFACT_EMPTY", codes)
 
     def test_plan_contract_id_drift_is_rejected(self) -> None:
-        plan = valid_plan().replace("REQ-01 AC-01 NFR-01", "REQ-99 AC-01 NFR-01")
+        plan = valid_plan().replace("REQ-01", "REQ-99")
         codes = self.error_codes(self.make_task(plan=plan))
         self.assertIn("TASK_PLAN_MISSING_ID", codes)
         self.assertIn("TASK_PLAN_EXTRA_ID", codes)
@@ -284,10 +335,40 @@ class PlannerBundleTest(unittest.TestCase):
         self.assertIn("TASK_PLAN_RESEARCH_SOURCE_MISSING", codes)
 
     def test_draft_allows_pending_gate_and_open_decision(self) -> None:
-        task_dir = self.make_task(plan=valid_plan().replace("## 调研门禁\n\ncomplete", "## 调研门禁\n\npending"))
+        task_dir = self.make_task(
+            plan=valid_plan().replace(
+                RESEARCH_GATE_BODY,
+                "- Research result: `pending`",
+            )
+        )
         (task_dir / "pending-decisions.md").write_text("状态: open\n", encoding="utf-8")
         self.assertNotIn("TASK_PLAN_GATE_PENDING", self.error_codes(task_dir, mode="draft"))
         self.assertNotIn("TASK_PLAN_OPEN_DECISION", self.error_codes(task_dir, mode="draft"))
+
+    def test_empty_or_url_only_gate_is_rejected(self) -> None:
+        empty = valid_plan().replace(
+            RESEARCH_GATE_BODY,
+            "- Research result: `not-applicable`",
+        )
+        self.assertIn("TASK_PLAN_GATE_EMPTY", self.error_codes(self.make_task(plan=empty)))
+        url_only = valid_plan().replace(
+            RESEARCH_GATE_BODY,
+            "- Research result: `not-applicable`\n"
+            "- https://example.com/one\n"
+            "- https://example.com/two\n"
+            "- https://example.com/three",
+        )
+        self.assertIn("TASK_PLAN_GATE_EMPTY", self.error_codes(self.make_task(plan=url_only)))
+
+    def test_dependency_plan_mode_drift_is_rejected(self) -> None:
+        plan = valid_plan().replace(
+            "Selection mode: `none`",
+            "Selection mode: `change`",
+        )
+        self.assertIn(
+            "TASK_DEPENDENCY_PLAN_DRIFT",
+            self.error_codes(self.make_task(plan=plan)),
+        )
 
 
 if __name__ == "__main__":

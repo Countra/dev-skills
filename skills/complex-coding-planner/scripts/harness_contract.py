@@ -16,6 +16,7 @@ ID_PATTERNS = {
     "acceptance": re.compile(r"^AC-\d{2,}$"),
     "nonfunctional": re.compile(r"^NFR-\d{2,}$"),
     "artifact": re.compile(r"^ART-\d{2,}$"),
+    "dependency": re.compile(r"^DEP-\d{2,}$"),
     "stage": re.compile(r"^STG-\d{2,}$"),
     "validation": re.compile(r"^VAL-\d{2,}$"),
 }
@@ -26,6 +27,9 @@ PLACEHOLDER_PATTERN = re.compile(
     r"required behavior|given / when / then outcome|stage title|"
     r"approved path or module|explicit boundary|entry condition|"
     r"observable exit condition|deterministic command or tool|evidence-file|"
+    r"dependency-category|ecosystem|package-identity|source-repository-url|"
+    r"selected-version|version-policy|manifest-path|evidence-url|evidence-value|"
+    r"evidence-caveat|YYYY-MM-DD|necessity-evidence|decision-reason|"
     r"阶段名称|TODO[^>]*|TBD[^>]*|placeholder[^>]*"
     r")>",
     re.IGNORECASE,
@@ -44,10 +48,13 @@ ROOT_FIELDS = {
     "stages",
     "validations",
     "research",
+    "dependency_selection",
     "approval_policy",
     "reapproval_triggers",
     "stop_conditions",
 }
+
+ROOT_REQUIRED_FIELDS = ROOT_FIELDS - {"dependency_selection"}
 
 STAGE_FIELDS = {
     "id",

@@ -22,6 +22,7 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 恢复或转移时运行 `--mode status|transition`；仅用 `--mode reconcile` 修复可由合法 ledger 唯一推导的 snapshot drift。
 - 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、review、验证、修复与 exit。
 - 每个阶段必须执行 `Development Quality Check`：读取计划中的 standards index、`Standards Discovery Gate` 和 `Development Quality Gate`，按本阶段范围复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
+- contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
 - 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
 - stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。
 - 失败动作必须记录 attempt、失败原因、影响和下一策略；不得静默重复同一失败动作。
@@ -34,10 +35,12 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 ## 文件和脚本
 
 - 执行工作流: `references/execution-workflow.md`
+- 依赖执行门禁: `references/dependency-execution.md`
 - 故障排查: `references/troubleshooting.md`
 - 契约定义: `../complex-coding-planner/references/task-contract.md`
 - 执行状态检查: `scripts/harness_exec_check.py`
 - 任务解析: `scripts/harness_task_resolver.py`
+- 依赖执行检查: `scripts/harness_dependency_check.py`
 - 计划证明: `scripts/harness_attest_plan.py`
 - 进度 ledger: `scripts/harness_ledger_append.py`、`scripts/harness_ledger_summary.py`
 

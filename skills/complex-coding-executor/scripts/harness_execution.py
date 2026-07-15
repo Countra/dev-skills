@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_attestation import validate_attestation
+from harness_dependency_evaluation import evaluate_dependency_preflight
 from harness_state import (
     commit_evidence_gaps,
     replay_events,
@@ -41,7 +42,11 @@ def planner_checker_path() -> Path:
     return skills_dir / "complex-coding-planner" / "scripts" / "harness_plan_check.py"
 
 
-def run_planner_approval_check(bundle: TaskBundle) -> None:
+def run_planner_approval_check(
+    bundle: TaskBundle,
+    *,
+    allow_dependency_stale: bool = False,
+) -> None:
     checker = planner_checker_path()
     if not checker.is_file():
         raise ExecutionError(
@@ -82,7 +87,24 @@ def run_planner_approval_check(bundle: TaskBundle) -> None:
             "TASK_PLANNER_CHECK_INVALID_OUTPUT",
             "planner checker 未返回合法 JSON。",
         ) from exc
-    if result.returncode != 0 or not isinstance(payload, dict) or payload.get("valid") is not True:
+    stale_only = False
+    if allow_dependency_stale and isinstance(payload, dict):
+        issues = payload.get("issues")
+        stale_only = (
+            isinstance(issues, list)
+            and bool(issues)
+            and all(
+                isinstance(issue, dict)
+                and issue.get("code") == "TASK_DEPENDENCY_EVIDENCE_STALE"
+                for issue in issues
+            )
+        )
+    rejected = (
+        result.returncode != 0
+        or not isinstance(payload, dict)
+        or payload.get("valid") is not True
+    )
+    if rejected and not stale_only:
         output = (result.stdout or result.stderr).strip()
         raise ExecutionError(
             "TASK_CONTRACT_REJECTED",
@@ -144,9 +166,17 @@ def require_clean_snapshot(bundle: TaskBundle, replayed: ReplayResult) -> None:
         )
 
 
-def check_preflight(bundle: TaskBundle) -> dict[str, Any]:
-    run_planner_approval_check(bundle)
+def check_preflight(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
+    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
+    allow_stale = bool(
+        dependency["stale_approved_decision_ids"]
+        and dependency["runtime_recheck"]
+    )
+    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["reapproval_required"]:
@@ -167,8 +197,11 @@ def check_preflight(bundle: TaskBundle) -> dict[str, Any]:
     return attestation
 
 
-def check_transition(bundle: TaskBundle) -> dict[str, Any]:
-    attestation = check_preflight(bundle)
+def check_transition(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> dict[str, Any]:
+    attestation = check_preflight(bundle, dependency_receipt)
     replayed, _ = replay_bundle(bundle)
     state = replayed.state
     if state["current_stage_id"] is not None:
@@ -241,9 +274,17 @@ def active_pointer_targets_bundle(bundle: TaskBundle) -> bool:
     return pointed.resolve() == bundle.task_dir
 
 
-def check_final(bundle: TaskBundle) -> dict[str, Any]:
-    run_planner_approval_check(bundle)
+def check_final(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
+    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
+    allow_stale = bool(
+        dependency["stale_approved_decision_ids"]
+        and dependency["runtime_recheck"]
+    )
+    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["lifecycle"] != "completed":

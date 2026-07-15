@@ -14,6 +14,7 @@ from process_manager.service_host import (  # noqa: E402
     TargetController,
     WindowsConsole,
     _group_remaining_after_target,
+    _log_pumps_timed_out,
     _pump,
 )
 
@@ -100,7 +101,7 @@ class WindowsConsoleTests(unittest.TestCase):
     def test_reuses_existing_console_without_releasing_it(self) -> None:
         kernel32 = FakeKernel32(attached=True)
         with (
-            mock.patch("process_manager.service_host.os.name", "nt"),
+            mock.patch("process_manager.service_host._windows_console_supported", return_value=True),
             mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()
@@ -112,7 +113,7 @@ class WindowsConsoleTests(unittest.TestCase):
     def test_allocates_and_releases_private_console(self) -> None:
         kernel32 = FakeKernel32(attached=False)
         with (
-            mock.patch("process_manager.service_host.os.name", "nt"),
+            mock.patch("process_manager.service_host._windows_console_supported", return_value=True),
             mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()
@@ -123,6 +124,28 @@ class WindowsConsoleTests(unittest.TestCase):
 
 
 class TargetControllerTests(unittest.TestCase):
+    def test_log_pumps_share_one_drain_deadline(self) -> None:
+        clock = [0.0]
+        first = mock.Mock()
+        second = mock.Mock()
+        first.is_alive.return_value = True
+        second.is_alive.return_value = True
+
+        def consume_timeout(*, timeout: float) -> None:
+            clock[0] += timeout
+
+        first.join.side_effect = consume_timeout
+        timed_out = _log_pumps_timed_out(
+            [first, second],
+            timeout=5.0,
+            monotonic=lambda: clock[0],
+        )
+
+        self.assertTrue(timed_out)
+        self.assertEqual(clock[0], 5.0)
+        first.join.assert_called_once_with(timeout=5.0)
+        second.join.assert_not_called()
+
     def test_process_group_settlement_tolerates_delayed_empty_observation(self) -> None:
         clock = [0.0]
         observations = iter((True, True, False))

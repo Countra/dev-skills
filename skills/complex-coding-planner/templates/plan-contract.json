@@ -55,6 +55,13 @@
     "evidence_artifact_ids": [],
     "unresolved": []
   },
+  "dependency_selection": {
+    "mode": "none",
+    "necessity_result": "not-triggered",
+    "decision_ids": [],
+    "evidence_artifact_ids": [],
+    "decisions": []
+  },
   "approval_policy": {
     "implementation_requires_user_approval": true,
     "commit_requires_explicit_authorization": true,

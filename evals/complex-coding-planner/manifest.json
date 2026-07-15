@@ -68,6 +68,27 @@
       "mutation": "review-gate-incomplete",
       "expected_valid": false,
       "expected_code": "TASK_ARTIFACT_REVIEW_INCOMPLETE"
+    },
+    {
+      "id": "empty-semantic-gate",
+      "profile": "lite",
+      "mutation": "empty-semantic-gate",
+      "expected_valid": false,
+      "expected_code": "TASK_PLAN_GATE_EMPTY"
+    },
+    {
+      "id": "url-only-semantic-gate",
+      "profile": "standard",
+      "mutation": "url-only-semantic-gate",
+      "expected_valid": false,
+      "expected_code": "TASK_PLAN_GATE_EMPTY"
+    },
+    {
+      "id": "dependency-mode-drift",
+      "profile": "lite",
+      "mutation": "dependency-mode-drift",
+      "expected_valid": false,
+      "expected_code": "TASK_DEPENDENCY_PLAN_DRIFT"
     }
   ]
 }

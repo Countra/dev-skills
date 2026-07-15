@@ -63,3 +63,23 @@ process-manager-platform-transparent-gate:
   requires_bounded_readiness_logs_and_cleanup_evidence: true
   rejects_consumer_platform_or_backend_selection: true
   keeps_doctor_on_demand: true
+dependency-go-existing-retain:
+  evaluates_dependency_necessity_first: true
+  prefers_existing_stack_when_sufficient: true
+  records_version_manifest_and_validation_evidence: true
+dependency-go-stdlib-first:
+  prefers_standard_or_official_when_sufficient: true
+  rejects_popularity_only_dependency_addition: true
+  records_applicability_boundary: true
+dependency-go-gin-mainstream:
+  considers_ecosystem_mainstream_candidates: true
+  requires_fresh_trust_signals_and_hard_gates: true
+  selects_gin_only_when_evidence_and_fit_support_it: true
+dependency-go-gorm-mainstream:
+  considers_gorm_as_a_mainstream_candidate: true
+  weighs_stability_adoption_recency_maintenance_and_trend: true
+  rejects_permanent_rankings_without_current_evidence: true
+dependency-specialized-exception:
+  allows_evidence_backed_specialized_exception: true
+  requires_mainstream_candidate_rejection_reason: true
+  requires_all_hard_gates_risks_and_exit_strategy: true

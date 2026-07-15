@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-15
+
+### Feature: Planner/Executor 依赖选型可信度门禁
+
+- `complex-coding-planner` 新增 Dependency Selection Gate，先执行必要性与 project-first 判断，再比较 existing stack、标准库/官方方案、生态主流候选和受控专用例外。
+- 依赖证据正式覆盖稳定版本、采用规模、更新新鲜度、维护活跃度、采用趋势、项目适配与供应链 hard gates；不使用单一总分，也不维护脱离当前证据的永久排行榜。
+- `plan-contract.json`、dependency artifact 与语义 checker 形成 closed machine contract，覆盖 DEP 引用、manifest scope、30/60/90 天 freshness、趋势证据和 specialized exception。
+- `complex-coding-executor` 精确消费批准的包、来源、类别、版本策略和 manifest，使用 task-local runtime receipt 区分 approval、research 与 implementation drift，不自动替换或升级依赖。
+- 新增 active pointer 四态与原子切换、Planner 语义负向、Go retain/stdlib/Gin/GORM/专用例外以及 Executor stale/version/advisory 漂移回归。
+- 新增全分支 Windows、Ubuntu、macOS workflow，离线运行 Planner/Executor 单测和确定性 eval，不依赖 secrets 或 package install。
+
 ## 2026-07-14
 
 ### Breaking: Electron UI Verifier 安全执行与知识闭环

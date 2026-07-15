@@ -33,13 +33,17 @@ def authorization_result(
     }
 
 
-def run_mode(bundle: Any, mode: str) -> dict[str, Any]:
+def run_mode(
+    bundle: Any,
+    mode: str,
+    dependency_receipt: str | None = None,
+) -> dict[str, Any]:
     if mode == "status":
         return status_payload(bundle)
     if mode == "reconcile":
         return reconcile_snapshot(bundle)
     if mode == "preflight":
-        attestation = check_preflight(bundle)
+        attestation = check_preflight(bundle, dependency_receipt)
         result = authorization_result(
             bundle.task_id,
             bundle.plan_revision,
@@ -48,7 +52,7 @@ def run_mode(bundle: Any, mode: str) -> dict[str, Any]:
         result["state"] = status_payload(bundle)
         return result
     if mode == "transition":
-        attestation = check_transition(bundle)
+        attestation = check_transition(bundle, dependency_receipt)
         result = authorization_result(
             bundle.task_id,
             bundle.plan_revision,
@@ -56,7 +60,7 @@ def run_mode(bundle: Any, mode: str) -> dict[str, Any]:
         )
         result["state"] = status_payload(bundle)
         return result
-    attestation = check_final(bundle)
+    attestation = check_final(bundle, dependency_receipt)
     result = authorization_result(
         bundle.task_id,
         bundle.plan_revision,
@@ -74,11 +78,15 @@ def main() -> int:
         choices=["preflight", "status", "transition", "reconcile", "final"],
         required=True,
     )
+    parser.add_argument(
+        "--dependency-receipt",
+        help="task-dir 相对的 runtime dependency receipt",
+    )
     args = parser.parse_args()
     action = f"executor {args.mode} check"
     try:
         bundle = resolve_from_args(args, require_attestation=True)
-        result = run_mode(bundle, args.mode)
+        result = run_mode(bundle, args.mode, args.dependency_receipt)
     except Exception as exc:  # noqa: BLE001 - CLI 统一转换为稳定诊断
         emit_failure(action, exc, args.output_format)
         return 1
