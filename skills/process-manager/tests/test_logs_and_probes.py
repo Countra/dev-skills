@@ -122,7 +122,7 @@ class LogAndProbeTests(unittest.TestCase):
                 return original_replace(source, target)
 
             with (
-                mock.patch("process_manager.atomic.os.name", "nt"),
+                mock.patch("process_manager.atomic._windows_file_retry_enabled", return_value=True),
                 mock.patch.object(Path, "replace", new=flaky_replace),
                 mock.patch("process_manager.atomic.time.sleep") as sleep,
             ):

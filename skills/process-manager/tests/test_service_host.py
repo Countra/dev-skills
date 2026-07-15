@@ -101,7 +101,7 @@ class WindowsConsoleTests(unittest.TestCase):
     def test_reuses_existing_console_without_releasing_it(self) -> None:
         kernel32 = FakeKernel32(attached=True)
         with (
-            mock.patch("process_manager.service_host.os.name", "nt"),
+            mock.patch("process_manager.service_host._windows_console_supported", return_value=True),
             mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()
@@ -113,7 +113,7 @@ class WindowsConsoleTests(unittest.TestCase):
     def test_allocates_and_releases_private_console(self) -> None:
         kernel32 = FakeKernel32(attached=False)
         with (
-            mock.patch("process_manager.service_host.os.name", "nt"),
+            mock.patch("process_manager.service_host._windows_console_supported", return_value=True),
             mock.patch("process_manager.service_host.ctypes.WinDLL", return_value=kernel32, create=True),
         ):
             console = WindowsConsole()

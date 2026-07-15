@@ -18,10 +18,11 @@ from process_manager.errors import StateError  # noqa: E402
 
 
 class AtomicWriteTests(unittest.TestCase):
-    def test_windows_replace_retries_transient_sharing_violation(self) -> None:
+    def test_windows_replace_retries_without_mutating_runtime_platform(self) -> None:
         with workspace_directory() as directory:
             target = Path(directory) / "state.json"
             original_replace = os.replace
+            runtime_platform = os.name
             attempts = 0
 
             def flaky_replace(source: str | bytes, destination: str | bytes) -> None:
@@ -34,10 +35,11 @@ class AtomicWriteTests(unittest.TestCase):
                 original_replace(source, destination)
 
             with (
-                mock.patch("process_manager.atomic.os.name", "nt"),
+                mock.patch("process_manager.atomic._windows_file_retry_enabled", return_value=True),
                 mock.patch("process_manager.atomic.os.replace", new=flaky_replace),
                 mock.patch("process_manager.atomic.time.sleep") as sleep,
             ):
+                self.assertEqual(os.name, runtime_platform)
                 atomic_write_bytes(target, b"{}\n")
 
             self.assertEqual(target.read_bytes(), b"{}\n")
@@ -50,7 +52,7 @@ class AtomicWriteTests(unittest.TestCase):
             error = PermissionError("persistent access denied")
             error.winerror = 5
             with (
-                mock.patch("process_manager.atomic.os.name", "nt"),
+                mock.patch("process_manager.atomic._windows_file_retry_enabled", return_value=True),
                 mock.patch("process_manager.atomic.os.replace", side_effect=error) as replace,
                 mock.patch("process_manager.atomic.time.sleep") as sleep,
             ):
@@ -64,7 +66,7 @@ class AtomicWriteTests(unittest.TestCase):
         with workspace_directory() as directory:
             target = Path(directory) / "state.json"
             with (
-                mock.patch("process_manager.atomic.os.name", "posix"),
+                mock.patch("process_manager.atomic._windows_file_retry_enabled", return_value=False),
                 mock.patch(
                     "process_manager.atomic.os.replace",
                     side_effect=PermissionError("access denied"),

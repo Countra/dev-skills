@@ -16,6 +16,10 @@ WINDOWS_FILE_RETRY_DELAYS = (0.01, 0.02, 0.04, 0.08, 0.16, 0.32)
 WINDOWS_RETRYABLE_FILE_ERRORS = {5, 32, 33}
 
 
+def _windows_file_retry_enabled() -> bool:
+    return os.name == "nt"
+
+
 def retry_windows_file_operation(operation: Callable[[], object]) -> None:
     for attempt in range(len(WINDOWS_FILE_RETRY_DELAYS) + 1):
         try:
@@ -23,7 +27,7 @@ def retry_windows_file_operation(operation: Callable[[], object]) -> None:
             return
         except OSError as exc:
             winerror = getattr(exc, "winerror", None)
-            retryable = os.name == "nt" and (
+            retryable = _windows_file_retry_enabled() and (
                 isinstance(exc, PermissionError) or winerror in WINDOWS_RETRYABLE_FILE_ERRORS
             )
             if not retryable or attempt >= len(WINDOWS_FILE_RETRY_DELAYS):

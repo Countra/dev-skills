@@ -28,6 +28,10 @@ PROCESS_GROUP_POLL_SECONDS = 0.02
 LOG_PUMP_DRAIN_SECONDS = 5.0
 
 
+def _windows_console_supported() -> bool:
+    return os.name == "nt"
+
+
 class WindowsConsole:
     """为 target process group 建立隐藏但可接收 CTRL_BREAK 的专用 console。"""
 
@@ -35,7 +39,7 @@ class WindowsConsole:
         self.allocated = False
 
     def prepare(self) -> None:
-        if os.name != "nt":
+        if not _windows_console_supported():
             return
         kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         process_ids = (ctypes.c_ulong * 1)()
