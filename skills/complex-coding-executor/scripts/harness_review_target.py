@@ -15,7 +15,9 @@ GIT_TIMEOUT_SECONDS = 30
 NARRATIVE_ALLOWED_CHANGES = (
     "all files approved by ",
     "task-local execution evidence",
+    "task-local execution, validation, review and observation artifacts",
     "minimal fixes discovered by ",
+    "minimal fixes required by ",
 )
 
 

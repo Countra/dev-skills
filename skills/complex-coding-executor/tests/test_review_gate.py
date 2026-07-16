@@ -530,6 +530,8 @@ class ReviewGateTest(unittest.TestCase):
                 "allowed_changes": [
                     "all files approved by STG-01 through STG-02",
                     "task-local execution evidence",
+                    "task-local execution, validation, review and observation artifacts",
+                    "minimal fixes required by final review within approved scope",
                 ],
             }
         )
