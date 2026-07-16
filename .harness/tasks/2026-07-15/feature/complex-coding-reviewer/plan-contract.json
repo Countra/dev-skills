@@ -1,0 +1,544 @@
+{
+  "task_id": "2026-07-15-feature-complex-coding-reviewer",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "建立独立的 complex-coding-reviewer，以 plan-review 和 code-review 两个 profile 提供目标绑定、证据驱动、可复审的工程审查，并让 Planner 与 Executor 通过同一审查契约完成门禁"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "新增 complex-coding-reviewer skill，对外只提供 plan-review 与 code-review 两个明确 profile，并通过渐进披露保持入口简洁"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "Reviewer 必须定义唯一 closed JSON receipt，包含 profile、scope、target digest、provenance、lenses、findings、verdict、开放计数、限制和 supersedes"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "plan-review 必须独立审查规划意图、证据、追踪、选项、架构、stage DAG、验证、授权、回滚和过度设计，不能与 code-review 共用领域清单"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "code-review 必须支持 managed stage-delta、managed final-integration 与 standalone target，并审查正确性、接口、错误路径、架构、复杂度、测试和条件化风险 lens"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "所有 review pass 必须绑定可重建 target SHA-256；目标变化使旧 receipt stale，复审使用不可变新 attempt 和 supersedes 链"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "Planner 中正式 Plan Self-Review 和 critique 职责必须迁移到 reviewer，Planner 只生产和修复计划并在 approval 前要求 plan-review passed receipt"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "Executor 中正式 code review rubric 必须迁移到 reviewer，Executor 只实现和修复代码、运行验证、校验 receipt 并写 compact ledger event"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "Planner approval、Executor transition/final 和共享 task contract 必须采用当前 reviewer 契约，删除 Markdown 关键词与旧 development_quality review payload，不保留兼容分支"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "实现 reviewer 单测、双 profile deterministic eval、seeded clean/near-miss fixtures 和 Planner/Reviewer/Executor 联合回归，并接入三平台 CI"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "Reviewer 必须只读目标且不自动运行 Codex、模型、子代理、远端写入、Git write 或后台服务；远端 acquisition/write 交给其它 skill 组合"
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "Reviewer 骨架与唯一审查契约",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-05", "REQ-10"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-08", "AC-09"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-08", "VAL-09", "VAL-10"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/**",
+        "evals/complex-coding-reviewer/**"
+      ],
+      "forbidden_changes": [
+        "target code or plan mutation by reviewer",
+        "automatic Codex, model, subagent, network, Git write or remote write",
+        "daemon, database, cache or third-party runtime dependency",
+        "generic third review profile"
+      ],
+      "entry_conditions": [
+        "批准 attestation 有效并包含 implementation authorization",
+        "ART-01 至 ART-04 的 profile、ownership、schema 与 stale 决策已确认",
+        "当前 Planner/Executor/skill-evaluation-lab 基线通过"
+      ],
+      "exit_conditions": [
+        "skill metadata 与 progressive disclosure 结构有效",
+        "target、receipt、finding、provenance、supersedes 和 stable errors 只有一个权威定义",
+        "三个确定性 CLI 不执行目标代码或 Agent，并通过安全与跨平台 fixtures"
+      ],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-02",
+      "title": "plan-review 与 Planner 职责迁移",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-03", "REQ-06", "REQ-08", "REQ-10"],
+      "acceptance_ids": ["AC-04", "AC-05", "AC-08", "AC-09", "AC-10"],
+      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-02", "VAL-03", "VAL-04", "VAL-07", "VAL-10"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/references/plan-review.md",
+        "skills/complex-coding-planner/**",
+        "evals/complex-coding-planner/**",
+        "evals/complex-coding-reviewer/**"
+      ],
+      "forbidden_changes": [
+        "Planner implementation or executor runtime state",
+        "duplicate plan-review checklist retained in Planner",
+        "Markdown keyword as canonical review verdict",
+        "fake independent-review claim"
+      ],
+      "entry_conditions": [
+        "STG-01 completed",
+        "plan-bundle canonical target fixtures available",
+        "current Planner producer gates and approval flow understood"
+      ],
+      "exit_conditions": [
+        "plan-review has profile-specific lenses and findings-first workflow",
+        "Planner produces/fixes plans but delegates formal review",
+        "approval rejects missing, wrong-profile, open-major and stale plan receipts"
+      ],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-03",
+      "title": "code-review 与 Executor 状态迁移",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-04", "REQ-05", "REQ-07", "REQ-08", "REQ-10"],
+      "acceptance_ids": ["AC-03", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-05", "VAL-06", "VAL-07", "VAL-10"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/references/code-review.md",
+        "skills/complex-coding-executor/**",
+        "skills/complex-coding-planner/references/task-contract.md",
+        "evals/complex-coding-executor/**",
+        "evals/complex-coding-reviewer/**"
+      ],
+      "forbidden_changes": [
+        "reviewer ledger or run-state writes",
+        "duplicate code-review rubric retained in Executor",
+        "legacy development_quality review payload",
+        "stage-delta receipt accepted as final-integration"
+      ],
+      "entry_conditions": [
+        "STG-01 completed",
+        "planned self-hosting amendment approved and current ledger rotated with STG-01/STG-02 carried",
+        "current ledger reducer, event writer and transition/final flow understood",
+        "Git target identity and stage attempt semantics fixed by fixtures"
+      ],
+      "exit_conditions": [
+        "code-review supports stage-delta, final-integration and standalone scopes",
+        "review_recorded stores validated compact receipt identity rather than free text",
+        "source change invalidates old review and stage/final checkers reject stale or wrong scope"
+      ],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-04",
+      "title": "双 profile 评估与联合契约回归",
+      "depends_on": ["STG-02", "STG-03"],
+      "requirement_ids": ["REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-08", "REQ-09", "REQ-10"],
+      "acceptance_ids": ["AC-02", "AC-03", "AC-04", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-09", "VAL-10"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/tests/**",
+        "evals/complex-coding-reviewer/**",
+        "skills/complex-coding-planner/tests/**",
+        "evals/complex-coding-planner/**",
+        "skills/complex-coding-executor/tests/**",
+        "evals/complex-coding-executor/**"
+      ],
+      "forbidden_changes": [
+        "tests that call Codex, model API, network or target project execution",
+        "text-match-only semantic review scoring",
+        "fixtures containing only known bugs without clean or near-miss controls",
+        "platform skips used to hide canonicalization defects"
+      ],
+      "entry_conditions": [
+        "STG-02 and STG-03 completed",
+        "new review contract frozen for current implementation",
+        "seeded expected claims reviewed against actual fixture behavior"
+      ],
+      "exit_conditions": [
+        "Reviewer unit/eval cover both profiles, stale state, provenance and false-positive controls",
+        "Planner/Reviewer/Executor joint regression covers approval, stage and final lifecycle",
+        "all deterministic suites avoid Agent and network execution"
+      ],
+      "risk": "medium",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-05",
+      "title": "三 Skill CI、文档与安装面收口",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-01", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10"],
+      "acceptance_ids": ["AC-05", "AC-07", "AC-10", "AC-11", "AC-12"],
+      "nonfunctional_ids": ["NFR-01", "NFR-03", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-07", "VAL-08", "VAL-09", "VAL-11", "VAL-12"],
+      "allowed_changes": [
+        ".github/workflows/planner-executor.yml",
+        "README.md",
+        "CHANGELOG.md",
+        "skills/complex-coding-reviewer/**",
+        "skills/complex-coding-planner/tests/test_ci_contract.py",
+        "evals/complex-coding-executor/cross_skill_regression.py",
+        "skills/skill-evaluation-lab/**"
+      ],
+      "forbidden_changes": [
+        "workflow secrets or network-dependent tests",
+        "branch filters that skip ordinary branches",
+        "unrelated skill behavior changes",
+        "skill-evaluation-lab semantic code-review expansion unless required for static structure"
+      ],
+      "entry_conditions": [
+        "STG-04 completed",
+        "all local deterministic suites pass",
+        "README and workflow inventory of current skills understood"
+      ],
+      "exit_conditions": [
+        "all-branch three-OS workflow runs Planner, Reviewer and Executor suites",
+        "README/CHANGELOG describe current-only breaking contract and ownership",
+        "skill installation auto-discovers reviewer and static skill evaluation completes"
+      ],
+      "risk": "high",
+      "commit_expectation": "none"
+    },
+    {
+      "id": "STG-06",
+      "title": "最终审查、回归与交付",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12"],
+      "allowed_changes": [
+        "all files approved by STG-01 through STG-05",
+        "task-local execution evidence",
+        "minimal fixes discovered by final review"
+      ],
+      "forbidden_changes": [
+        "new feature scope or third profile",
+        "compatibility layer for old review contracts",
+        "automatic remote push or external review write",
+        "claiming fresh-context semantic evidence when user did not run it"
+      ],
+      "entry_conditions": [
+        "STG-05 completed",
+        "no unresolved blocking/major findings from stage reviews",
+        "working tree scope matches approved change map"
+      ],
+      "exit_conditions": [
+        "all required local validations and final code-review receipt pass on current target",
+        "git diff check, docs, skill validators and cross-skill lifecycle are clean",
+        "commit occurs only if separately authorized; otherwise delivery records no commit"
+      ],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "确定性脚本仅用 Python 3.12 标准库，同一目标在 Windows、Linux、macOS 产生一致 canonical digest"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "路径越界、目标不可读、schema 漂移、digest stale、证据缺失或 writer 越权一律 fail closed，写报告使用原子替换且不泄露秘密"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "SKILL.md 遵循 progressive disclosure，两个 profile 分开描述，shared contract 只有一个权威 reference，不复制长清单"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "不增加 daemon、数据库、缓存、模型服务或第三方运行依赖；none/小 scope 路径保持有界文件读取和低启动成本"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "review 输出以 relevance、comprehensiveness、conciseness、actionability 和 hallucination control 为质量目标，并披露未覆盖范围"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "review schema、target canonicalization 和 validator 只有一个实现，Planner/Executor 通过稳定 CLI 集成，避免三份规则漂移"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "单测、eval 和 CI 不需要 secrets、网络、目标代码执行、Codex、模型 API 或子代理，失败证据可复现且可定位"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/review-systems-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/review-standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/reviewer-contract-design.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-review.json",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "给出规划或代码审查任务时，skill 只路由到对应 profile；混合、未知或越界请求被澄清或拆分，不退回一套通用清单"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02", "REQ-05"],
+      "summary": "receipt 缺字段、含未知字段、开放计数错误、profile/scope 不匹配或 target 无法重建时，validator 返回稳定 REVIEW 错误并 fail closed"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-02", "REQ-05"],
+      "summary": "receipt 生成后任一目标文件或 Git identity 改变时，Planner/Executor 门禁拒绝旧 digest，只有完整新 attempt 可以恢复通过"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-03"],
+      "summary": "plan-review 对必需规划 lenses 逐项记录 evidence/status，存在开放 blocking/major、阻塞 lens 或关键限制时不能 verdict passed"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-06", "REQ-08"],
+      "summary": "managed plan 没有当前 plan-bundle 的 plan-review passed receipt，或 receipt profile、digest、finding 状态错误时，approval checker 明确拒绝"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-04"],
+      "summary": "code-review 可对 stage-delta、final-integration 和 standalone target 生成同一契约下的 scope-specific receipt，且不新增第三个 profile"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-07", "REQ-08"],
+      "summary": "Executor 缺少当前 stage-delta receipt 时不能完成 stage，缺少当前 final-integration receipt 时不能完成 task，wrong-scope/stale report 均被拒绝"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-02", "REQ-10"],
+      "summary": "reviewer 工作流前后 target digest 不变，唯一写入位于显式 review artifact 目录，provenance 真实披露 same/fresh/external/human 模式"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-02", "REQ-03", "REQ-04"],
+      "summary": "每条 finding 具有定位证据、可证伪 claim、影响、建议、confidence、severity 和 status；个人偏好或低信心猜测不能冒充 blocker"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-06", "REQ-07", "REQ-08"],
+      "summary": "Planner/Executor 不再维护正式审查 checklist、Markdown critique canonical gate 或 development_quality=passed payload，联合 fixture 只接受新契约"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-09"],
+      "summary": "deterministic eval 同时覆盖已知缺陷、clean target 和 near-miss，分别观察定位、影响、行动性、简洁性与误报约束，且不执行 Agent 或目标代码"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-01", "REQ-09", "REQ-10"],
+      "summary": "README、CHANGELOG、skill metadata、安装发现与全分支 Windows/Ubuntu/macOS CI 均反映三 skill 边界，并生成三套 deterministic evidence"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-08", "AC-09", "NFR-01", "NFR-02", "NFR-04", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/reviewer-unit-tests.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-04", "AC-06", "AC-09", "AC-11", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --output artifacts/validation/reviewer-evals.json",
+      "evidence_path": "artifacts/validation/reviewer-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-04", "AC-05", "AC-10", "NFR-02", "NFR-06"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/planner-unit-tests.txt"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-04", "AC-05", "AC-08", "AC-10", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output artifacts/validation/planner-evals.json",
+      "evidence_path": "artifacts/validation/planner-evals.json"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-03", "AC-06", "AC-07", "AC-10", "NFR-01", "NFR-02", "NFR-06"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/executor-unit-tests.txt"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-06", "AC-07", "AC-08", "AC-10", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output artifacts/validation/executor-evals.json",
+      "evidence_path": "artifacts/validation/executor-evals.json"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-05", "AC-07", "AC-10", "AC-12", "NFR-01", "NFR-02", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer",
+      "evidence_path": "artifacts/validation/cross-skill-regression.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-12", "NFR-03"],
+      "command": "python -u -X utf8 -B C:/Users/CountRa/.codex/skills/.system/skill-creator/scripts/quick_validate.py skills/complex-coding-reviewer",
+      "evidence_path": "artifacts/validation/reviewer-skill-validation.txt"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-08", "AC-11", "AC-12", "NFR-03", "NFR-05", "NFR-07"],
+      "command": "使用 skill-evaluation-lab 对 skills/complex-coding-reviewer 执行 static-only 评估并由当前 Agent 完成语义判断，不运行 Codex 或目标代码",
+      "evidence_path": "artifacts/validation/reviewer-skill-evaluation.md"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "manual",
+      "required": false,
+      "covers": ["AC-04", "AC-06", "AC-09", "AC-11", "NFR-05"],
+      "command": "用户显式在 fresh task 中分别运行 plan-review 与 code-review seeded case，并导入 target hash、漏报、误报和行动性观察",
+      "evidence_path": "artifacts/validation/user-forward-test.md"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-11", "AC-12", "NFR-01", "NFR-07"],
+      "command": "验证 .github workflow 对所有分支、三个 OS 运行 Planner/Reviewer/Executor unit 与 eval，并上传三套 evidence",
+      "evidence_path": "artifacts/validation/ci-contract.txt"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-08", "AC-10", "AC-12", "NFR-02", "NFR-06", "NFR-07"],
+      "command": "git diff --check，并静态确认 Planner/Executor 不再包含 canonical review checklist、旧 critique regex 或 development_quality review payload",
+      "evidence_path": "artifacts/validation/final-static-checks.txt"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "dependency_selection": {
+    "mode": "none",
+    "necessity_result": "not-triggered",
+    "decision_ids": [],
+    "evidence_artifact_ids": [],
+    "decisions": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "STG-02 完成后执行计划内 self-hosting amendment，轮换旧 review ledger 并携带 STG-01/STG-02，再切换 Executor contract",
+    "新增第三个 review profile、改变 reviewer writer 边界或允许自动修改 target",
+    "review receipt、target canonicalization、severity/verdict、stale 或 supersedes 语义发生实质变化",
+    "Planner approval、Executor stage/final、ledger payload、stage DAG 或 required validation 边界变化",
+    "引入第三方运行依赖、后台服务、模型调用、自动 Codex/子代理、远端写入、Git write 或 secrets",
+    "实现需要修改 change map 之外的其它 skill 公共行为或保留旧契约兼容层",
+    "active task pointer 冲突不能按批准的四态策略安全解决"
+  ],
+  "stop_conditions": [
+    "用户请求暂停或尚未批准 implementation",
+    "STG-02 已完成但 self-hosting amendment 尚未获得用户重新批准",
+    "任一 reapproval trigger 发生",
+    "当前 target 无法安全重建、路径越界或审查证据缺失",
+    "blocking/major finding 或 required validation 在有界修复后仍未关闭",
+    "需要自动 Agent/模型调用、远端写入、提权或新增依赖但未获得相应批准",
+    "非终态 active task pointer 属于另一任务",
+    "无法真实声明 reviewer provenance 或关键专业 lens 需要不可用的 expert"
+  ]
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Complex Coding Reviewer"
+  short_description: "以规划和代码双 profile 生成目标绑定的工程审查证据"
+  default_prompt: "Use $complex-coding-reviewer to review this plan or code target and produce a validated review receipt."
