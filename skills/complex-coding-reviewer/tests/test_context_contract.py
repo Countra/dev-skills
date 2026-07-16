@@ -251,6 +251,32 @@ class ContextContractTests(unittest.TestCase):
             result = validate_receipt(current, workspace=root, previous_receipt=previous)
             self.assertEqual(1, result["lineage_summary"]["accounted_finding_count"])
 
+    def test_unresolved_lineage_cannot_downgrade_severity(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            previous = receipt_for_target(create_file_target(root), root=root)
+            previous["findings"] = [finding(severity="major")]
+            previous["coverage"]["requirement_checks"][0].update(
+                {
+                    "status": "violated",
+                    "finding_ids": ["FIND-001"],
+                    "gap_ids": [],
+                    "summary": "当前实现存在 major finding。",
+                }
+            )
+            update_counts_and_verdict(previous)
+            current = deepcopy(previous)
+            current["review_id"] = "REV-CODE-002"
+            current["supersedes_review_id"] = previous["review_id"]
+            current["findings"][0]["severity"] = "minor"
+            current["findings"][0]["origin"] = {
+                "review_id": previous["review_id"],
+                "finding_id": "FIND-001",
+            }
+            update_counts_and_verdict(current)
+            with self.assertRaisesRegex(ReviewError, "REVIEW_LINEAGE_SEVERITY_DOWNGRADE"):
+                validate_receipt(current, workspace=root, previous_receipt=previous)
+
     def test_package_binds_both_digests_without_execution(self) -> None:
         with writable_tempdir() as temp:
             root = Path(temp)
@@ -265,6 +291,18 @@ class ContextContractTests(unittest.TestCase):
             self.assertEqual(receipt["context"]["digest"], package["context_digest"])
             self.assertFalse(package["truncated"])
             self.assertGreater(package["path_count"], 0)
+
+    def test_package_rejects_stale_file_target(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
+            (root / "src" / "example.py").write_text("changed = True\n", encoding="utf-8")
+            with self.assertRaisesRegex(ReviewError, "REVIEW_TARGET_STALE"):
+                build_review_package(
+                    receipt["target"],
+                    receipt["context"],
+                    workspace=root,
+                )
 
     def test_commit_range_package_reads_head_object_not_worktree(self) -> None:
         with writable_tempdir() as temp:

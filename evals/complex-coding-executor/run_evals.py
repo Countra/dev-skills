@@ -15,6 +15,7 @@ from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable
+from unittest import mock
 
 from cli_scenarios import (
     create_review_evidence,
@@ -375,6 +376,18 @@ def run_regression(bundle: Any, case: dict[str, Any]) -> dict[str, Any]:
         if (result["mode"], result["result"]) != ("none", "not-applicable"):
             raise AssertionError(f"none 快路径返回异常：{result}")
         return {"mode": result["mode"], "result": result["result"]}
+    if scenario == "future-checker-ignored":
+        approve(bundle)
+        with mock.patch(
+            "harness_execution.run_planner_approval_check",
+            side_effect=RuntimeError("future checker must not run"),
+        ) as checker:
+            attestation = check_preflight(bundle)
+        checker.assert_not_called()
+        return {
+            "task_id": attestation["task_id"],
+            "future_checker_calls": checker.call_count,
+        }
     if scenario == "dependency-stale-recheck":
         runtime_path = configure_dependency_case(
             bundle,
@@ -444,6 +457,18 @@ def run_regression(bundle: Any, case: dict[str, Any]) -> dict[str, Any]:
         approve(bundle)
         bundle.plan_path.write_text(
             bundle.plan_path.read_text(encoding="utf-8") + "\nTampered.\n",
+            encoding="utf-8",
+        )
+        code = expect_error(expected, lambda: check_preflight(bundle))
+    elif scenario in {"attestation-task-mismatch", "attestation-revision-mismatch"}:
+        approve(bundle)
+        attestation = json.loads(bundle.attestation_path.read_text(encoding="utf-8"))
+        if scenario == "attestation-task-mismatch":
+            attestation["task_id"] = "another-task"
+        else:
+            attestation["plan_revision"] = int(attestation["plan_revision"]) + 1
+        bundle.attestation_path.write_text(
+            json.dumps(attestation, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
         code = expect_error(expected, lambda: check_preflight(bundle))

@@ -279,6 +279,12 @@ def apply_mutation(value: dict[str, Any], mutation: str, root: Path) -> None:
         value["reviewer"]["independence_claim"] = True
     elif mutation == "stale-target":
         (root / "src" / "service.py").write_text("def value():\n    return 43\n", encoding="utf-8")
+    elif mutation == "stale-context":
+        brief = next(item for item in value["context"]["manifest"] if item["role"] == "brief")
+        brief_path = root / brief["path"]
+        brief_path.write_text(brief_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    elif mutation == "unbound-lens-evidence":
+        value["lenses"][0]["evidence_refs"] = ["outside.py"]
     elif mutation == "unknown-root-field":
         value["noncanonical"] = True
     elif mutation == "plan-target-mismatch":

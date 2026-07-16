@@ -21,6 +21,7 @@ from harness_amendment import (  # noqa: E402
     validate_archive,
 )
 from harness_attest_plan import (  # noqa: E402
+    activate_mode,
     ensure_attestation_write_allowed,
     write_mode,
 )
@@ -270,6 +271,54 @@ class AmendmentTest(unittest.TestCase):
             ):
                 write_mode(bundle, args)
         self.assertFalse(bundle.attestation_path.exists())
+
+    def test_approval_checker_failure_does_not_write_attestation(self) -> None:
+        _, _, bundle = self.make_bundle()
+        bundle.attestation_path.unlink()
+        args = Namespace(
+            approved_by="user",
+            approval_summary="approve implementation",
+            commit_authorized=False,
+            external_write_authorized=False,
+            elevated_tool_authorized=False,
+            approved_at="2026-07-10T00:00:00+00:00",
+        )
+        with mock.patch(
+            "harness_attest_plan.run_planner_approval_check",
+            side_effect=RuntimeError("approval failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "approval failed"):
+                write_mode(bundle, args)
+        self.assertFalse(bundle.attestation_path.exists())
+
+    def test_activation_checker_failure_keeps_runtime_unchanged(self) -> None:
+        workspace, task_dir, bundle = self.make_bundle()
+        self.complete_first_stage(bundle)
+        self.request_amendment(bundle)
+        archive_current_revision(bundle)
+        archive_root = revision_archive_dir(bundle, 1)
+        (task_dir / "execution-plan.md").write_text("# revision 2\n", encoding="utf-8")
+        (task_dir / "plan-contract.json").write_text(
+            json.dumps(contract(2, include_second_stage=True), ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        new_bundle = resolve_task_bundle(workspace, ".harness/tasks/task")
+        self.approve(new_bundle, "revision 2")
+        ledger_before = new_bundle.ledger_path.read_bytes()
+        state_before = new_bundle.run_state_path.read_bytes()
+        args = Namespace(
+            archive_dir=str(archive_root),
+            carry_stage=["STG-01"],
+            occurred_at="2026-07-10T00:01:00+00:00",
+        )
+        with mock.patch(
+            "harness_attest_plan.run_planner_approval_check",
+            side_effect=RuntimeError("approval failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "approval failed"):
+                activate_mode(new_bundle, args)
+        self.assertEqual(ledger_before, new_bundle.ledger_path.read_bytes())
+        self.assertEqual(state_before, new_bundle.run_state_path.read_bytes())
 
     def test_changed_stage_semantics_cannot_be_carried(self) -> None:
         workspace, task_dir, bundle = self.make_bundle()

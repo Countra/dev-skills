@@ -22,6 +22,7 @@ from harness_event_writer import EventWriteError, append_event_and_update  # noq
 from harness_review import ReviewGateError  # noqa: E402
 from harness_execution import (  # noqa: E402
     ExecutionError,
+    check_preflight,
     reconcile_snapshot,
     run_planner_approval_check,
 )
@@ -116,6 +117,27 @@ class RecoveryTest(unittest.TestCase):
         bundle.plan_path.write_text("# changed plan\n", encoding="utf-8")
         with self.assertRaisesRegex(AttestationError, "ATTESTATION_HASH_MISMATCH"):
             validate_attestation(bundle)
+
+    def test_attestation_rejects_wrong_task_and_revision(self) -> None:
+        bundle = self.make_bundle()
+        original = json.loads(bundle.attestation_path.read_text(encoding="utf-8"))
+        cases = (
+            ("task_id", "another-task", "ATTESTATION_TASK_MISMATCH"),
+            ("plan_revision", 2, "ATTESTATION_REVISION_MISMATCH"),
+        )
+        for field, value, code in cases:
+            with self.subTest(field=field):
+                tampered = dict(original)
+                tampered[field] = value
+                with self.assertRaisesRegex(AttestationError, code):
+                    validate_attestation(bundle, tampered)
+
+    def test_preflight_does_not_rerun_future_planner_checker(self) -> None:
+        bundle = self.make_bundle()
+        with mock.patch("harness_execution.run_planner_approval_check") as checker:
+            attestation = check_preflight(bundle)
+        checker.assert_not_called()
+        self.assertEqual(bundle.task_id, attestation["task_id"])
 
     def test_event_append_updates_snapshot(self) -> None:
         bundle = self.make_bundle()

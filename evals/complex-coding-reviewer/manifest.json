@@ -73,6 +73,22 @@
       "expected_code": "REVIEW_TARGET_STALE"
     },
     {
+      "id": "code-stale-context",
+      "profile": "code-review",
+      "category": "known-defect",
+      "mutation": "stale-context",
+      "expected_valid": false,
+      "expected_code": "REVIEW_CONTEXT_STALE"
+    },
+    {
+      "id": "code-unbound-lens-evidence",
+      "profile": "code-review",
+      "category": "known-defect",
+      "mutation": "unbound-lens-evidence",
+      "expected_valid": false,
+      "expected_code": "REVIEW_COVERAGE_EVIDENCE_INVALID"
+    },
+    {
       "id": "code-unknown-root-field",
       "profile": "code-review",
       "category": "known-defect",
