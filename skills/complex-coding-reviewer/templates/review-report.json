@@ -16,6 +16,16 @@
     "digest": "0000000000000000000000000000000000000000000000000000000000000000",
     "manifest": []
   },
+  "context": {
+    "kind": "review-context",
+    "identity": {
+      "root": "task-dir",
+      "label": "REPLACE-ME"
+    },
+    "digest_algorithm": "sha256",
+    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "manifest": []
+  },
   "reviewer": {
     "mode": "same-context",
     "identity": "REPLACE-ME",
@@ -23,6 +33,12 @@
     "capability_limits": []
   },
   "standards": [],
+  "coverage": {
+    "target_paths": [],
+    "requirement_checks": [],
+    "risk_checks": [],
+    "context_expansions": []
+  },
   "lenses": [
     {
       "id": "PLAN-INTENT",
@@ -79,7 +95,9 @@
       "summary": "REPLACE-ME"
     }
   ],
+  "strengths": [],
   "findings": [],
+  "verification_gaps": [],
   "verdict": "passed",
   "open_counts": {
     "blocking": 0,

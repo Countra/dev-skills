@@ -17,6 +17,7 @@ REVIEWER_SCRIPTS_DIR = (
 sys.path.insert(0, str(SCRIPTS_DIR))
 sys.path.insert(0, str(REVIEWER_SCRIPTS_DIR))
 
+from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
 from complex_coding_reviewer.errors import ReviewError  # noqa: E402
 from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
@@ -37,14 +38,57 @@ def write_json(path: Path, value: object) -> None:
     )
 
 
+PLAN_REVIEW_BRIEF_PATH = "artifacts/reviews/plan-review-brief.json"
+
+
+def _plan_review_brief(task_dir: Path) -> dict[str, object]:
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    requirement_refs = [contract["goal"]["id"]]
+    for field in ("requirements", "acceptance_criteria", "nonfunctional_requirements"):
+        requirement_refs.extend(item["id"] for item in contract[field])
+    constraint_refs = [item["id"] for item in contract["stages"]]
+    constraint_refs.extend(item["id"] for item in contract["validations"])
+    return {
+        "profile": "plan-review",
+        "scope": {
+            "kind": "managed-plan",
+            "task_id": contract["task_id"],
+            "plan_revision": contract["plan_revision"],
+        },
+        "summary": "验证当前 managed plan bundle 满足批准与执行要求。",
+        "requirement_refs": sorted(requirement_refs),
+        "constraint_refs": sorted(constraint_refs),
+        "claim_refs": [],
+        "requested_risk_focus": [],
+        "created_at": "2026-07-16T00:00:00+00:00",
+    }
+
+
 def valid_review_receipt(
-    target: dict[str, object],
+    task_dir: Path,
     *,
     review_id: str = "REV-PLAN-001",
     supersedes_review_id: str | None = None,
 ) -> dict[str, object]:
+    brief = _plan_review_brief(task_dir)
+    write_json(task_dir / PLAN_REVIEW_BRIEF_PATH, brief)
+    target = build_plan_bundle_target(task_dir)
     identity = target["identity"]
     assert isinstance(identity, dict)
+    context_entries = [(PLAN_REVIEW_BRIEF_PATH, "brief")]
+    context_entries.extend(
+        (str(item["path"]), "requirement")
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != PLAN_REVIEW_BRIEF_PATH
+    )
+    context = build_context_target(
+        task_dir,
+        root_kind="task-dir",
+        label=f"{review_id.lower()}-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
+    evidence_ref = PLAN_REVIEW_BRIEF_PATH
     return {
         "review_id": review_id,
         "profile": "plan-review",
@@ -54,6 +98,7 @@ def valid_review_receipt(
             "plan_revision": identity["plan_revision"],
         },
         "target": target,
+        "context": context,
         "reviewer": {
             "mode": "same-context",
             "identity": "planner-integration-test",
@@ -68,16 +113,53 @@ def valid_review_receipt(
                 "applicability": "适用于当前 plan bundle。",
             }
         ],
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "fixture 已覆盖完整 plan target。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": requirement_ref,
+                    "status": "satisfied",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "当前 plan bundle 提供了可审计证据。",
+                }
+                for requirement_ref in brief["requirement_refs"]
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
         "lenses": [
             {
                 "id": lens,
                 "status": "reviewed",
-                "evidence_refs": ["execution-plan.md"],
+                "evidence_refs": [evidence_ref],
                 "summary": f"{lens} 已基于当前 plan bundle 完成审查。",
             }
             for lens in PLAN_LENSES
         ],
+        "strengths": [],
         "findings": [],
+        "verification_gaps": [],
         "verdict": "passed",
         "open_counts": {
             "blocking": 0,
@@ -112,7 +194,14 @@ def valid_contract() -> dict[str, object]:
                 "path": "artifacts/reviews/plan-review-attempt-1.json",
                 "required": True,
                 "approval_included": True,
-            }
+            },
+            {
+                "id": "ART-09",
+                "kind": "other",
+                "path": PLAN_REVIEW_BRIEF_PATH,
+                "required": True,
+                "approval_included": True,
+            },
         ],
         "stages": [
             {
@@ -249,7 +338,10 @@ def valid_plan(extra: str = "") -> str:
                 "REQ-01 AC-01 NFR-01 VAL-01 src/ unrelated/"
             )
         elif heading == "Artifact Index":
-            body = "ART-01 artifacts/reviews/plan-review-attempt-1.json"
+            body = (
+                "ART-01 artifacts/reviews/plan-review-attempt-1.json "
+                f"ART-09 {PLAN_REVIEW_BRIEF_PATH}"
+            )
         sections.append(f"## {heading}\n\n{body}")
     sections.append(extra)
     return "\n\n".join(sections) + "\n"
@@ -283,19 +375,16 @@ class PlannerBundleTest(unittest.TestCase):
         ]
         if len(reviews) != 1 or not isinstance(reviews[0].get("path"), str):
             return None
-        try:
-            target = build_plan_bundle_target(task_dir)
-        except ReviewError:
-            return None
         path = task_dir / reviews[0]["path"]
-        write_json(
-            path,
-            valid_review_receipt(
-                target,
+        try:
+            receipt = valid_review_receipt(
+                task_dir,
                 review_id=review_id,
                 supersedes_review_id=supersedes_review_id,
-            ),
-        )
+            )
+        except (KeyError, ReviewError):
+            return None
+        write_json(path, receipt)
         return path
 
     def error_codes(self, task_dir: Path, mode: str = "approval") -> set[str]:
@@ -303,6 +392,30 @@ class PlannerBundleTest(unittest.TestCase):
 
     def test_valid_bundle_passes_approval(self) -> None:
         self.assertEqual(set(), self.error_codes(self.make_task()))
+
+    def test_plan_review_context_must_be_approval_included(self) -> None:
+        task_dir = self.make_task()
+        extra = task_dir / "unapproved-note.md"
+        extra.write_text("unapproved context\n", encoding="utf-8")
+        path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        context = receipt["context"]
+        entries = [
+            (item["path"], item["role"])
+            for item in context["manifest"]
+        ]
+        entries.append(("unapproved-note.md", "other"))
+        receipt["context"] = build_context_target(
+            task_dir,
+            root_kind="task-dir",
+            label=context["identity"]["label"],
+            entries=entries,
+        )
+        write_json(path, receipt)
+        self.assertIn(
+            "TASK_ARTIFACT_REVIEW_CONTEXT_UNATTESTED",
+            self.error_codes(task_dir),
+        )
 
     def test_missing_plan_review_receipt_is_rejected(self) -> None:
         task_dir = self.make_task()
@@ -352,6 +465,8 @@ class PlannerBundleTest(unittest.TestCase):
         receipt["findings"] = [
             {
                 "id": "FIND-001",
+                "category": "correctness",
+                "origin": {"review_id": None, "finding_id": None},
                 "severity": "major",
                 "status": "open",
                 "title": "验证无法证伪验收",
@@ -366,6 +481,7 @@ class PlannerBundleTest(unittest.TestCase):
                         "artifact_ref": None,
                         "standard_ref": None,
                         "detail": "当前验证章节缺少结果断言。",
+                        "claim_source": "read",
                     }
                 ],
                 "confidence": "high",
@@ -373,6 +489,14 @@ class PlannerBundleTest(unittest.TestCase):
             }
         ]
         receipt["verdict"] = "changes_required"
+        requirement_check = receipt["coverage"]["requirement_checks"][0]
+        requirement_check.update(
+            {
+                "status": "violated",
+                "finding_ids": ["FIND-001"],
+                "summary": "当前验证不足以证明要求。",
+            }
+        )
         receipt["open_counts"] = {
             "blocking": 0,
             "major": 1,

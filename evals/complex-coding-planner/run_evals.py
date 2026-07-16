@@ -20,6 +20,7 @@ REVIEWER_SCRIPTS = REPO_ROOT / "skills" / "complex-coding-reviewer" / "scripts"
 sys.path.insert(0, str(REVIEWER_SCRIPTS))
 
 from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
+from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
 
 
@@ -106,12 +107,14 @@ def artifact_specs(profile: str) -> list[dict[str, Any]]:
     kinds = [] if profile == "lite" else ["architecture"]
     if profile == "full":
         kinds = ["research", "standards", "architecture", "validation"]
+    kinds.append("other")
     kinds.append("review")
     paths = {
         "research": "artifacts/research/findings.md",
         "standards": "artifacts/standards/index.md",
         "architecture": "artifacts/architecture/change-map.md",
         "validation": "artifacts/validation/traceability.md",
+        "other": "artifacts/reviews/plan-review-brief.json",
         "review": "artifacts/reviews/plan-review-attempt-1.json",
     }
     return [
@@ -274,8 +277,38 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     )
 
 
-def review_receipt(target: dict[str, Any]) -> dict[str, Any]:
+def review_receipt(task_dir: Path) -> dict[str, Any]:
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    target = build_plan_bundle_target(task_dir)
     identity = target["identity"]
+    brief_path = "artifacts/reviews/plan-review-brief.json"
+    requirement_refs = sorted(
+        [
+            contract["goal"]["id"],
+            *(item["id"] for item in contract["requirements"]),
+            *(item["id"] for item in contract["acceptance_criteria"]),
+            *(item["id"] for item in contract["nonfunctional_requirements"]),
+        ]
+    )
+    constraint_refs = sorted(
+        [
+            *(item["id"] for item in contract["stages"]),
+            *(item["id"] for item in contract["validations"]),
+        ]
+    )
+    context_entries = [(brief_path, "brief")]
+    context_entries.extend(
+        (str(item["path"]), "requirement")
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != brief_path
+    )
+    context = build_context_target(
+        task_dir,
+        root_kind="task-dir",
+        label="rev-plan-001-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
     return {
         "review_id": "REV-PLAN-001",
         "profile": "plan-review",
@@ -285,6 +318,7 @@ def review_receipt(target: dict[str, Any]) -> dict[str, Any]:
             "plan_revision": identity["plan_revision"],
         },
         "target": target,
+        "context": context,
         "reviewer": {
             "mode": "same-context",
             "identity": "planner-deterministic-eval",
@@ -299,16 +333,53 @@ def review_receipt(target: dict[str, Any]) -> dict[str, Any]:
                 "applicability": "适用于当前 plan bundle。",
             }
         ],
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "fixture 已覆盖完整 plan target。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": requirement_ref,
+                    "status": "satisfied",
+                    "evidence_refs": [brief_path],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "fixture plan bundle 提供了直接证据。",
+                }
+                for requirement_ref in requirement_refs
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [brief_path],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
         "lenses": [
             {
                 "id": lens,
                 "status": "reviewed",
-                "evidence_refs": ["execution-plan.md"],
+                "evidence_refs": [brief_path],
                 "summary": f"{lens} 已基于 fixture 证据完成审查。",
             }
             for lens in PLAN_LENSES
         ],
+        "strengths": [],
         "findings": [],
+        "verification_gaps": [],
         "verdict": "passed",
         "open_counts": {
             "blocking": 0,
@@ -328,6 +399,8 @@ def add_open_major(receipt: dict[str, Any]) -> None:
     receipt["findings"] = [
         {
             "id": "FIND-001",
+            "category": "correctness",
+            "origin": {"review_id": None, "finding_id": None},
             "severity": "major",
             "status": "open",
             "title": "验证无法证伪验收",
@@ -342,6 +415,7 @@ def add_open_major(receipt: dict[str, Any]) -> None:
                     "artifact_ref": None,
                     "standard_ref": None,
                     "detail": "验证章节缺少行为结果断言。",
+                    "claim_source": "read",
                 }
             ],
             "confidence": "high",
@@ -349,6 +423,13 @@ def add_open_major(receipt: dict[str, Any]) -> None:
         }
     ]
     receipt["verdict"] = "changes_required"
+    receipt["coverage"]["requirement_checks"][0].update(
+        {
+            "status": "violated",
+            "finding_ids": ["FIND-001"],
+            "summary": "当前验证不足以证明要求。",
+        }
+    )
     receipt["open_counts"] = {
         "blocking": 0,
         "major": 1,
@@ -369,6 +450,37 @@ def write_artifacts(
             continue
         path = task_dir / artifact["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
+        if artifact["path"] == "artifacts/reviews/plan-review-brief.json":
+            write_json(
+                path,
+                {
+                    "profile": "plan-review",
+                    "scope": {
+                        "kind": "managed-plan",
+                        "task_id": contract["task_id"],
+                        "plan_revision": contract["plan_revision"],
+                    },
+                    "summary": "验证当前 fixture plan bundle。",
+                    "requirement_refs": sorted(
+                        [
+                            contract["goal"]["id"],
+                            *(item["id"] for item in contract["requirements"]),
+                            *(item["id"] for item in contract["acceptance_criteria"]),
+                            *(item["id"] for item in contract["nonfunctional_requirements"]),
+                        ]
+                    ),
+                    "constraint_refs": sorted(
+                        [
+                            *(item["id"] for item in contract["stages"]),
+                            *(item["id"] for item in contract["validations"]),
+                        ]
+                    ),
+                    "claim_refs": [],
+                    "requested_risk_focus": [],
+                    "created_at": "2026-07-16T00:00:00+00:00",
+                },
+            )
+            continue
         body = (
             f"# {artifact['kind'].title()} Evidence\n\n"
             f"Artifact ID: {artifact['id']}\n\n"
@@ -401,7 +513,7 @@ def write_current_review(
             encoding="utf-8",
         )
         return
-    receipt = review_receipt(build_plan_bundle_target(task_dir))
+    receipt = review_receipt(task_dir)
     if mutation == "review-wrong-profile":
         receipt["profile"] = "code-review"
     elif mutation == "review-open-major":

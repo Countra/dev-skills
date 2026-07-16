@@ -37,6 +37,7 @@ def render_receipt(receipt: dict[str, Any]) -> str:
         f"- Scope: `{receipt['scope']['kind']}`",
         f"- Verdict: `{receipt['verdict']}`",
         f"- Target SHA-256: `{receipt['target']['digest']}`",
+        f"- Context SHA-256: `{receipt['context']['digest']}`",
         f"- Reviewer: `{receipt['reviewer']['mode']}` / `{receipt['reviewer']['identity']}`",
         "",
         "## Findings",
@@ -50,6 +51,7 @@ def render_receipt(receipt: dict[str, Any]) -> str:
                 f"### {finding['id']} [{finding['severity']}] {finding['title']}",
                 "",
                 f"- Status: `{finding['status']}`",
+                f"- Category: `{finding['category']}`",
                 f"- Confidence: `{finding['confidence']}`",
                 f"- Claim: {finding['claim']}",
                 f"- Impact: {finding['impact']}",
@@ -58,13 +60,45 @@ def render_receipt(receipt: dict[str, Any]) -> str:
             ]
         )
         for evidence in finding["evidence"]:
-            lines.append(f"  - {_location(evidence)}: {evidence['detail']}")
+            lines.append(
+                f"  - [{evidence['claim_source']}] {_location(evidence)}: {evidence['detail']}"
+            )
+        origin = finding["origin"]
+        if origin["review_id"]:
+            lines.append(
+                f"- Origin: `{origin['review_id']}` / `{origin['finding_id']}`"
+            )
         if finding["disposition_reason"]:
             lines.append(f"- Disposition: {finding['disposition_reason']}")
         lines.append("")
-    lines.extend(["## Lens Coverage", ""])
+    lines.extend(["## Verification Gaps", ""])
+    if not receipt["verification_gaps"]:
+        lines.append("No verification gaps.")
+    for gap in receipt["verification_gaps"]:
+        lines.extend(
+            [
+                f"- `{gap['id']}` [{gap['severity']}] owner=`{gap['owner']}`: {gap['claim']}",
+                f"  Needed evidence: {gap['needed_evidence']}",
+            ]
+        )
+    lines.extend(["", "## Coverage", ""])
+    coverage = receipt["coverage"]
+    lines.extend(
+        [
+            f"- Target paths: {len(coverage['target_paths'])}",
+            f"- Requirements: {len(coverage['requirement_checks'])}",
+            f"- Risk checks: {len(coverage['risk_checks'])}",
+            f"- Context expansions: {len(coverage['context_expansions'])}",
+        ]
+    )
+    lines.extend(["", "## Lens Coverage", ""])
     for lens in receipt["lenses"]:
         lines.append(f"- `{lens['id']}` [{lens['status']}]: {lens['summary']}")
+    lines.extend(["", "## Evidence-Bound Strengths", ""])
+    if not receipt["strengths"]:
+        lines.append("No strengths recorded.")
+    for strength in receipt["strengths"]:
+        lines.append(f"- `{strength['id']}`: {strength['claim']}")
     lines.extend(["", "## Summary", "", receipt["summary"]])
     if receipt["limitations"]:
         lines.extend(["", "## Limitations", ""])

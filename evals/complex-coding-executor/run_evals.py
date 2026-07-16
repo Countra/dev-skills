@@ -21,6 +21,8 @@ from cli_scenarios import (
     initialize_review_repository,
     run_amendment_cli,
     run_complete_cli,
+    run_reviewer_target,
+    write_validation_evidence,
 )
 
 
@@ -137,16 +139,34 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
             stage_id=stage_id,
             attempt=1,
         )
+        target = run_reviewer_target(
+            bundle.workspace,
+            stage_id=stage_id,
+            attempt=1,
+        )
         for validation_id in stage["validation_ids"]:
+            evidence_ref = write_validation_evidence(
+                bundle.task_dir,
+                stage_id,
+                validation_id,
+            )
             append_event_and_update(
                 bundle,
                 "validation_recorded",
                 stage_id=stage_id,
+                attempt=1,
                 payload={
                     "validation_id": validation_id,
                     "result": "passed",
+                    "command": f"deterministic-eval::{validation_id}",
+                    "claim_source": "observed",
+                    "stage_attempt": 1,
+                    "target_digest": target["digest"],
+                    "exit_code": 0,
                     "summary": "deterministic validation passed",
+                    "claim_boundary": "只证明当前 stage target 的 deterministic fixture。",
                 },
+                evidence_refs=[evidence_ref],
             )
         stage_review, stage_report_ref = create_review_evidence(
             bundle.workspace,
@@ -157,6 +177,7 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
                 "attempt": 1,
             },
             review_id=f"REV-CODE-{stage_id}-A1",
+            target=target,
         )
         append_event_and_update(
             bundle,

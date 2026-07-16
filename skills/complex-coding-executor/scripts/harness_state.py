@@ -11,6 +11,7 @@ from harness_state_schema import (
     StateError,
     validate_event,
     validate_review_record,
+    validate_validation_record,
 )
 
 
@@ -163,7 +164,7 @@ def apply_event(
     state: dict[str, Any],
     event: dict[str, Any],
     definitions: dict[str, dict[str, Any]],
-    passed_validations: dict[str, set[str]],
+    passed_validations: dict[str, dict[str, dict[str, Any]]],
     review_records: dict[str, Any],
     attempts: dict[str, int],
     required_validations: set[str],
@@ -244,25 +245,27 @@ def apply_event(
             "RUN_STATE_STAGE_MISMATCH",
             "validation_recorded 必须对应当前 stage。",
         )
-        validation_id = payload.get("validation_id")
+        validation = validate_validation_record(
+            payload,
+            attempt=event.get("attempt"),
+        )
+        require(
+            event.get("attempt") == attempts.get(str(stage_id)),
+            "RUN_STATE_ATTEMPT_SEQUENCE",
+            "validation_recorded attempt 与当前 attempt 不一致。",
+        )
+        validation_id = validation["validation_id"]
         allowed_ids = set(definitions[str(stage_id)].get("validation_ids", []))
         require(
             validation_id in allowed_ids,
             "RUN_STATE_VALIDATION_UNKNOWN",
             f"stage 未声明 validation：{validation_id}",
         )
-        result = payload.get("result")
-        require(
-            result in {"passed", "failed"},
-            "RUN_STATE_VALIDATION_RESULT_INVALID",
-            "validation result 必须是 passed 或 failed。",
-        )
+        result = validation["result"]
         if result == "passed":
-            require_payload_strings(payload, event_type, ("summary",))
-            passed_validations.setdefault(str(stage_id), set()).add(validation_id)
+            passed_validations.setdefault(str(stage_id), {})[validation_id] = validation
         else:
-            require_payload_strings(payload, event_type, ("reason",))
-            passed_validations.setdefault(str(stage_id), set()).discard(validation_id)
+            passed_validations.setdefault(str(stage_id), {}).pop(validation_id, None)
             stage_reviews.pop(str(stage_id), None)
     elif event_type == "review_recorded":
         compact = validate_review_record(
@@ -305,8 +308,9 @@ def apply_event(
         required_ids = set(
             definitions[str(stage_id)].get("validation_ids", [])
         ) & required_validations
+        validation_records = passed_validations.get(str(stage_id), {})
         require(
-            required_ids <= passed_validations.get(str(stage_id), set()),
+            required_ids <= set(validation_records),
             "RUN_STATE_VALIDATION_INCOMPLETE",
             f"stage 必需验证未全部通过：{stage_id}",
         )
@@ -321,6 +325,19 @@ def apply_event(
             and review_scope.get("attempt") == attempts.get(str(stage_id)),
             "RUN_STATE_REVIEW_SCOPE_MISMATCH",
             f"stage review 与当前 attempt 不一致：{stage_id}",
+        )
+        review_digest = stage_reviews[str(stage_id)]["target_digest"]
+        mismatched_validations = sorted(
+            validation_id
+            for validation_id, record in validation_records.items()
+            if record.get("target_digest") != review_digest
+            or record.get("stage_attempt") != attempts.get(str(stage_id))
+        )
+        require(
+            not mismatched_validations,
+            "RUN_STATE_VALIDATION_TARGET_MISMATCH",
+            "validation evidence 与当前 stage review target/attempt 不一致："
+            + ", ".join(mismatched_validations),
         )
         state["current_stage_id"] = None
         state["completed_stage_ids"].append(stage_id)
@@ -418,9 +435,10 @@ def apply_event(
             item for item in state["remaining_stage_ids"] if item not in carried_set
         ]
         for carried_stage in carried_set:
-            passed_validations[carried_stage] = set(
-                definitions[carried_stage].get("validation_ids", [])
-            )
+            passed_validations[carried_stage] = {
+                validation_id: {"result": "carried"}
+                for validation_id in definitions[carried_stage].get("validation_ids", [])
+            }
         review_records["carried_stage_ids"].update(carried_set)
         state["lifecycle"] = "in_progress"
         state["reapproval_required"] = False
@@ -492,7 +510,7 @@ def replay_events(
 ) -> ReplayResult:
     state = initial_state(contract, updated_at=initial_timestamp)
     definitions = stage_definitions(contract)
-    passed_validations: dict[str, set[str]] = {}
+    passed_validations: dict[str, dict[str, dict[str, Any]]] = {}
     review_records: dict[str, Any] = {
         "stage_reviews": {},
         "final_review": None,

@@ -55,10 +55,42 @@ def review_payload(
         "profile": "code-review",
         "scope": scope,
         "target_digest": "a" * 64,
+        "context_digest": "b" * 64,
         "verdict": verdict,
         "report_ref": "artifacts/reviews/review-001.json",
         "open_counts": counts,
+        "gap_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "total": 0,
+        },
+        "coverage_summary": {
+            "target_paths": 1,
+            "requirements": 1,
+            "risks": 6,
+            "context_expansions": 0,
+        },
+        "lineage_summary": {
+            "predecessor_review_id": None,
+            "accounted_finding_count": 0,
+        },
+        "strength_count": 0,
         "summary": "review contract validated",
+    }
+
+
+def validation_payload(*, result: str = "passed") -> dict[str, object]:
+    return {
+        "validation_id": "VAL-01",
+        "result": result,
+        "command": "python -m unittest",
+        "claim_source": "observed",
+        "stage_attempt": 1,
+        "target_digest": "a" * 64,
+        "exit_code": 0 if result == "passed" else 1,
+        "summary": "unit test passed" if result == "passed" else "regression",
+        "claim_boundary": "只证明当前 target 上的单元测试命令结果。",
     }
 
 
@@ -157,11 +189,8 @@ class StateReducerTest(unittest.TestCase):
                 3,
                 "validation_recorded",
                 stage_id="STG-01",
-                payload={
-                    "validation_id": "VAL-01",
-                    "result": "passed",
-                    "summary": "unit test passed",
-                },
+                attempt=1,
+                payload=validation_payload(),
             ),
             self.event(
                 4,
@@ -220,11 +249,8 @@ class StateReducerTest(unittest.TestCase):
                     5,
                     "validation_recorded",
                     stage_id="STG-01",
-                    payload={
-                        "validation_id": "VAL-01",
-                        "result": "failed",
-                        "reason": "regression",
-                    },
+                    attempt=1,
+                    payload=validation_payload(result="failed"),
                 ),
                 self.event(6, "stage_completed", stage_id="STG-01"),
             ]
@@ -259,7 +285,19 @@ class StateReducerTest(unittest.TestCase):
     def test_passed_validation_requires_summary(self) -> None:
         events = self.completed_events()
         events[2]["payload"].pop("summary")
-        with self.assertRaisesRegex(StateError, "RUN_STATE_EVENT_EVIDENCE_INVALID"):
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_PAYLOAD_INVALID"):
+            replay_events(contract(), events)
+
+    def test_reported_validation_cannot_pass(self) -> None:
+        events = self.completed_events()
+        events[2]["payload"]["claim_source"] = "reported"
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_PROVENANCE_INVALID"):
+            replay_events(contract(), events)
+
+    def test_stage_completion_rejects_validation_for_another_target(self) -> None:
+        events = self.completed_events()
+        events[2]["payload"]["target_digest"] = "c" * 64
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_TARGET_MISMATCH"):
             replay_events(contract(), events)
 
     def test_legacy_review_payload_field_is_rejected(self) -> None:

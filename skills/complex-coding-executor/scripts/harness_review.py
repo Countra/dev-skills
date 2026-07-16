@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from harness_review_errors import ReviewGateError
+from harness_review_context import validate_managed_context
 from harness_review_target import validate_managed_target
 from harness_state_schema import StateError, read_events, validate_review_record
 from harness_task_bundle import TaskBundle
@@ -298,15 +299,32 @@ def validate_review_gate(
         attempt=attempt,
         predecessor=predecessor,
     )
+    try:
+        events = read_events(bundle.ledger_path)
+    except StateError as exc:
+        raise ReviewGateError(exc.code, exc.message) from exc
+    validate_managed_context(
+        bundle,
+        receipt,
+        events,
+        scope_kind=scope_kind,
+        stage_id=stage_id,
+        attempt=attempt,
+    )
     expected = {
         "result": "passed" if result.get("verdict") == "passed" else "failed",
         "review_id": result.get("review_id"),
         "profile": result.get("profile"),
         "scope": result.get("scope"),
         "target_digest": result.get("target_digest"),
+        "context_digest": result.get("context_digest"),
         "verdict": result.get("verdict"),
         "report_ref": report_ref,
         "open_counts": result.get("open_counts"),
+        "gap_counts": result.get("gap_counts"),
+        "coverage_summary": result.get("coverage_summary"),
+        "lineage_summary": result.get("lineage_summary"),
+        "strength_count": result.get("strength_count"),
         "summary": result.get("summary"),
     }
     if compact != expected:

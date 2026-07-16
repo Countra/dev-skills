@@ -18,11 +18,12 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 ## 核心规则
 
 - `plan-contract.json` 是可执行约束，`execution-plan.md` 解释批准意图；不得从 prose 推断 stage、授权或状态。
-- 执行前运行 `scripts/harness_exec_check.py --mode preflight`，验证 planner approval checker、attestation 和 state replay。
+- 新 attestation 写入和 amendment 激活前由 `harness_attest_plan.py` 运行当时的 Planner approval checker；执行期运行 `scripts/harness_exec_check.py --mode preflight`，验证 attestation 不可变哈希、dependency runtime gate 和 state replay，不用未来 checker 追溯重判已批准计划。
 - 恢复或转移时运行 `--mode status|transition`；仅用 `--mode reconcile` 修复可由合法 ledger 唯一推导的 snapshot drift。
 - 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、验证、正式审查、修复与 exit。
 - standards index、`Standards Discovery Gate` 和 `Development Quality Gate` 是实现与验证输入；正式 verdict 必须使用 `complex-coding-reviewer` 的 `code-review` profile，Executor 不复制审查 rubric，也不自行声明通过。
-- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；stage 使用 `stage-delta` scope，任务完成前另需当前 `final-integration` scope。目标变化后旧 receipt stale。
+- `validation_recorded` 只接受绑定当前 attempt/target 的 closed provenance payload；只有 observed 且 exit code 0 的 task-local evidence 可以建立 passed gate，reported/not-run 只能作为受限 claim。
+- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；stage 使用 `stage-delta` scope，任务完成前另需当前 `final-integration` scope。target 或 context 变化后旧 receipt stale，brief 必须精确覆盖 contract scope 并引用当前 validation evidence。
 - contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
 - 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
 - stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。

@@ -9,7 +9,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from harness_state_errors import StateError
 from harness_time import parse_rfc3339
+from harness_validation_schema import validate_validation_record
 
 
 EVENT_FIELDS = {
@@ -72,32 +74,33 @@ REVIEW_RECORD_FIELDS = {
     "profile",
     "scope",
     "target_digest",
+    "context_digest",
     "verdict",
     "report_ref",
     "open_counts",
+    "gap_counts",
+    "coverage_summary",
+    "lineage_summary",
+    "strength_count",
     "summary",
 }
 REVIEW_COUNT_FIELDS = {"blocking", "major", "minor", "advisory", "total"}
+REVIEW_GAP_COUNT_FIELDS = {"blocking", "major", "minor", "total"}
+REVIEW_COVERAGE_FIELDS = {
+    "target_paths",
+    "requirements",
+    "risks",
+    "context_expansions",
+}
+REVIEW_LINEAGE_FIELDS = {"predecessor_review_id", "accounted_finding_count"}
 REVIEW_VERDICTS = {"passed", "changes_required", "blocked"}
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-class StateError(Exception):
-    """ledger 或 run-state 违反状态机约束。"""
-
-    def __init__(self, code: str, message: str):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-
-    def __str__(self) -> str:
-        return f"[{self.code}] {self.message}"
 
 
 @dataclass(frozen=True)
 class ReplayResult:
     state: dict[str, Any]
-    passed_validations: dict[str, set[str]]
+    passed_validations: dict[str, dict[str, dict[str, Any]]]
     stage_reviews: dict[str, dict[str, Any]]
     final_review: dict[str, Any] | None
     carried_stage_ids: set[str]
@@ -155,6 +158,32 @@ def _validate_review_scope(
     )
 
 
+def _validate_count_object(
+    value: Any,
+    fields: set[str],
+    *,
+    total_fields: tuple[str, ...],
+    code: str,
+    label: str,
+) -> dict[str, int]:
+    _require_review(
+        isinstance(value, dict) and set(value) == fields,
+        code,
+        f"review {label} 字段不完整。",
+    )
+    assert isinstance(value, dict)
+    _require_review(
+        all(
+            isinstance(item, int) and not isinstance(item, bool) and item >= 0
+            for item in value.values()
+        )
+        and value["total"] == sum(value[field] for field in total_fields),
+        code,
+        f"review {label} 必须是自洽的非负整数。",
+    )
+    return value
+
+
 def validate_review_record(
     payload: Any,
     *,
@@ -203,12 +232,13 @@ def validate_review_record(
         "RUN_STATE_REVIEW_REPORT_INVALID",
         "review report_ref 必须位于 task-dir 的 artifacts/reviews 下。",
     )
-    digest = payload.get("target_digest")
-    _require_review(
-        isinstance(digest, str) and SHA256.fullmatch(digest) is not None,
-        "RUN_STATE_REVIEW_TARGET_INVALID",
-        "review target_digest 必须是小写 SHA-256。",
-    )
+    for field in ("target_digest", "context_digest"):
+        digest = payload.get(field)
+        _require_review(
+            isinstance(digest, str) and SHA256.fullmatch(digest) is not None,
+            "RUN_STATE_REVIEW_TARGET_INVALID",
+            f"review {field} 必须是小写 SHA-256。",
+        )
     verdict = payload.get("verdict")
     _require_review(
         verdict in REVIEW_VERDICTS,
@@ -222,26 +252,60 @@ def validate_review_record(
         "RUN_STATE_REVIEW_RESULT_INVALID",
         f"review result 必须由 verdict 派生为 {expected_result}。",
     )
-    counts = payload.get("open_counts")
-    _require_review(
-        isinstance(counts, dict) and set(counts) == REVIEW_COUNT_FIELDS,
-        "RUN_STATE_REVIEW_COUNTS_INVALID",
-        "review open_counts 字段不完整。",
+    counts = _validate_count_object(
+        payload.get("open_counts"),
+        REVIEW_COUNT_FIELDS,
+        total_fields=("blocking", "major", "minor", "advisory"),
+        code="RUN_STATE_REVIEW_COUNTS_INVALID",
+        label="open_counts",
     )
-    assert isinstance(counts, dict)
+    gaps = _validate_count_object(
+        payload.get("gap_counts"),
+        REVIEW_GAP_COUNT_FIELDS,
+        total_fields=("blocking", "major", "minor"),
+        code="RUN_STATE_REVIEW_GAP_COUNTS_INVALID",
+        label="gap_counts",
+    )
+    coverage = payload.get("coverage_summary")
     _require_review(
-        all(
-            isinstance(value, int) and not isinstance(value, bool) and value >= 0
-            for value in counts.values()
-        )
-        and counts["total"]
-        == sum(counts[severity] for severity in ("blocking", "major", "minor", "advisory")),
-        "RUN_STATE_REVIEW_COUNTS_INVALID",
-        "review open_counts 必须是自洽的非负整数。",
+        isinstance(coverage, dict)
+        and set(coverage) == REVIEW_COVERAGE_FIELDS
+        and all(
+            isinstance(item, int) and not isinstance(item, bool) and item >= 0
+            for item in coverage.values()
+        ),
+        "RUN_STATE_REVIEW_COVERAGE_INVALID",
+        "review coverage_summary 必须是封闭的非负整数对象。",
+    )
+    lineage = payload.get("lineage_summary")
+    predecessor = lineage.get("predecessor_review_id") if isinstance(lineage, dict) else None
+    accounted = lineage.get("accounted_finding_count") if isinstance(lineage, dict) else None
+    _require_review(
+        isinstance(lineage, dict)
+        and set(lineage) == REVIEW_LINEAGE_FIELDS
+        and (predecessor is None or isinstance(predecessor, str) and bool(predecessor.strip()))
+        and isinstance(accounted, int)
+        and not isinstance(accounted, bool)
+        and accounted >= 0,
+        "RUN_STATE_REVIEW_LINEAGE_INVALID",
+        "review lineage_summary 无效。",
+    )
+    strength_count = payload.get("strength_count")
+    _require_review(
+        isinstance(strength_count, int)
+        and not isinstance(strength_count, bool)
+        and strength_count >= 0,
+        "RUN_STATE_REVIEW_STRENGTH_INVALID",
+        "review strength_count 必须是非负整数。",
     )
     _require_review(
         result != "passed"
-        or (counts["blocking"] == 0 and counts["major"] == 0),
+        or (
+            counts["blocking"] == 0
+            and counts["major"] == 0
+            and gaps["blocking"] == 0
+            and gaps["major"] == 0
+        ),
         "RUN_STATE_REVIEW_COUNTS_INVALID",
         "passed review 不得包含开放 blocking 或 major finding。",
     )
@@ -306,7 +370,7 @@ def validate_event(
         not isinstance(attempt, int) or isinstance(attempt, bool) or attempt < 1
     ):
         raise StateError("LEDGER_ATTEMPT_INVALID", "attempt 必须是正整数或 null。")
-    if event_type in {"stage_started", "attempt_failed"} and attempt is None:
+    if event_type in {"stage_started", "attempt_failed", "validation_recorded"} and attempt is None:
         raise StateError("LEDGER_ATTEMPT_REQUIRED", f"{event_type} 必须包含 attempt。")
     if not isinstance(event.get("payload"), dict):
         raise StateError("LEDGER_PAYLOAD_INVALID", "payload 必须是 object。")

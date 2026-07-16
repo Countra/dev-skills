@@ -22,6 +22,7 @@ if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
 from complex_coding_reviewer.contract import CODE_LENSES, PLAN_LENSES
+from complex_coding_reviewer.context import RISK_IDS, build_context_target
 from complex_coding_reviewer.target import (
     build_file_manifest_target,
     build_plan_bundle_target,
@@ -86,13 +87,13 @@ def create_plan_target(task_dir: Path) -> dict[str, Any]:
     return build_plan_bundle_target(task_dir)
 
 
-def lens_records(profile: str) -> list[dict[str, Any]]:
+def lens_records(profile: str, evidence_ref: str) -> list[dict[str, Any]]:
     lenses = PLAN_LENSES if profile == "plan-review" else CODE_LENSES
     return [
         {
             "id": lens,
             "status": "reviewed",
-            "evidence_refs": ["src/example.py:1"],
+            "evidence_refs": [evidence_ref],
             "summary": f"{lens} 已基于目标证据完成审查。",
         }
         for lens in lenses
@@ -102,6 +103,7 @@ def lens_records(profile: str) -> list[dict[str, Any]]:
 def receipt_for_target(
     target: dict[str, Any],
     *,
+    root: Path,
     profile: str = "code-review",
     scope: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -115,11 +117,42 @@ def receipt_for_target(
     else:
         scope = scope or {"kind": "standalone"}
         review_id = "REV-CODE-001"
+    brief_relative = (
+        "artifacts/review-brief.json"
+        if profile == "plan-review"
+        else "review-brief.json"
+    )
+    brief = {
+        "profile": profile,
+        "scope": scope,
+        "summary": "验证当前目标满足单元测试审查要求。",
+        "requirement_refs": ["GOAL-01"] if profile == "plan-review" else ["REQ-UNIT"],
+        "constraint_refs": [],
+        "claim_refs": [],
+        "requested_risk_focus": [],
+        "created_at": "2026-07-16T00:00:00+00:00",
+    }
+    write_json(root / brief_relative, brief)
+    context_entries = [(brief_relative, "brief")]
+    context_entries.extend(
+        (item["path"], "requirement" if profile == "plan-review" else "adjacent-code")
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != brief_relative
+    )
+    context = build_context_target(
+        root,
+        root_kind="task-dir" if profile == "plan-review" else "workspace",
+        label=f"{review_id.lower()}-context",
+        entries=context_entries,
+    )
+    target_paths = [item["path"] for item in target["manifest"]]
+    evidence_ref = brief_relative
     return {
         "review_id": review_id,
         "profile": profile,
         "scope": scope,
         "target": deepcopy(target),
+        "context": context,
         "reviewer": {
             "mode": "same-context",
             "identity": "unit-test-reviewer",
@@ -134,8 +167,44 @@ def receipt_for_target(
                 "applicability": "适用于当前目标。",
             }
         ],
-        "lenses": lens_records(profile),
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "单元测试 fixture 已覆盖该路径。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": "GOAL-01" if profile == "plan-review" else "REQ-UNIT",
+                    "status": "satisfied",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "fixture 提供了当前要求的直接证据。",
+                }
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 不包含该风险触发面。",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
+        "lenses": lens_records(profile, evidence_ref),
+        "strengths": [],
         "findings": [],
+        "verification_gaps": [],
         "verdict": "passed",
         "open_counts": {
             "blocking": 0,
@@ -160,6 +229,8 @@ def finding(
 ) -> dict[str, Any]:
     return {
         "id": finding_id,
+        "category": "correctness",
+        "origin": {"review_id": None, "finding_id": None},
         "severity": severity,
         "status": status,
         "title": "目标行为缺少边界处理",
@@ -174,6 +245,7 @@ def finding(
                 "artifact_ref": None,
                 "standard_ref": None,
                 "detail": "当前实现直接使用输入。",
+                "claim_source": "read",
             }
         ],
         "confidence": confidence,
@@ -193,4 +265,14 @@ def update_counts_and_verdict(receipt: dict[str, Any]) -> None:
         and item["status"] in {"open", "accepted", "deferred"}
         for item in receipt["findings"]
     )
-    receipt["verdict"] = "blocked" if blocked else "changes_required" if unresolved else "passed"
+    blocking_gap = any(
+        item["severity"] in {"blocking", "major"}
+        for item in receipt["verification_gaps"]
+    )
+    receipt["verdict"] = (
+        "blocked"
+        if blocked or blocking_gap
+        else "changes_required"
+        if unresolved
+        else "passed"
+    )

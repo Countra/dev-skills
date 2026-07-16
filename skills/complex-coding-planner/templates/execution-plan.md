@@ -390,9 +390,10 @@ Changelog 计划（Changelog plan）:
 - Producer：`complex-coding-planner` 负责生成和修复 plan bundle，不生成正式 verdict
 - Profile：`plan-review`
 - Scope：`managed-plan`
+- Review brief：`artifacts/reviews/plan-review-brief.json`，必须 approval-included 并声明当前 requirements/constraints/claims/risk focus
 - Current receipt：`artifacts/reviews/plan-review-attempt-1.json`
 - Validator：`complex-coding-reviewer/scripts/review_validate.py`
-- Canonical result：只读取上述 JSON receipt；计划正文不复制 verdict 或 finding 状态
+- Canonical result：只读取上述 JSON receipt；approval checker 重建 target/context 并校验 coverage、gaps 与 lineage，计划正文不复制 verdict 或 finding 状态
 - Retry：修复目标后保留旧文件，把 contract 指向递增 attempt，并通过 `supersedes_review_id` 连接前序 receipt
 
 ## 生产者就绪门禁（Producer Readiness Gate）
@@ -463,9 +464,10 @@ Changelog 计划（Changelog plan）:
 
 | ID | Kind | Path | Required | Approval included | Trigger |
 | --- | --- | --- | --- | --- | --- |
-| ART-01 | review | artifacts/reviews/plan-review-attempt-1.json | yes | yes | every managed plan |
+| ART-01 | other | artifacts/reviews/plan-review-brief.json | yes | yes | every managed plan |
+| ART-02 | review | artifacts/reviews/plan-review-attempt-1.json | yes | yes | every managed plan |
 
-只列出实际创建的 artifact；每项必须与 `plan-contract.json` 一致。当前 plan-review receipt 必须进入本表；运行日志、code-review 结果和 commit evidence 由 executor 在批准后创建，不进入本表。
+只列出实际创建的 artifact；每项必须与 `plan-contract.json` 一致。当前 review brief 与 plan-review receipt 必须进入本表；运行日志、code-review 结果和 commit evidence 由 executor 在批准后创建，不进入本表。
 
 ## Executor Handoff
 

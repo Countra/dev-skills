@@ -86,6 +86,12 @@ def append_event_and_update(
                 "RUN_STATE_REVIEW_EVIDENCE_MISSING",
                 "review_recorded.evidence_refs 必须包含 payload.report_ref。",
             )
+    if event_type == "validation_recorded" and event_payload.get("result") == "passed":
+        if not evidence_refs:
+            raise EventWriteError(
+                "RUN_STATE_VALIDATION_EVIDENCE_MISSING",
+                "passed validation_recorded 必须引用至少一个 task-local evidence 文件。",
+            )
     for ref in evidence_refs or []:
         candidate = (bundle.task_dir / ref).resolve()
         try:

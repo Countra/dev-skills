@@ -3,12 +3,12 @@
 ## 规划摘要（Plan Summary）
 
 - Task ID：`2026-07-16-feature-complex-coding-reviewer-professionalization`
-- Plan revision：`1`
+- Plan revision：`2`
 - Lifecycle route：`managed`
 - Plan profile：`full`
 - Discovery-first：`no`
 - Task contract：`plan-contract.json`
-- Approval request：仅请求后续 implementation 授权；阶段/最终提交、外部写入和提权仍需分别显式授权
+- Approval request：请求批准 revision 2、继承已完成的 `STG-01`，并继续授权 implementation 与阶段/最终 commit；外部写入和提权仍未授权
 - Dependency selection for this task：`none`，实现限定于仓库现有 Python 标准库、Markdown、JSON、YAML、unittest 与 GitHub Actions
 
 本文件只保存待批准的实施意图。批准后不得在本文写入 current stage、progress、运行结果、ledger、commit 或恢复状态；执行事实由 Executor 创建的 attestation、run-state、ledger 与 validation artifacts 承载。
@@ -24,6 +24,9 @@
 3. 复审时每条旧 finding 去了哪里，是否能防止静默删除。
 4. 对安全、并发、数据、性能、API、UI、删除等领域，何时需要专业深挖，能力不足时如何诚实阻塞。
 5. 当前 eval 是否真正观察到缺陷召回、误报、严重度与证据质量，而不仅是 schema 能否通过。
+6. Reviewer 自身升级后，是否会用未来版本 checker 追溯重判已经由用户批准并写入 attestation 的旧计划，从而破坏恢复与最终门禁。
+
+revision 1 的 `STG-01` 已完成、正式审查通过并提交。开始 `STG-02` 前发现了自举漂移：当前 Executor preflight/final 会调用工作树中的 Planner checker，Planner 又调用工作树中的 Reviewer validator；若按原计划先替换 Reviewer receipt schema，revision 1 的不可变 plan-review receipt 会被未来 validator 拒绝。覆盖旧 receipt 会破坏 attestation，保留旧 parser 违反 current-only 目标，因此该问题必须通过 revision 2 amendment 修复，不能作为普通测试调整绕过。
 
 非目标（Non-goals）：
 
@@ -33,6 +36,7 @@
 - 不保留旧 receipt 的 schema version、兼容 parser、转换器、双写或 v1/v2 文档分支。
 - 不构建后台服务、数据库、索引、缓存、长期驻留进程或在线审查平台。
 - 不修改 `gitlab-pat-ops`、`process-manager`、`electron-ui-verifier` 等其它业务 skill 的行为。
+- 不让 execution-time preflight/final 重新解释已经批准的 plan 语义，也不增加 grandfather、schema version 或 task-specific bypass。
 - 不在本规划阶段实施 Skill 代码、生成执行状态或创建 Git 提交。
 
 约束（Constraints）：
@@ -41,7 +45,7 @@
 - 语义专业化必须通过渐进披露和风险触发实现，普通小变更不能被全领域清单拖慢。
 - positive claim、finding、verification gap 与 clean verdict 都必须有可定位证据和真实 claim source。
 - CI 只运行确定性、无网络、无 secrets、无 Agent、无目标执行的验证；fresh-context 观察由用户显式发起。
-- 新契约在三个 Skill 中一次性切换，半新半旧状态不得成为可交付中间态。
+- Reviewer 公共契约、Planner approval adapter、Executor stage/final/ledger adapter 和批准信任时序必须在同一阶段切换，半新半旧状态不得成为可恢复或可提交中间态。
 
 待确认项（Open uncertainties）：无批准前阻塞项。真实语义 recall/false-positive 仍需实现后 observation 才能声明，未执行独立观察时必须报告 `not_observed`，不能伪造结论。
 
@@ -63,6 +67,7 @@
 | REQ-10 | must | Planner approval 与 Executor stage/final/ledger 原子消费新 Reviewer 契约，不保留旧分支 |
 | REQ-11 | must | 新增 clean/near-miss/known-defect 语义 corpus、deterministic oracle、same-context smoke 和用户可运行 observation packet |
 | REQ-12 | must | 同步三平台 CI、README、CHANGELOG、安装发现、静态评估和跨 Skill lifecycle 回归 |
+| REQ-13 | must | Planner semantic approval 只在 attestation 写入或 amendment 激活前由当时的 current checker 执行；执行期以 attestation 的不可变哈希集合为批准事实，不被未来 checker 追溯重判 |
 
 非功能需求：
 
@@ -76,6 +81,7 @@
 | NFR-06 | 所有结论明确 `read/observed/reported/inferred/not-verified` 边界，不夸大验证范围 |
 | NFR-07 | target/context/package、schema validator、profile workflow、caller adapter、eval oracle 分层且各自高内聚 |
 | NFR-08 | 只修改 ART-04 change map 批准范围，不制造无关格式化、重命名或行为 churn |
+| NFR-09 | 自举迁移在旧批准栈可用时开始、在新批准与执行栈共同可用时结束；任一边界都不得依赖旧 schema fallback |
 
 验收标准：
 
@@ -95,6 +101,7 @@
 | AC-12 | REQ-11 | Given semantic corpus，When eval/observation，Then输出 recall、误报、severity、locator、evidence、gap honesty 和 provenance，未观察时明确 `not_observed` |
 | AC-13 | REQ-12 | Given 任意 branch 的三平台 CI，When workflow 运行，Then unit、deterministic eval、static evaluation 与联合 lifecycle 都被发现并可重复执行 |
 | AC-14 | REQ-01、REQ-05 | Given 大或敏感目标，When 构建 package/执行审查，Then 文件数/字节/路径/秘密预算生效，且 Agent、网络、目标执行计数保持零 |
+| AC-15 | REQ-13 | Given 已由 current checker 通过并写入 attestation 的 revision，When Reviewer/Planner 后续升级或 Executor 恢复/final，Then 有效不可变哈希继续通过；缺失/无效 attestation 或任一批准文件漂移仍 fail closed，且新 attestation/amendment 在 current Planner approval 失败时不能写入或激活 |
 
 详细的 Requirement → AC → STG → VAL → ART 闭环见 ART-06。
 
@@ -102,7 +109,7 @@
 
 Research mode：`online-required`。
 
-触发原因：用户要求深入研究两个当前主流参考项目和更优秀审查规范；Google/OWASP 等公开规则、参考仓库维护状态与 ASVS 版本属于变化事实；本任务又会改变三个 Skill 的公共审查协议，因此不能只依赖模型记忆或单一二手总结。
+触发原因：用户要求深入研究两个当前主流参考项目和更优秀审查规范；Google/OWASP 等公开规则、参考仓库维护状态与 ASVS 版本属于变化事实；本任务又会改变三个 Skill 的公共审查协议，因此不能只依赖模型记忆或单一二手总结。revision 2 另执行了 repository-grounded recovery research，逐调用链核对 attestation 写入、amendment 激活、Executor preflight/final 与 Reviewer validator 的时间边界。
 
 研究证据与窗口：
 
@@ -114,8 +121,9 @@ Research mode：`online-required`。
 | [Google What to Look For](https://google.github.io/eng-practices/review/reviewer/looking-for.html) | official primary guidance | 2026-07-16 页面快照 | 适用于设计、功能、复杂度、测试、文档与专业能力边界 | coverage 与 specialist gap |
 | [OWASP ASVS 5.0.0](https://owasp.org/www-project-application-security-verification-standard/) | official versioned standard | 2025-05-30 stable；2026-07-16 核对 | 只在 Web/应用安全风险触发时引用，不把全部控制写入 Skill | security playbook 来源优先级 |
 | [NIST SSDF 1.1](https://csrc.nist.gov/pubs/sp/800/218/final) | official primary standard | 2022-02 发布；2026-07-16 核对 | 提供 SDLC 风险治理，不提供语言级 bug checklist | 高风险与供应链 review governance |
+| 当前 `harness_attest_plan.py`、`harness_execution.py`、`harness_amendment.py` 调用链 | primary repository source | revision 1 STG-02 entry 前复核 | 证明 approval checker 已在 attestation write/amendment activation 执行，而 execution preflight/final 的重复调用会把未来工具版本错误变成旧批准失效 | approval-time trust boundary 与原子迁移顺序 |
 
-本地实测基线：Reviewer unit `30/30`，deterministic eval `11/11`，但 eval 自报 `semantic_review_quality_observed=false`、Agent/network/target execution 均为零。这证明结构门禁有效，也直接证明现有评估没有观察语义质量，不能把 11/11 宣称为专业审查效果通过。
+初始本地基线为 Reviewer unit `30/30`、deterministic eval `11/11`。revision 1 已完成的 STG-01 现有证据为 unit `36/36`、deterministic eval `11/11`、oracle self-test 与 same-context smoke 通过，Agent/network/target execution 均为零；fresh-context 语义效果仍未观察，不能把结构或 same-context 通过夸大为独立专业审查效果。
 
 方案影响：采用“spec compliance → 核心设计 → 全范围覆盖 → 条件风险 playbook”的顺序；新增双 snapshot、coverage、strength、gap、lineage 与 bounded package；语义评估分确定性 oracle 与用户显式 observation 两层。完整 query/source、适用限制、拒绝照搬项和饱和判断见 ART-01。
 
@@ -146,6 +154,7 @@ Discovery mode：`online-required`。
 | 应用安全 | OWASP ASVS 5.0.0、项目 threat model/框架规范 | 条件化 security playbook，版本化 requirement 优先于通用模式 |
 | 安全治理 | NIST SSDF 1.1 | 高风险与供应链场景纳入 SDLC 证据，不伪装语言级规则 |
 | 本地契约 | closed JSON、canonical digest、stable error、三 Skill adapter | current-only 原子切换、fail closed、单一 validator |
+| 批准时序 | 当前 attestation、amendment 与 execution state machine | current checker 在批准边界运行；批准后由 immutable hashes 固定事实，未来 checker 不追溯改写历史 |
 
 冲突优先级：用户/项目明确需求 > 仓库与目标项目规范 > 版本化官方标准/语言框架规范 > Google/OWASP/NIST 通用指导 > 参考 Skill 启发。参考仓库热度不构成规范权威；OWASP 2017 Code Review Guide 只保留人工审查必要性的背景，不作为当前漏洞分类。
 
@@ -161,10 +170,10 @@ Standards result：`passed`。
 | --- | --- | --- |
 | 代码标准 | 保持 Python stdlib、closed object、稳定错误码、原子写入与中文设计注释 | STG-02；VAL-01/VAL-13 |
 | 架构边界 | target、context、package、contract、workflow、adapter、oracle 分层；package 只是阅读视图 | STG-01..04；VAL-01/VAL-08/VAL-14 |
-| 低耦合 | Planner/Executor 只传 brief/context 并消费 validator，不复制审查 rubric | STG-03；VAL-04..08 |
+| 低耦合 | Planner/Executor 只传 brief/context 并消费 validator，不复制审查 rubric；execution-time 只消费 attestation，不反向依赖未来 Planner checker | STG-02/03；VAL-04..08 |
 | 高内聚 | 六类 risk playbook 独立 reference，calibration/lineage/schema 各有唯一权威 | STG-01/02；VAL-01/VAL-09 |
 | 设计模式 | Value Object + Builder + Policy/Gate + Adapter + Immutable Receipt；不引入通用规则引擎 | ART-03；VAL-01/VAL-14 |
-| 错误处理 | unreadable/out-of-root/stale/missing coverage/broken lineage/secret/oversize 返回稳定 REVIEW 错误并 fail closed | STG-02/03；VAL-01/04/06/08 |
+| 错误处理 | unreadable/out-of-root/stale/missing coverage/broken lineage/secret/oversize 返回稳定 REVIEW 错误；缺失/无效 attestation 或批准文件漂移继续 fail closed | STG-02/03；VAL-01/04/06/08 |
 | 性能 | bounded package 限制路径、文件数和字节；named-risk 才扩展上下文；不做全仓库默认扫描 | STG-02；VAL-01/VAL-12 |
 | 可测试性 | deterministic contract/oracle 与人工 observation 分离，clean/near-miss 控制误报 | STG-04；VAL-02/03/10/11 |
 
@@ -180,6 +189,8 @@ Development quality result：`passed`。
 
 - `skills/complex-coding-reviewer` 已有 `SKILL.md`、四份核心 references、target/validate/render CLI、closed contract、30 项 unit tests 与 11 项 deterministic eval。
 - Planner approval 和 Executor stage/final 已依赖 Reviewer 公共 validator，适合通过 adapter 原子升级，而不是重新创建第四套门禁。
+- `harness_attest_plan.py write` 与 `activate-amendment` 已在批准边界调用 current Planner approval checker；attestation 已保存 task/revision、用户授权与全部 approval-included 文件的路径、大小和 SHA-256。重复在 execution preflight/final 运行未来 checker 没有增加文件完整性，只引入时间耦合。
+- revision 1 已归档到 `artifacts/amendments/revision-0001`；STG-01 完成语义与引用定义保持不变，可由 amendment carry 校验器证明继承，STG-02 未产生源码改动且不得 carry。
 - 当前 target digest 不包含要求、规范、调用方、验证日志等 context；supersedes 不逐 finding accounting；limitations 无结构化 owner/blocking；eval 不观察语义质量。
 - `skill-evaluation-lab` 可以做 static contract 和用户工作流，但不得自动执行 Codex/模型；本任务只在 observation import 表达不足时做最小适配。
 
@@ -189,13 +200,14 @@ Development quality result：`passed`。
 
 | Claim | Level | Evidence | Consequence |
 | --- | --- | --- | --- |
-| 当前 schema/target/validator 行为 | read + confirmed | Reviewer source、30 unit、11 eval | 作为回归基线，不推测 |
+| 当前 schema/target/validator 行为 | read + confirmed | Reviewer source、STG-01 后 36 unit、11 eval、formal stage receipt | 作为回归基线，不推测 |
 | 两个参考项目规则 | primary local snapshot | 固定 HEAD 与相关 Skill 文件 | 只吸收适合当前边界的流程 |
 | Google/OWASP/NIST 规则 | official/primary online | 2026-07-16 URL observation | 为校准与风险 playbook 提供权威来源 |
 | 语义效果尚未证明 | confirmed negative evidence | eval 的 `semantic_review_quality_observed=false` | REQ-11 必须是正式交付门，不得只补文案 |
 | 独立 fresh-context 效果 | not observed | 需用户后续显式运行 observation packet | 不阻塞实现，但限制效果声明 |
+| execution-time 重跑 current Planner checker 会破坏旧批准 | read + reproduced from call graph | `harness_execution.py` preflight/final、`harness_attest_plan.py` write/activate、revision 1 immutable receipt | revision 2 必须把 semantic approval 固定在 attestation 边界 |
 
-任务证据索引：研究 ART-01、规范 ART-02、专业契约 ART-03、变更边界 ART-04、验证策略 ART-05、追踪矩阵 ART-06、正式计划审查 ART-07。
+任务证据索引：研究 ART-01、规范 ART-02、专业契约 ART-03、变更边界 ART-04、验证策略 ART-05、追踪矩阵 ART-06、正式计划审查 ART-07、自举漂移与修订决策 ART-08。
 
 ## 候选方案（Options）
 
@@ -221,7 +233,13 @@ Development quality result：`passed`。
 - 优点：同时提升审查方法、事实约束、复审可靠性和效果可观测性；普通目标通过 brief/defaults 保持有界；不需要自动 Agent 或服务。
 - 缺点：跨三个 Skill、eval 和 CI，属于 current-only breaking change；合同切换阶段必须完整且验证量较大。
 - 主要风险：字段/流程过重、semantic oracle 过拟合、调用方半切换。通过复杂度预算、near-miss、联合回归和阶段原子提交控制。
-- 回滚：按 STG-01/02/03 的原子边界整体回退，不引入兼容层。
+- 回滚：STG-01 已形成独立完成边界；Reviewer 公共合同与所有调用方只允许按 revision 2 的 STG-02 原子边界整体回退，不引入兼容层。
+
+### revision 2 自举迁移选项
+
+- **每次 execution preflight/final 重跑工作树 current checker**：能观察当前规则，但把已批准事实绑定到未来代码，Reviewer 自升级后旧 receipt 必然失效，拒绝。
+- **保留旧 schema parser、版本分支或当前任务豁免**：能暂时恢复，但违反 current-only、扩大长期测试矩阵，也允许历史旁路，拒绝。
+- **批准时校验、执行时验证 attestation**：attestation write 与 amendment activation 在写入前运行当时的 current Planner checker；之后 preflight/final 只验证 task/revision、授权、approval-included 文件集合/大小/SHA-256 和运行态。该方案保持新批准 fail closed，同时避免未来 checker 追溯重判历史，选用。
 
 ## 决策（Decision）
 
@@ -238,6 +256,7 @@ Development quality result：`passed`。
 5. **coverage 与 gaps 参与 verdict**：关键 requirement 未覆盖、blocking gap、前序 finding 未交代都不能 passed。
 6. **current-only**：schema、fixtures、Planner、Executor、README 和 CI 同步替换，不设置版本字段或 fallback。
 7. **语义声明分层**：CI 证明结构、oracle 与 fixtures 可重复；same-context smoke 观察当前实现；fresh-context 只有用户显式运行后才能声明。
+8. **批准事实有时间边界**：current Planner/Reviewer checker 负责“现在是否可批准”，attestation 负责“当时批准了哪些不可变字节与权限”；Executor 恢复和 final 不用未来规则重写历史。Reviewer 公共 schema 与 Planner/Executor 所有消费者在 STG-02 同一原子迁移边界切换。
 
 放弃的内容：固定函数行数阈值、全目标强制安全清单、P0-P3 重命名、Reviewer 直接修复、自动 subagent/模型选择、Reviewer 运行 focused tests、礼貌性固定 strengths 数量。
 
@@ -251,8 +270,8 @@ Development quality result：`passed`。
 | receipt | 单 target、limitations 自由文本 | 双 digest、coverage、strengths、gaps、category/origin/lineage | breaking | Reviewer |
 | target/context | context 不进 freshness | closed context manifest 与 SHA-256 | breaking | Reviewer |
 | package | 重复 Git/文件读取，无边界快照 | bounded read-only package builder | additive, current contract only | Reviewer |
-| Planner | 只校验旧 plan receipt | 生成 managed brief/context，approval 校验新字段 | breaking | Planner adapter |
-| Executor | stage/final 缺 validation/lineage binding | stage/final brief、compact payload、feedback disposition | breaking | Executor adapter |
+| Planner | 只校验旧 plan receipt | 生成 managed brief/context，attestation write/amendment activation 前由 current approval checker 校验新字段 | breaking | Planner adapter |
+| Executor | stage/final 缺 validation/lineage binding，且 execution-time 重跑未来 Planner checker | stage/final brief、compact payload、feedback disposition；preflight/final 以 attestation hashes 为批准事实 | breaking | Executor adapter |
 | eval | schema fixtures 为主 | deterministic semantic oracle + same/fresh observation | breaking fixtures | Reviewer eval |
 | CI | 运行旧 suites | 三平台 current-only unit/eval/joint/static | workflow update | Repository |
 | docs | 能力声明低于/高于证据风险 | 说明专业能力、只读边界、observation provenance | current-only | Repository |
@@ -291,63 +310,64 @@ Stage contract：
 
 退出条件：双 profile 流程无重复通用清单；clean/near-miss/defect 示例能区分事实与偏好；专业能力不足会生成 gap 而不是伪造 passed；Reviewer 仍不修改或执行目标。
 
-### STG-02 双快照、覆盖、gap 与复审谱系契约
+### STG-02 Reviewer 合同、调用方与批准时序原子迁移
 
-目标：把 STG-01 的专业语义变成 closed、可重建、可 fail-closed 的 target/context/receipt contract，并用有界 package 降低大目标重复读取成本。
+目标：把 STG-01 的专业语义变成 closed、可重建、可 fail-closed 的 target/context/receipt contract，并在同一个 current-only 边界切换 Reviewer 公共 validator、Planner approval、Executor stage/final/ledger 和 attestation 信任时序。该阶段吸收 revision 1 原 STG-03 的生产切换职责，避免 Reviewer 先升级后调用方无法正式审查、恢复或 amendment。
 
 Stage contract：
 
 - Depends on：STG-01。
-- Requirements：REQ-01、REQ-04、REQ-05、REQ-06、REQ-07、REQ-08、REQ-09。
-- Acceptance：AC-04、AC-05、AC-06、AC-07、AC-08、AC-09、AC-14。
-- Nonfunctional：NFR-01、NFR-02、NFR-04、NFR-05、NFR-06、NFR-07。
-- Validations：VAL-01、VAL-02、VAL-08、VAL-12、VAL-13。
-- Allowed changes：`skills/complex-coding-reviewer/references/review-contract.md`、`skills/complex-coding-reviewer/scripts/review_context.py`、`skills/complex-coding-reviewer/scripts/review_package.py`、`skills/complex-coding-reviewer/scripts/review_target.py`、`skills/complex-coding-reviewer/scripts/review_validate.py`、`skills/complex-coding-reviewer/scripts/review_render.py`、`skills/complex-coding-reviewer/scripts/complex_coding_reviewer/**`、`skills/complex-coding-reviewer/templates/**`、`skills/complex-coding-reviewer/tests/**`、`evals/complex-coding-reviewer/**`。
-- Forbidden changes：`legacy receipt compatibility parser or schema version`、`review package treated as canonical freshness source`、`unbounded workspace traversal or secret capture`、`finding disappearance without lineage disposition`。
+- Requirements：REQ-01、REQ-04、REQ-05、REQ-06、REQ-07、REQ-08、REQ-09、REQ-10、REQ-13。
+- Acceptance：AC-04、AC-05、AC-06、AC-07、AC-08、AC-09、AC-10、AC-11、AC-14、AC-15。
+- Nonfunctional：NFR-01、NFR-02、NFR-04、NFR-05、NFR-06、NFR-07、NFR-09。
+- Validations：VAL-01、VAL-02、VAL-04、VAL-05、VAL-06、VAL-07、VAL-08、VAL-12、VAL-13。
+- Allowed changes：`skills/complex-coding-reviewer/references/review-contract.md`、`skills/complex-coding-reviewer/scripts/**`、`skills/complex-coding-reviewer/templates/**`、`skills/complex-coding-reviewer/tests/**`、`evals/complex-coding-reviewer/**`、`skills/complex-coding-planner/**`、`evals/complex-coding-planner/**`、`skills/complex-coding-executor/**`、`evals/complex-coding-executor/**`。
+- Forbidden changes：`legacy receipt compatibility parser, schema version, dual read or dual write`、`execution-time rerun of mutable Planner or Reviewer approval checker`、`partial public schema switch before every caller is ready`、`review package treated as canonical freshness source`、`unbounded workspace traversal or secret capture`、`finding disappearance without lineage disposition`、`Planner or Executor copy of professional review rubric`。
 - Risk：`high`。
 - Commit expectation：`stage`，仅在 commit 单独获批时执行。
 
-进入条件：STG-01 专业语义冻结；root/path/canonical JSON 现有实现已读；字段复杂度预算经 unit fixture 证明可用。
+进入条件：revision 2 获用户重新批准并通过 amendment activation carry STG-01；revision 1 archive 完整；旧版 Planner/Reviewer approval stack 已在新 attestation 写入与激活前通过；STG-02 尚无源码改动；root/path/canonical JSON、Planner artifact gate、Executor review/ledger 与 attestation 调用图已读。
 
 实施步骤：
 
-1. 建立 closed review brief 和 context manifest，context 只引用/摘要必要要求、规范、验证和扩展路径，不复制秘密内容。
-2. receipt 根契约增加 `context`、`coverage`、`strengths`、`verification_gaps`；finding 增加 category/origin lineage。
-3. 定义 coverage 的 target paths、requirement checks、risk checks、context expansions 及受控状态；定义 gap owner/evidence/blocking。
-4. `supersedes` 校验前序 finding accounting，旧 finding 只能 resolved、still-open、superseded 或 invalidated，并保留理由和证据。
-5. package builder 生成 commit list/stat/diff `-U10` 或 plan/file 阅读包，限制 root、路径、文件数、单文件/总字节和敏感文件模式。
-6. render 保持 findings-first，同时显示需求覆盖、风险、gap、strength、target/context digest 与 claim source。
+1. 先修改 Executor 批准信任时序：保留 attestation write 与 amendment activation 对 current Planner approval checker 的调用；execution preflight/transition/final 改为验证 current attestation、approval-included immutable hashes、dependency runtime gate 与 replay state，不再重跑未来 checker。
+2. 为批准时序补负例：current approval 失败时不得写 attestation 或激活 amendment；有效 attestation 在 checker 实现变化后仍可恢复/final；缺失/无效 attestation、task/revision 错配及 plan/contract/approval artifact 漂移继续 fail closed。
+3. 建立 closed review brief 和 context manifest，context 只引用/摘要必要要求、规范、验证和扩展路径，不复制秘密内容；package builder 限制 root、路径、文件数、单文件/总字节和敏感文件模式。
+4. receipt 根契约增加 `context`、`coverage`、`strengths`、`verification_gaps`；finding 增加 category/origin lineage；`supersedes` 强制前序 finding accounting。
+5. 在一次 public switch 中同步 Reviewer validator/target/render、Planner managed-plan brief/context 与 approval adapter、Executor stage/final context、review compact payload、ledger/state schema 和全部 fixtures；删除旧字段、旧断言与 fallback。
+6. validation evidence 记录 command identity、result/source、target/context/stage attempt 与 claim boundary；Reviewer 只消费证据或生成 gap，不运行命令。render 保持 findings-first 并显示 coverage、risk、gap、strength 与双 digest。
+7. 依次运行 Reviewer、Planner、Executor unit/eval、cross-skill regression 与 static current-only 扫描；仅在三方共同通过后生成新版 STG-02 `stage-delta` receipt、写 ledger 并形成阶段提交候选。
 
-退出条件：target 或 context 任一变化都稳定拒绝旧 receipt；关键 coverage/gap/lineage 不完整不能 passed；package 不被 validator 信任为真相源；Windows/Linux/macOS canonical digest fixture 一致。
+退出条件：target 或 context 任一变化都稳定拒绝旧 receipt；关键 coverage/gap/lineage 不完整不能 passed；package 不被 validator 信任为真相源；Planner 新批准仍用 current checker；Executor 恢复/final 只信任有效 attestation hashes；新版 stage receipt 可被新版 ledger/state 原子消费；三 Skill 不存在半新半旧路径；Windows/Linux/macOS canonical digest fixture 一致。
 
-### STG-03 Planner 与 Executor 当前契约原子适配
+### STG-03 自举恢复与跨 Skill 生命周期加固
 
-目标：在同一阶段把 Planner approval、Executor stage/final 和 ledger payload 切换到 STG-02 唯一合同，消除半升级窗口。
+目标：在 STG-02 已完成生产原子迁移的基础上，用恢复、amendment、篡改、stale、lineage 和 dependency runtime 负例证明新边界可长期运行；本阶段不再引入第二次 schema 切换。
 
 Stage contract：
 
 - Depends on：STG-02。
-- Requirements：REQ-08、REQ-09、REQ-10。
-- Acceptance：AC-08、AC-09、AC-10、AC-11。
-- Nonfunctional：NFR-01、NFR-02、NFR-05、NFR-07。
-- Validations：VAL-04、VAL-05、VAL-06、VAL-07、VAL-08、VAL-12、VAL-13。
-- Allowed changes：`skills/complex-coding-planner/**`、`skills/complex-coding-executor/**`、`evals/complex-coding-planner/**`、`evals/complex-coding-executor/**`、`skills/complex-coding-reviewer/scripts/**`。
-- Forbidden changes：`half-upgraded Planner or Executor contract`、`legacy review receipt fallback, dual write or schema branch`、`Planner or Executor copy of professional review rubric`、`unbound validation claim in Executor ledger`。
+- Requirements：REQ-05、REQ-08、REQ-09、REQ-10、REQ-13。
+- Acceptance：AC-05、AC-08、AC-09、AC-10、AC-11、AC-15。
+- Nonfunctional：NFR-01、NFR-02、NFR-05、NFR-07、NFR-09。
+- Validations：VAL-01、VAL-04、VAL-06、VAL-07、VAL-08、VAL-12、VAL-13。
+- Allowed changes：`skills/complex-coding-reviewer/tests/**`、`skills/complex-coding-planner/tests/**`、`skills/complex-coding-executor/tests/**`、`evals/complex-coding-reviewer/**`、`evals/complex-coding-planner/**`、`evals/complex-coding-executor/**`、`skills/complex-coding-reviewer/references/review-contract.md`、`skills/complex-coding-reviewer/scripts/**`、`skills/complex-coding-reviewer/templates/**`、`skills/complex-coding-planner/**`、`skills/complex-coding-executor/**`。后五项只允许修复由本阶段回归直接证明的 STG-02 根因。
+- Forbidden changes：`second review schema migration`、`production change without a failing STG-03 regression proving an STG-02 root cause`、`legacy review receipt fallback, dual write or schema branch`、`execution-time Planner checker dependency`、`weakening attestation immutable set or dependency runtime gate`、`unbound validation claim in Executor ledger`。
 - Risk：`high`。
-- Commit expectation：`stage`，Planner/Executor adapter 必须作为一个原子提交候选。
+- Commit expectation：`stage`，恢复与联合回归作为独立加固提交候选。
 
-进入条件：Reviewer 新 validator 和 fixtures 已通过；Planner/Executor 当前 approval/review/ledger 调用点与 payload 已建立完整调用图；旧术语清理列表已固定。
+进入条件：STG-02 新 Reviewer、Planner 与 Executor public contract 已共同通过并提交；stage review/ledger 使用新版 receipt 成功闭环；不存在旧字段或 compatibility path。
 
 实施步骤：
 
-1. Planner 生成 managed-plan brief/context target，并在 approval 调公共 validator 校验 profile/scope、双 digest、coverage、gap、lineage。
-2. Executor 为 stage-delta/final-integration 生成 requirement/allowed path/baseline/validation context，不能让实现者摘要替代 contract。
-3. validation evidence 记录 command identity、exit/result、source、target/stage attempt 与 claim boundary；Reviewer 不运行命令，只消费证据或生成 gap。
-4. `review_recorded` compact payload 原子替换为双 digest、coverage/gap/lineage 摘要；不在 ledger 复制完整 receipt。
-5. 实施者收到 finding 后先核对技术事实与适用性，再形成 resolved/invalidated/deferred disposition；deferred 不能绕过 blocking/major。
-6. 更新 Planner/Executor unit/eval 与联合 fixtures，删除旧字段、旧 receipt、旧断言和 fallback。
+1. 建立 bootstrap matrix：批准前 current checker 失败、批准后 checker 实现变化、immutable file 漂移、attestation 缺失/错 task/错 revision、snapshot 丢失与 ledger replay。
+2. 覆盖 amendment archive/activate：current checker 失败发生在 attestation/runtime 轮换前；成功 activation 只能 carry 语义与完成证据均不变的 stage。
+3. 覆盖 Reviewer target/context stale、supersedes finding accounting、validation claim source 与 Executor stage/final compact payload 的正负 lifecycle。
+4. 证明移除 execution-time Planner checker 不会绕过 dependency runtime recheck；stale dependency evidence 仍由专用 gate 阻塞或生成 runtime receipt。
+5. 扩展 cross-skill regression 与 deterministic eval，记录每个失败码和恢复下一步；禁止通过 mock 掉公共边界来声称端到端通过。
+6. 只对回归揭示的 STG-02 根因做最小生产修复，并重跑 STG-02 与 STG-03 全部 validations。
 
-退出条件：Planner 缺新 plan receipt 无法 approval；Executor wrong scope/context/lineage/validation claim 无法完成 stage/final；跨 Skill regression 没有半新半旧路径。
+退出条件：Planner 缺新 plan receipt 无法批准；Executor wrong scope/context/lineage/validation claim 无法完成 stage/final；有效历史 attestation 不受未来 checker 变化影响；批准文件篡改与新批准失败仍 fail closed；amendment carry、dependency runtime 和跨 Skill regression 没有旁路。
 
 ### STG-04 语义场景、校准与 observation 工作包
 
@@ -384,9 +404,9 @@ Stage contract：
 Stage contract：
 
 - Depends on：STG-04。
-- Requirements：REQ-01、REQ-10、REQ-11、REQ-12。
-- Acceptance：AC-01、AC-10、AC-11、AC-12、AC-13、AC-14。
-- Nonfunctional：NFR-01、NFR-03、NFR-04、NFR-05、NFR-08。
+- Requirements：REQ-01、REQ-10、REQ-11、REQ-12、REQ-13。
+- Acceptance：AC-01、AC-10、AC-11、AC-12、AC-13、AC-14、AC-15。
+- Nonfunctional：NFR-01、NFR-03、NFR-04、NFR-05、NFR-08、NFR-09。
 - Validations：VAL-08、VAL-09、VAL-11、VAL-12、VAL-13。
 - Allowed changes：`.github/workflows/planner-executor.yml`、`README.md`、`CHANGELOG.md`、`skills/complex-coding-reviewer/**`、`skills/complex-coding-planner/**`、`skills/complex-coding-executor/**`、`evals/complex-coding-reviewer/**`、`evals/complex-coding-planner/**`、`evals/complex-coding-executor/**`、`skills/skill-evaluation-lab/**`、`evals/skill-evaluation-lab/**`。
 - Forbidden changes：`branch filters that skip ordinary branches`、`CI secrets, network, Agent or target application execution`、`old receipt terminology or compatibility documentation`、`unrelated skill behavior or repository-wide formatting`。
@@ -399,7 +419,7 @@ Stage contract：
 
 1. 更新现有 all-branch Windows/Ubuntu/macOS workflow，运行 Reviewer/Planner/Executor unit、deterministic eval、joint regression 与 static skill evaluation。
 2. CI 明确不运行 VAL-10 的 Agent 语义审查和用户 fresh-context observation，不读取 secrets、不访问网络、不启动目标应用。
-3. README/CHANGELOG 说明双 profile、spec-first、context freshness、risk/gap/lineage、current-only breaking contract 和用户 observation 方法。
+3. README/CHANGELOG 说明双 profile、spec-first、context freshness、risk/gap/lineage、current-only breaking contract、approval-time checker/execution-time attestation 边界和用户 observation 方法。
 4. 静态扫描旧 receipt 字段、旧 payload、schema version/fallback、过时文档声明与自动 Agent 入口。
 5. `skill-evaluation-lab` 仅在 observation packet/import 现有契约不足时最小适配，并运行其原有 tests/evals 防回归。
 
@@ -412,9 +432,9 @@ Stage contract：
 Stage contract：
 
 - Depends on：STG-05。
-- Requirements：REQ-01、REQ-02、REQ-03、REQ-04、REQ-05、REQ-06、REQ-07、REQ-08、REQ-09、REQ-10、REQ-11、REQ-12。
-- Acceptance：AC-01、AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-09、AC-10、AC-11、AC-12、AC-13、AC-14。
-- Nonfunctional：NFR-01、NFR-02、NFR-03、NFR-04、NFR-05、NFR-06、NFR-07、NFR-08。
+- Requirements：REQ-01、REQ-02、REQ-03、REQ-04、REQ-05、REQ-06、REQ-07、REQ-08、REQ-09、REQ-10、REQ-11、REQ-12、REQ-13。
+- Acceptance：AC-01、AC-02、AC-03、AC-04、AC-05、AC-06、AC-07、AC-08、AC-09、AC-10、AC-11、AC-12、AC-13、AC-14、AC-15。
+- Nonfunctional：NFR-01、NFR-02、NFR-03、NFR-04、NFR-05、NFR-06、NFR-07、NFR-08、NFR-09。
 - Validations：VAL-01、VAL-02、VAL-03、VAL-04、VAL-05、VAL-06、VAL-07、VAL-08、VAL-09、VAL-10、VAL-11、VAL-12、VAL-13、VAL-14。
 - Allowed changes：`all files approved by ART-04 and STG-01 through STG-05`、`task-local execution, validation, review and observation artifacts`、`minimal fixes required by final review within approved scope`。
 - Forbidden changes：`new feature scope, third profile or compatibility layer`、`automatic remote push, external write, Agent or target execution`、`claiming semantic or fresh-context success without matching evidence`、`commit without explicit authorization`。
@@ -427,7 +447,7 @@ Stage contract：
 
 1. 从干净、明确的 baseline 重跑 VAL-01 至 VAL-13，保存命令、退出码、计数和 evidence digest。
 2. 生成 final-integration brief/target/context/package，运行 Reviewer 并以 VAL-14 校验 receipt；任何 finding 修复后生成新不可变 attempt。
-3. 检查 requirement/AC/NFR/validation coverage、前序 finding lineage、context freshness、旧术语清理和跨平台路径。
+3. 检查 requirement/AC/NFR/validation coverage、前序 finding lineage、context freshness、attestation immutable hashes、approval-time/execution-time 调用边界、旧术语清理和跨平台路径。
 4. 汇总 deterministic、same-context 与 fresh-context 三层证据；用户未运行 fresh observation 时明确保留 `not_observed`。
 5. 仅在显式 commit authorization 存在时按仓库规范提交；外部 push 始终不在本计划默认授权内。
 
@@ -505,10 +525,10 @@ Process Manager result：`not-applicable`。
 关键覆盖：
 
 - VAL-01/02/03 覆盖 AC-01 至 AC-09、AC-12、AC-14 及 NFR-01 至 NFR-07 的 Reviewer 行为、负向合同和语义校准。
-- VAL-04/05 覆盖 AC-02、AC-05、AC-06、AC-08、AC-10、AC-12 与 Planner adapter。
-- VAL-06/07/08 覆盖 AC-03、AC-05、AC-08、AC-09、AC-10、AC-11、AC-13 与 Executor/联合 lifecycle。
-- VAL-09/11/12/13 覆盖 AC-01、AC-04、AC-10 至 AC-14 和 NFR-01 至 NFR-08 的结构、安装、CI、边界与 current-only 清理。
-- VAL-14 最终覆盖全部 AC-01 至 AC-14 和 NFR-01 至 NFR-08，但不能替代前述专用验证。
+- VAL-04/05 覆盖 AC-02、AC-05、AC-06、AC-08、AC-10、AC-12、AC-15 与 Planner approval adapter。
+- VAL-06/07/08 覆盖 AC-03、AC-05、AC-08、AC-09、AC-10、AC-11、AC-13、AC-15 与 Executor/联合 lifecycle，明确验证 approval-time checker、execution-time attestation、amendment carry 和 dependency runtime gate。
+- VAL-09/11/12/13 覆盖 AC-01、AC-04、AC-10 至 AC-15 和 NFR-01 至 NFR-09 的结构、安装、CI、边界与 current-only 清理。
+- VAL-14 最终覆盖全部 AC-01 至 AC-15 和 NFR-01 至 NFR-09，但不能替代前述专用验证。
 
 失败规则：required validation 任一非零、证据不可读、target/context 不一致、semantic oracle contract 失真、blocking/major finding 或 blocking gap 未关闭时，stage/final 不得完成。用户未运行 fresh-context packet 不使 deterministic 实现失败，但最终必须明确 `fresh_context_observed=false`。
 
@@ -518,7 +538,7 @@ Process Manager result：`not-applicable`。
 - `review-contract.md`：唯一机器 contract、受控枚举、verdict 派生、freshness、lineage 与 stable errors。
 - `plan-review.md` / `code-review.md`：profile 专业顺序，不复制 shared schema。
 - `review-calibration.md` / `risk-playbooks.md`：severity/confidence、事实/偏好、specialist gap 与六领域按需规则。
-- Planner/Executor docs：只描述 brief/context handoff、receipt validator 和 finding disposition，不复制 Reviewer rubric。
+- Planner/Executor docs：只描述 brief/context handoff、receipt validator、finding disposition 和批准时序；明确 current checker 只在 attestation write/amendment activation 前运行，execution preflight/final 校验 attestation hashes，不复制 Reviewer rubric。
 - `README.md` / `CHANGELOG.md`：说明 current-only breaking contract、能力提升、无自动 Agent/目标执行和 observation 证据边界。
 
 文档示例中的 URL、命令和字段必须对应当前实现；不加入永久库推荐、过时 OWASP taxonomy 或无法由测试/receipt 支持的效果宣称。
@@ -527,7 +547,7 @@ Process Manager result：`not-applicable`。
 
 - 先读目标文件、调用方、fixtures 和目录级规则，再做局部 `apply_patch`；不整仓格式化或无关重排。
 - 超过 500 行的文件先按完整模块/函数/章节划分 patch；不能从函数、JSON object、表格或 Markdown 代码块中间截断。
-- contract 与模板先在 Reviewer 内一起修改并运行 focused unit，再原子切换 Planner/Executor；不得留下可被误用的半新半旧工作树。
+- STG-02 先落 Executor approval-time trust 修复和负例，再准备 Reviewer contract/builders；Reviewer public validator、Planner approval adapter、Executor stage/final/ledger adapter 作为同一原子切换完成并共同验证，不提交半新半旧工作树。
 - JSON/YAML 使用结构化解析/序列化，禁止正则拼接 closed contract；生成 artifact 使用 temp + atomic replace 并处理 OSError/Unicode/JSON 错误。
 - tests/evals 逐 capability 分文件，避免把 target、context、lineage、semantic oracle 全塞入一个超大测试模块。
 - 不修改参考仓库，不在 `.codex/tmp` 写运行状态，不生成 `__pycache__`，不自动创建符号链接或启动进程。
@@ -539,7 +559,7 @@ Process Manager result：`not-applicable`。
 - fresh-context：由用户后续显式发起，未运行时真实报告 `not_observed`，不虚构独立性，也不阻塞确定性实现交付。
 - security 专业性：risk trigger 命中且当前 reviewer 能力不足时生成 specialist gap；不把通用启发式冒充完整安全审计。
 - Skill Evaluation Lab：默认不改；只有现有 observation packet/import contract 无法表达新 evidence 时，才在 ART-04 范围内最小适配。
-- Commit：stage/final expectation 是原子边界建议，不是授权；当前规划没有 commit authorization。
+- Commit：revision 1 用户已明确授权阶段性/最终提交；revision 2 请求在重新批准时继续携带该授权。未获得 revision 2 reapproval 前，不写新 attestation、不激活 amendment，也不产生后续提交。
 
 ## 方案质量门禁（Plan Quality Gate）
 
@@ -547,9 +567,9 @@ Producer quality evidence：
 
 1. ART-01 固定当前 Reviewer tree、两个参考仓库 HEAD、在线观察日期、实测 unit/eval 基线、适合吸收与拒绝照搬项。
 2. ART-02 把项目规则、Skill 设计、Python、Google、OWASP、NIST 映射到具体 workflow/playbook/test，并定义冲突优先级。
-3. ART-03 定义 brief、双 target、coverage、strength、gap、lineage、package、adapter、eval 和复杂度预算；ART-04 把这些决定映射到实际文件。
-4. ART-05 使用 clean/near-miss/known-defect、负向 contract、三平台 CI 和 observation 分层验证；ART-06 证明所有 REQ/AC/NFR 都有 Stage 与 required VAL。
-5. 方案比较了文档-only、schema-only 与分层升级，选择理由与风险/回滚明确；没有新增 profile、依赖、服务或兼容层。
+3. ART-03 定义 brief、双 target、coverage、strength、gap、lineage、package、adapter、eval、approval-time trust 和复杂度预算；ART-04 把这些决定映射到实际文件与原子迁移顺序。
+4. ART-05 使用 clean/near-miss/known-defect、批准时序/篡改/amendment 负例、三平台 CI 和 observation 分层验证；ART-06 证明所有 REQ/AC/NFR 都有 Stage 与 required VAL。
+5. ART-08 固定 revision 1 自举漂移、拒绝绕过、选定修复和 carry 边界；方案没有新增 profile、依赖、服务或兼容层。
 
 范围、阶段 DAG、验证、授权、回滚和 Executor 交接已经闭合；真实 fresh-context 效果被明确留作用户观察，不影响计划可实施性，也没有被夸大为已证明。
 
@@ -559,11 +579,11 @@ Quality result：`passed`。
 
 正式审查交给 `complex-coding-reviewer`，使用 profile `plan-review`、scope `managed-plan`。Reviewer 读取 canonical plan target，不修改 `execution-plan.md`、`plan-contract.json` 或 planning artifacts。
 
-- Target：`artifacts/reviews/targets/plan-attempt-1.json`
-- Canonical receipt：`artifacts/reviews/plan-review-attempt-1.json`
+- Target：`artifacts/reviews/targets/plan-attempt-2.json`
+- Canonical receipt：`artifacts/reviews/plan-review-attempt-2.json`
 - Public validator：`skills/complex-coding-reviewer/scripts/review_validate.py`
 - Required checks：目标 digest、profile/scope、provenance、全部 lenses、findings/open counts、limitations 与 verdict 派生一致性。
-- Re-review：若目标因 finding 修复而变化，保留旧 attempt，重建 target 并生成连续的新 receipt/supersedes；不得覆盖 attempt-1。
+- Re-review：attempt 2 必须通过 `supersedes_review_id` 直属连接 revision 1 的 attempt 1；若目标因新 finding 修复而再次变化，继续保留历史、重建 target 并生成连续 attempt，不得覆盖旧 receipt。
 
 计划正文不复制正式 verdict，唯一 canonical 结论由上述 JSON receipt 承载，approval checker 只消费公共 validator 的结果。
 
@@ -574,19 +594,19 @@ Quality result：`passed`。
 - 目标、非目标、用户约束、current-only 边界和 no-Agent/no-target-execution 规则明确。
 - Research、Standards、Development Quality、Dependency Selection 和 Plan Quality gates 均有 artifact、来源、适用限制和实施影响。
 - 六阶段 DAG、allowed/forbidden scope、entry/exit、risk、commit expectation 与 14 项验证可以直接被 Executor 消费。
-- 所有 must requirement 均有 AC，所有 AC/NFR 均有 required validation；没有 unresolved research 或 blocking user decision。
+- 13 个 must requirement 均有 AC，全部 AC-01..15 与 NFR-01..09 均有 required validation；没有 unresolved research 或 blocking design decision。
 - 正式 plan-review receipt 和 approval checker 通过后才请求 implementation，不提前创建运行状态或实施代码。
 
 Readiness result：`ready_for_review`。
 
 ## 方案批准（Plan Approval）
 
-当前状态：`not_requested`。本轮完成 Planner draft、正式 plan-review、approval checker 和 active pointer 激活后，向用户请求 implementation approval 并停止。
+本 revision 是执行中发现真实 drift 后的正式 amendment。Planner draft、attempt 2 formal plan-review 与 approval checker 通过后，向用户请求 revision 2 reapproval 并停止；用户批准前不得写 revision 2 attestation、激活 amendment 或继续 STG-02。
 
 授权边界：
 
-- Implementation：必须由用户显式批准。
-- Commit：必须单独显式批准；implementation approval 不自动包含 stage/final commit。
+- Implementation：必须由用户显式重新批准 revision 2，并明确允许 carry `STG-01`。
+- Commit：本 amendment 请求延续用户已明确授予的 stage/final commit 权限；仍必须写入 revision 2 attestation 后才生效。
 - External write：push、PR/MR、issue/comment、远端 ref 等必须单独批准。
 - Elevated tool：提权、GUI 或 sandbox 外写入必须单独批准。
 
@@ -602,6 +622,7 @@ Readiness result：`ready_for_review`。
 4. 引入第三方运行依赖、后台服务、数据库、缓存、模型调用、secret、远端写入或提权要求。
 5. 实现需要修改 ART-04 之外的其它 Skill 公共行为、保留旧契约兼容层或改变 CI branch/OS contract。
 6. active task pointer 冲突、用户相关改动或 baseline 漂移无法按当前计划安全处理。
+7. attestation write/amendment activation 与 execution preflight/final 的批准信任时序，或 immutable approval set 语义再次变化。
 
 纯修复错字、同一 stage scope 内的测试 fixture/错误处理修复、以及不改变验收语义的内部函数拆分无需 amendment，但仍须记录于 ledger 并重跑该 stage required validations。
 
@@ -615,20 +636,22 @@ Readiness result：`ready_for_review`。
 | ART-04 | architecture | `artifacts/architecture/change-map.md` | yes | yes | Reviewer/Planner/Executor/eval/CI 文件范围、原子顺序与回滚 |
 | ART-05 | validation | `artifacts/validation/validation-strategy.md` | yes | yes | VAL-01..14、case corpus、metrics、CI 与失败处理 |
 | ART-06 | other | `artifacts/traceability/traceability-matrix.md` | yes | yes | GOAL/REQ/AC/NFR/STG/VAL/ART 闭环与风险追踪 |
-| ART-07 | review | `artifacts/reviews/plan-review-attempt-1.json` | yes | yes | 当前 managed plan 的 canonical formal review receipt |
+| ART-07 | review | `artifacts/reviews/plan-review-attempt-2.json` | yes | yes | revision 2 managed plan 的 canonical formal review receipt，直属 supersede attempt 1 |
+| ART-08 | validation | `artifacts/validation/self-hosting-approval-drift.md` | yes | yes | revision 1 自举漂移、拒绝绕过、approval-time trust 决策与 carry 边界 |
 
-除 ART-07 外，所有 required planning artifacts 在生成 plan target 前固定；ART-07 由 Reviewer 对该 target 生成，不能被目标自身哈希递归包含。
+除 ART-07 外，所有 required planning artifacts 在生成 plan target 前固定；ART-07 由 Reviewer 对该 target 生成，不能被目标自身哈希递归包含。attempt 1 保留为不可变历史，但不进入 revision 2 artifact index 或 attestation。
 
 ## Executor Handoff
 
 Executor 收到批准后必须先：
 
-1. 读取 `execution-plan.md`、`plan-contract.json`、ART-01..07、`.harness/active-task.json` 和稳定环境事实。
-2. 用 Planner approval checker 重新校验 current receipt，再根据用户原文生成 attestation；没有 implementation flag 立即停止。
-3. 记录实际 Git baseline/status 和用户已有变更，初始化 run-state/ledger；计划文件与 planning artifacts 进入只读状态。
-4. 只按 STG-01..06 顺序执行；阶段内只修改 allowed changes，命中 forbidden/reapproval trigger 立即进入 drift/amendment。
-5. 每阶段运行列出的 required VAL、生成 stage-delta review、关闭 finding/gap 后才能 transition；最终运行完整 VAL-01..14 和 final-integration review。
-6. 验证证据必须记录命令、时间、退出码、计数、target/context/attempt identity；不执行的 fresh-context observation 明确为 `not_observed`。
-7. commit 仅在 attestation 有 commit authorization 时按 stage/final expectation 执行；push 和其它 external write 不在默认交接范围。
+1. 读取 `execution-plan.md`、`plan-contract.json`、ART-01..08、revision 1 archive、`.harness/active-task.json` 和稳定环境事实。
+2. 在 Reviewer/Planner 尚未切换前，由 `harness_attest_plan.py write` 运行 current Planner approval checker 并根据用户 reapproval 写 revision 2 attestation；没有 implementation/commit flag 立即停止对应动作。
+3. 使用 `activate-amendment` 校验 archive 与 STG-01 完成/语义一致性，只 carry `STG-01`，轮换旧 runtime 并写 `amendment_approved`；不得手工删除或拼接 ledger/run-state。
+4. 重新记录实际 Git baseline/status 和用户已有变更；计划文件与 approval-included artifacts 只由 attestation hashes 校验。后续 execution preflight/final 不再重跑可变 Planner/Reviewer checker。
+5. 从 STG-02 继续至 STG-06；阶段内只修改 allowed changes，命中 forbidden/reapproval trigger 立即进入 drift/amendment。
+6. 每阶段运行列出的 required VAL、生成 stage-delta review、关闭 finding/gap 后才能 transition；最终运行完整 VAL-01..14 和 final-integration review。
+7. 验证证据必须记录命令、时间、退出码、计数、target/context/attempt identity；不执行的 fresh-context observation 明确为 `not_observed`。
+8. commit 仅在 revision 2 attestation 有 commit authorization 时按 stage/final expectation 执行；push 和其它 external write 不在默认交接范围。
 
 Stop conditions：用户暂停或未批准 implementation；任一 amendment trigger；目标/context 无法安全重建；required validation、blocking/major finding 或 blocking gap 在有界修复后仍未关闭；需要未授权的依赖、Agent、网络、外部写入、提权或长期进程；active pointer 属于另一非终态任务；无法真实声明 provenance 或专业覆盖。

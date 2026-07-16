@@ -26,10 +26,11 @@
 症状：`ATTESTATION_MISSING`、`ATTESTATION_HASH_MISMATCH` 或授权拒绝。
 
 1. 未批准 bundle 不能执行。用户批准后运行 `harness_attest_plan.py --mode write --approved-by <actor> --approval-summary <summary>`。
-2. `--mode check` 会重算 plan、contract 和 approval-included artifacts 的哈希与大小。
-3. 同一 revision 的 attestation 不可覆盖，也不得因正常执行进度重写；run-state、ledger 和执行证据不属于批准哈希集合。
-4. immutable 文件变化时停止，归档旧 revision，生成递增 contract 和新 attestation，再激活 amendment。
-5. commit、external write、elevated tool 各自独立授权；未授权时不得执行或伪造对应 evidence。
+2. `--mode write` 和 `activate-amendment` 在写入/轮换前运行 current Planner approval checker；执行期不会用未来 checker 重判已批准 revision。
+3. `--mode check` 会重算 plan、contract 和 approval-included artifacts 的哈希与大小。
+4. 同一 revision 的 attestation 不可覆盖，也不得因正常执行进度重写；run-state、ledger 和执行证据不属于批准哈希集合。
+5. immutable 文件变化时停止，归档旧 revision，生成递增 contract 和新 attestation，再激活 amendment。
+6. commit、external write、elevated tool 各自独立授权；未授权时不得执行或伪造对应 evidence。
 
 ## Ledger 与 Snapshot
 
@@ -46,13 +47,15 @@
 症状：`RUN_STATE_STAGE_*`、`RUN_STATE_VALIDATION_*` 或 `RUN_STATE_REVIEW_*`。
 
 1. `stage_started` 的 attempt 必须逐次递增，依赖 stage 必须完成。
-2. `validation_recorded` 只能引用该 stage 声明的 VAL，result 只能是 `passed` 或 `failed`。
-3. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、`stage_id`、`attempt` 与 Reviewer 公共 validator 结果必须精确一致。
-4. `REVIEW_TARGET_STALE` 表示 receipt 后目标已变化；修复或重新验证后必须生成新 target/receipt，不得只改 ledger 摘要。
-5. `RUN_STATE_REVIEW_EVIDENCE_MISSING`、`REPORT_INVALID` 或 `PAYLOAD_MISMATCH` 分别表示 evidence ref 未绑定、路径越界/缺失或 compact payload 不是由 receipt 派生。
-6. `RUN_STATE_REVIEW_SCOPE_MISMATCH` 还可能表示 target paths 没有精确覆盖 canonical `allowed_changes`，或 final commit 后仍在使用 working-tree target；重新按 contract 生成完整 target，不要只改 receipt 摘要。
-7. validation failure 会撤销当前 stage review；failed review 不建立通过门禁。required VAL 和当前 attempt 的 `stage-delta` receipt 未通过时不能追加 `stage_completed`。
-7. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
+2. `validation_recorded` 只能引用该 stage 声明的 VAL，必须携带 current attempt/target、command、exit code、claim source/boundary；只有 `observed + passed + exit_code=0` 可以建立通过门禁，`reported`/`not-run` 不可以。
+3. passed validation 必须引用真实 task-local evidence 文件；`RUN_STATE_VALIDATION_TARGET_MISMATCH` 表示验证和 stage receipt 不是同一 target/attempt，需在最终修改后重跑。
+4. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、双 digest、coverage/gap/lineage 摘要、`stage_id`、`attempt` 与 Reviewer 公共 validator 结果必须精确一致。
+5. `REVIEW_TARGET_STALE` 或 `REVIEW_CONTEXT_STALE` 表示 receipt 后目标或 brief/standards/validation context 已变化；修复后必须生成新 target/context/receipt，不得只改 ledger 摘要。
+6. `RUN_STATE_REVIEW_EVIDENCE_MISSING`、`REPORT_INVALID` 或 `PAYLOAD_MISMATCH` 分别表示 evidence ref 未绑定、路径越界/缺失或 compact payload 不是由 receipt 派生。
+7. `RUN_STATE_REVIEW_REQUIREMENTS_MISMATCH`、`CONSTRAINTS_MISMATCH` 或 `VALIDATION_CONTEXT_MISSING` 表示 managed brief/context 没有精确消费 contract 与当前验证证据，需重建 brief/context。
+8. `RUN_STATE_REVIEW_SCOPE_MISMATCH` 还可能表示 target paths 没有精确覆盖 canonical `allowed_changes`，或 final commit 后仍在使用 working-tree target；重新按 contract 生成完整 target，不要只改 receipt 摘要。
+9. validation failure/not-run 会撤销当前 stage review；failed review 不建立通过门禁。required VAL 和当前 attempt 的 `stage-delta` receipt 未通过时不能追加 `stage_completed`。
+10. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
 
 ## Dependency Execution Gate
 

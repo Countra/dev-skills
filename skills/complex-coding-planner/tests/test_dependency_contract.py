@@ -195,7 +195,7 @@ class DependencyContractTest(unittest.TestCase):
         )
         write_json(
             review_path,
-            valid_review_receipt(build_plan_bundle_target(task_dir)),
+            valid_review_receipt(task_dir),
         )
         return task_dir
 

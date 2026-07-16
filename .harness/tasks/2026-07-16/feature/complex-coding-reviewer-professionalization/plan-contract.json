@@ -1,6 +1,6 @@
 {
   "task_id": "2026-07-16-feature-complex-coding-reviewer-professionalization",
-  "plan_revision": 1,
+  "plan_revision": 2,
   "lifecycle_route": "managed",
   "plan_profile": "full",
   "goal": {
@@ -67,6 +67,11 @@
       "id": "REQ-12",
       "priority": "must",
       "summary": "同步三平台 CI、README、CHANGELOG、安装发现、静态评估和跨 Skill lifecycle 回归"
+    },
+    {
+      "id": "REQ-13",
+      "priority": "must",
+      "summary": "Planner semantic approval 只在 attestation 写入或 amendment 激活前由当时的 current checker 执行，执行期以 attestation 不可变哈希集合为批准事实且不被未来 checker 追溯重判"
     }
   ],
   "acceptance_criteria": [
@@ -139,6 +144,11 @@
       "id": "AC-14",
       "requirement_ids": ["REQ-01", "REQ-05"],
       "summary": "大或敏感目标受文件数、字节、路径和秘密预算约束，Reviewer 的 Agent、网络和目标执行计数保持零"
+    },
+    {
+      "id": "AC-15",
+      "requirement_ids": ["REQ-13"],
+      "summary": "已由 current checker 通过并写入 attestation 的 revision 在未来 checker 变化后仍可恢复和 final；缺失无效 attestation 或批准文件漂移仍 fail closed，新 attestation 或 amendment 在 current Planner approval 失败时不能写入或激活"
     }
   ],
   "nonfunctional_requirements": [
@@ -173,6 +183,10 @@
     {
       "id": "NFR-08",
       "summary": "只修改 ART-04 change map 批准范围，不制造无关格式化、重命名或行为 churn"
+    },
+    {
+      "id": "NFR-09",
+      "summary": "自举迁移在旧批准栈可用时开始并在新批准与执行栈共同可用时结束，任一边界都不依赖旧 schema fallback"
     }
   ],
   "artifacts": [
@@ -221,7 +235,14 @@
     {
       "id": "ART-07",
       "kind": "review",
-      "path": "artifacts/reviews/plan-review-attempt-1.json",
+      "path": "artifacts/reviews/plan-review-attempt-2.json",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-08",
+      "kind": "validation",
+      "path": "artifacts/validation/self-hosting-approval-drift.md",
       "required": true,
       "approval_included": true
     }
@@ -267,39 +288,44 @@
     },
     {
       "id": "STG-02",
-      "title": "双快照、覆盖、gap 与复审谱系契约",
+      "title": "Reviewer 合同、调用方与批准时序原子迁移",
       "depends_on": ["STG-01"],
-      "requirement_ids": ["REQ-01", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09"],
-      "acceptance_ids": ["AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-14"],
-      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
-      "validation_ids": ["VAL-01", "VAL-02", "VAL-08", "VAL-12", "VAL-13"],
+      "requirement_ids": ["REQ-01", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-13"],
+      "acceptance_ids": ["AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-14", "AC-15"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-09"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-12", "VAL-13"],
       "allowed_changes": [
         "skills/complex-coding-reviewer/references/review-contract.md",
-        "skills/complex-coding-reviewer/scripts/review_context.py",
-        "skills/complex-coding-reviewer/scripts/review_package.py",
-        "skills/complex-coding-reviewer/scripts/review_target.py",
-        "skills/complex-coding-reviewer/scripts/review_validate.py",
-        "skills/complex-coding-reviewer/scripts/review_render.py",
-        "skills/complex-coding-reviewer/scripts/complex_coding_reviewer/**",
+        "skills/complex-coding-reviewer/scripts/**",
         "skills/complex-coding-reviewer/templates/**",
         "skills/complex-coding-reviewer/tests/**",
-        "evals/complex-coding-reviewer/**"
+        "evals/complex-coding-reviewer/**",
+        "skills/complex-coding-planner/**",
+        "evals/complex-coding-planner/**",
+        "skills/complex-coding-executor/**",
+        "evals/complex-coding-executor/**"
       ],
       "forbidden_changes": [
-        "legacy receipt compatibility parser or schema version",
+        "legacy receipt compatibility parser, schema version, dual read or dual write",
+        "execution-time rerun of mutable Planner or Reviewer approval checker",
+        "partial public schema switch before every caller is ready",
         "review package treated as canonical freshness source",
         "unbounded workspace traversal or secret capture",
-        "finding disappearance without lineage disposition"
+        "finding disappearance without lineage disposition",
+        "Planner or Executor copy of professional review rubric"
       ],
       "entry_conditions": [
-        "STG-01 专业语义冻结",
-        "root、path、canonical JSON 现有实现已读",
-        "字段复杂度预算经 unit fixture 证明可用"
+        "revision 2 已获用户重新批准并通过 amendment activation carry STG-01",
+        "revision 1 archive 完整且旧版 approval stack 已在新 attestation 写入与激活前通过",
+        "STG-02 尚无源码改动",
+        "Reviewer、Planner、Executor 与 attestation 调用图已读"
       ],
       "exit_conditions": [
         "target 或 context 任一变化稳定拒绝旧 receipt",
         "关键 coverage、gap 或 lineage 不完整不能 passed",
         "package 不被 validator 信任为 canonical source",
+        "Planner 新批准使用 current checker 而 Executor 恢复和 final 只信任有效 attestation hashes",
+        "新版 stage receipt 可被新版 ledger 和 state 原子消费且三 Skill 无半升级路径",
         "Windows、Linux、macOS canonical digest fixtures 一致"
       ],
       "risk": "high",
@@ -307,34 +333,43 @@
     },
     {
       "id": "STG-03",
-      "title": "Planner 与 Executor 当前契约原子适配",
+      "title": "自举恢复与跨 Skill 生命周期加固",
       "depends_on": ["STG-02"],
-      "requirement_ids": ["REQ-08", "REQ-09", "REQ-10"],
-      "acceptance_ids": ["AC-08", "AC-09", "AC-10", "AC-11"],
-      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-05", "NFR-07"],
-      "validation_ids": ["VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-12", "VAL-13"],
+      "requirement_ids": ["REQ-05", "REQ-08", "REQ-09", "REQ-10", "REQ-13"],
+      "acceptance_ids": ["AC-05", "AC-08", "AC-09", "AC-10", "AC-11", "AC-15"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-05", "NFR-07", "NFR-09"],
+      "validation_ids": ["VAL-01", "VAL-04", "VAL-06", "VAL-07", "VAL-08", "VAL-12", "VAL-13"],
       "allowed_changes": [
-        "skills/complex-coding-planner/**",
-        "skills/complex-coding-executor/**",
+        "skills/complex-coding-reviewer/tests/**",
+        "skills/complex-coding-planner/tests/**",
+        "skills/complex-coding-executor/tests/**",
+        "evals/complex-coding-reviewer/**",
         "evals/complex-coding-planner/**",
         "evals/complex-coding-executor/**",
-        "skills/complex-coding-reviewer/scripts/**"
+        "skills/complex-coding-reviewer/references/review-contract.md",
+        "skills/complex-coding-reviewer/scripts/**",
+        "skills/complex-coding-reviewer/templates/**",
+        "skills/complex-coding-planner/**",
+        "skills/complex-coding-executor/**"
       ],
       "forbidden_changes": [
-        "half-upgraded Planner or Executor contract",
+        "second review schema migration",
+        "production change without a failing STG-03 regression proving an STG-02 root cause",
         "legacy review receipt fallback, dual write or schema branch",
-        "Planner or Executor copy of professional review rubric",
+        "execution-time Planner checker dependency",
+        "weakening attestation immutable set or dependency runtime gate",
         "unbound validation claim in Executor ledger"
       ],
       "entry_conditions": [
-        "Reviewer 新 validator 和 fixtures 已通过",
-        "Planner 与 Executor 当前 approval、review、ledger 调用点已有完整调用图",
-        "旧术语和旧 payload 清理列表已固定"
+        "STG-02 新 Reviewer、Planner 与 Executor public contract 已共同通过并提交",
+        "stage review 和 ledger 已使用新版 receipt 闭环",
+        "不存在旧字段或 compatibility path"
       ],
       "exit_conditions": [
         "Planner 缺新 plan receipt 无法 approval",
         "Executor wrong scope、context、lineage 或 validation claim 无法完成 stage 或 final",
-        "跨 Skill regression 不存在半新半旧路径"
+        "有效历史 attestation 不受未来 checker 变化影响而批准文件篡改仍 fail closed",
+        "amendment carry、dependency runtime 和跨 Skill regression 没有旁路"
       ],
       "risk": "high",
       "commit_expectation": "stage"
@@ -380,9 +415,9 @@
       "id": "STG-05",
       "title": "三平台 CI、文档与 current-only 收口",
       "depends_on": ["STG-04"],
-      "requirement_ids": ["REQ-01", "REQ-10", "REQ-11", "REQ-12"],
-      "acceptance_ids": ["AC-01", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14"],
-      "nonfunctional_ids": ["NFR-01", "NFR-03", "NFR-04", "NFR-05", "NFR-08"],
+      "requirement_ids": ["REQ-01", "REQ-10", "REQ-11", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-01", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15"],
+      "nonfunctional_ids": ["NFR-01", "NFR-03", "NFR-04", "NFR-05", "NFR-08", "NFR-09"],
       "validation_ids": ["VAL-08", "VAL-09", "VAL-11", "VAL-12", "VAL-13"],
       "allowed_changes": [
         ".github/workflows/planner-executor.yml",
@@ -421,9 +456,9 @@
       "id": "STG-06",
       "title": "最终集成审查、回归与交付",
       "depends_on": ["STG-05"],
-      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-11", "REQ-12"],
-      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14"],
-      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-11", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09"],
       "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-13", "VAL-14"],
       "allowed_changes": [
         "all files approved by ART-04 and STG-01 through STG-05",
@@ -480,7 +515,7 @@
       "id": "VAL-04",
       "kind": "test",
       "required": true,
-      "covers": ["AC-05", "AC-06", "AC-08", "AC-10", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "covers": ["AC-05", "AC-06", "AC-08", "AC-10", "AC-15", "NFR-01", "NFR-02", "NFR-05", "NFR-07", "NFR-09"],
       "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p test_*.py -v",
       "evidence_path": "artifacts/validation/planner-unit-tests.txt"
     },
@@ -488,7 +523,7 @@
       "id": "VAL-05",
       "kind": "test",
       "required": true,
-      "covers": ["AC-02", "AC-10", "AC-12", "NFR-03", "NFR-06"],
+      "covers": ["AC-02", "AC-10", "AC-12", "AC-15", "NFR-03", "NFR-06", "NFR-09"],
       "command": "python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/planner-evals.json",
       "evidence_path": "artifacts/validation/planner-evals.json"
     },
@@ -496,7 +531,7 @@
       "id": "VAL-06",
       "kind": "test",
       "required": true,
-      "covers": ["AC-05", "AC-08", "AC-09", "AC-11", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "covers": ["AC-05", "AC-08", "AC-09", "AC-11", "AC-15", "NFR-01", "NFR-02", "NFR-05", "NFR-07", "NFR-09"],
       "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_*.py -v",
       "evidence_path": "artifacts/validation/executor-unit-tests.txt"
     },
@@ -504,7 +539,7 @@
       "id": "VAL-07",
       "kind": "test",
       "required": true,
-      "covers": ["AC-03", "AC-09", "AC-11", "AC-12", "NFR-03", "NFR-06"],
+      "covers": ["AC-03", "AC-09", "AC-11", "AC-12", "AC-15", "NFR-03", "NFR-06", "NFR-09"],
       "command": "python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/executor-evals.json",
       "evidence_path": "artifacts/validation/executor-evals.json"
     },
@@ -512,7 +547,7 @@
       "id": "VAL-08",
       "kind": "test",
       "required": true,
-      "covers": ["AC-05", "AC-08", "AC-09", "AC-10", "AC-11", "AC-13", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "covers": ["AC-05", "AC-08", "AC-09", "AC-10", "AC-11", "AC-13", "AC-15", "NFR-01", "NFR-02", "NFR-05", "NFR-07", "NFR-09"],
       "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer --work-dir .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/tmp/cross-review --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/cross-review.json",
       "evidence_path": "artifacts/validation/cross-review.json"
     },
@@ -552,7 +587,7 @@
       "id": "VAL-13",
       "kind": "lint",
       "required": true,
-      "covers": ["AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-05", "NFR-08"],
+      "covers": ["AC-13", "AC-14", "AC-15", "NFR-01", "NFR-02", "NFR-05", "NFR-08", "NFR-09"],
       "command": "git -c diff.autoRefreshIndex=false diff --check，并核对 changed paths 全部位于 ART-04",
       "evidence_path": "artifacts/validation/git-diff-check.txt"
     },
@@ -560,7 +595,7 @@
       "id": "VAL-14",
       "kind": "review",
       "required": true,
-      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09"],
       "command": "使用 complex-coding-reviewer 的 code-review 和 final-integration scope 对当前完整 target 与 context 生成并校验正式 receipt",
       "evidence_path": "artifacts/reviews/final-integration-attempt-N.json"
     }
@@ -589,7 +624,8 @@
     "Planner approval、Executor stage 或 final、ledger payload、Stage DAG、required validation 或 allowed/forbidden scope 发生变化",
     "引入第三方运行依赖、后台服务、数据库、缓存、模型调用、secret、远端写入或提权要求",
     "实现需要修改 ART-04 之外的其它 Skill 公共行为、保留旧契约兼容层或改变 CI branch/OS contract",
-    "active task pointer 冲突、用户相关改动或 baseline 漂移无法按当前计划安全处理"
+    "active task pointer 冲突、用户相关改动或 baseline 漂移无法按当前计划安全处理",
+    "attestation 写入或 amendment 激活与 execution preflight 或 final 的批准信任时序、不可变批准集合语义再次变化"
   ],
   "stop_conditions": [
     "用户请求暂停或尚未批准 implementation",
@@ -598,6 +634,7 @@
     "required validation、blocking 或 major finding、blocking verification gap 在有界修复后仍未关闭",
     "需要未授权的依赖、Agent、网络、外部写入、提权或长期进程",
     "active task pointer 属于另一非终态任务",
-    "无法真实声明 reviewer provenance、验证 claim 或关键专业覆盖"
+    "无法真实声明 reviewer provenance、验证 claim 或关键专业覆盖",
+    "revision 2 未获用户重新批准或 STG-01 carry 无法由 archive 证明"
   ]
 }

@@ -17,7 +17,8 @@ from complex_coding_reviewer.render import render_receipt
 class RenderTests(unittest.TestCase):
     def test_findings_are_rendered_before_lens_summary(self) -> None:
         with writable_tempdir() as temp:
-            receipt = receipt_for_target(create_file_target(Path(temp)))
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
             receipt["findings"] = [finding()]
             update_counts_and_verdict(receipt)
             rendered = render_receipt(receipt)
@@ -27,7 +28,8 @@ class RenderTests(unittest.TestCase):
 
     def test_clean_receipt_states_no_findings(self) -> None:
         with writable_tempdir() as temp:
-            receipt = receipt_for_target(create_file_target(Path(temp)))
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
             self.assertIn("No findings.", render_receipt(receipt))
 
 

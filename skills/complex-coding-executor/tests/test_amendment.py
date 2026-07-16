@@ -67,6 +67,7 @@ def stage_review_payload() -> dict[str, object]:
         "profile": "code-review",
         "scope": {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
         "target_digest": "a" * 64,
+        "context_digest": "b" * 64,
         "verdict": "passed",
         "report_ref": "artifacts/reviews/stage-01.json",
         "open_counts": {
@@ -76,6 +77,18 @@ def stage_review_payload() -> dict[str, object]:
             "advisory": 0,
             "total": 0,
         },
+        "gap_counts": {"blocking": 0, "major": 0, "minor": 0, "total": 0},
+        "coverage_summary": {
+            "target_paths": 1,
+            "requirements": 1,
+            "risks": 6,
+            "context_expansions": 0,
+        },
+        "lineage_summary": {
+            "predecessor_review_id": None,
+            "accounted_finding_count": 0,
+        },
+        "strength_count": 0,
         "summary": "review passed",
     }
 
@@ -110,6 +123,10 @@ class AmendmentTest(unittest.TestCase):
         report = bundle.task_dir / str(review["report_ref"])
         report.parent.mkdir(parents=True, exist_ok=True)
         report.write_text("{}\n", encoding="utf-8")
+        validation_ref = "artifacts/validation/val-01.txt"
+        validation = bundle.task_dir / validation_ref
+        validation.parent.mkdir(parents=True, exist_ok=True)
+        validation.write_text("validation passed\n", encoding="utf-8")
         events = [
             ("execution_started", {}),
             ("stage_started", {"stage_id": "STG-01", "attempt": 1}),
@@ -117,11 +134,19 @@ class AmendmentTest(unittest.TestCase):
                 "validation_recorded",
                 {
                     "stage_id": "STG-01",
+                    "attempt": 1,
                     "payload": {
                         "validation_id": "VAL-01",
                         "result": "passed",
+                        "command": "python -m unittest",
+                        "claim_source": "observed",
+                        "stage_attempt": 1,
+                        "target_digest": "a" * 64,
+                        "exit_code": 0,
                         "summary": "validation passed",
+                        "claim_boundary": "只证明当前 target 的测试结果。",
                     },
+                    "evidence_refs": [validation_ref],
                 },
             ),
             (

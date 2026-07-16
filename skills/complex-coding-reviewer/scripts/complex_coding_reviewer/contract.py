@@ -3,13 +3,28 @@
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
+from .context import (
+    load_context_brief,
+    validate_context_target_shape,
+    verify_context_freshness,
+)
+from .coverage import coverage_summary, validate_coverage
 from .errors import ReviewError
-from .io import normalize_relative_path
+from .review_parts import (
+    _evidence_refs,
+    derive_gap_counts,
+    derive_open_counts,
+    expected_verdict,
+    validate_findings,
+    validate_gaps,
+    validate_lineage,
+    validate_open_counts,
+    validate_strengths,
+)
 from .target import validate_target_shape, verify_target_freshness
 
 
@@ -18,10 +33,14 @@ ROOT_FIELDS = {
     "profile",
     "scope",
     "target",
+    "context",
     "reviewer",
     "standards",
+    "coverage",
     "lenses",
+    "strengths",
     "findings",
+    "verification_gaps",
     "verdict",
     "open_counts",
     "summary",
@@ -32,20 +51,6 @@ ROOT_FIELDS = {
 REVIEWER_FIELDS = {"mode", "identity", "independence_claim", "capability_limits"}
 STANDARD_FIELDS = {"id", "title", "source", "applicability"}
 LENS_FIELDS = {"id", "status", "evidence_refs", "summary"}
-FINDING_FIELDS = {
-    "id",
-    "severity",
-    "status",
-    "title",
-    "claim",
-    "impact",
-    "recommendation",
-    "evidence",
-    "confidence",
-    "disposition_reason",
-}
-EVIDENCE_FIELDS = {"path", "line", "symbol", "artifact_ref", "standard_ref", "detail"}
-COUNT_FIELDS = {"blocking", "major", "minor", "advisory", "total"}
 
 PLAN_LENSES = (
     "PLAN-INTENT",
@@ -71,12 +76,8 @@ CODE_LENSES = (
 PROFILES = {"plan-review", "code-review"}
 PROVENANCE_MODES = {"same-context", "fresh-context", "external-agent", "human"}
 LENS_STATUSES = {"reviewed", "not-applicable", "blocked"}
-SEVERITIES = ("blocking", "major", "minor", "advisory")
-FINDING_STATUSES = {"open", "resolved", "accepted", "deferred", "invalidated"}
-CONFIDENCES = {"high", "medium", "low"}
 VERDICTS = {"passed", "changes_required", "blocked"}
 REVIEW_ID = re.compile(r"^REV-[A-Z0-9][A-Z0-9._-]{2,127}$")
-FINDING_ID = re.compile(r"^FIND-[0-9]{3,}$")
 
 
 def _closed(value: Any, fields: set[str], path: str) -> dict[str, Any]:
@@ -186,7 +187,11 @@ def _validate_standards(raw: Any) -> list[dict[str, Any]]:
     return result
 
 
-def _validate_lenses(profile: str, raw: Any) -> list[dict[str, Any]]:
+def _validate_lenses(
+    profile: str,
+    raw: Any,
+    allowed_paths: set[str],
+) -> list[dict[str, Any]]:
     if not isinstance(raw, list):
         raise ReviewError("REVIEW_CONTRACT_TYPE_INVALID", "lenses 必须是数组。", path="$.lenses")
     expected = PLAN_LENSES if profile == "plan-review" else CODE_LENSES
@@ -199,7 +204,12 @@ def _validate_lenses(profile: str, raw: Any) -> list[dict[str, Any]]:
         status = lens["status"]
         if status not in LENS_STATUSES:
             raise ReviewError("REVIEW_PROFILE_LENS_INVALID", "未知 lens status。", path=f"{path}.status")
-        evidence = _string_list(lens["evidence_refs"], f"{path}.evidence_refs")
+        evidence = _evidence_refs(
+            lens["evidence_refs"],
+            f"{path}.evidence_refs",
+            allowed_paths,
+            allow_empty=status == "not-applicable",
+        )
         _nonempty_string(lens["summary"], f"{path}.summary")
         if status in {"reviewed", "blocked"} and not evidence:
             raise ReviewError("REVIEW_PROFILE_LENS_EVIDENCE_MISSING", "reviewed/blocked lens 需要 evidence。", path=path)
@@ -213,105 +223,6 @@ def _validate_lenses(profile: str, raw: Any) -> list[dict[str, Any]]:
     return result
 
 
-def _nullable_string(value: Any, path: str) -> str | None:
-    if value is None:
-        return None
-    return _nonempty_string(value, path)
-
-
-def _validate_evidence(raw: Any, path: str) -> list[dict[str, Any]]:
-    if not isinstance(raw, list) or not raw:
-        raise ReviewError("REVIEW_FINDING_EVIDENCE_MISSING", "finding 至少需要一条定位证据。", path=path)
-    result = []
-    for index, item in enumerate(raw):
-        item_path = f"{path}[{index}]"
-        evidence = _closed(item, EVIDENCE_FIELDS, item_path)
-        location_path = _nullable_string(evidence["path"], f"{item_path}.path")
-        if location_path is not None:
-            normalized = normalize_relative_path(location_path)
-            if normalized != location_path:
-                raise ReviewError("REVIEW_FINDING_EVIDENCE_INVALID", "evidence path 必须已 canonicalize。", path=item_path)
-        line = evidence["line"]
-        if line is not None:
-            _positive_integer(line, f"{item_path}.line")
-            if location_path is None:
-                raise ReviewError("REVIEW_FINDING_EVIDENCE_INVALID", "line 必须与 path 同时出现。", path=item_path)
-        symbol = _nullable_string(evidence["symbol"], f"{item_path}.symbol")
-        artifact = _nullable_string(evidence["artifact_ref"], f"{item_path}.artifact_ref")
-        standard = _nullable_string(evidence["standard_ref"], f"{item_path}.standard_ref")
-        _nonempty_string(evidence["detail"], f"{item_path}.detail")
-        if not any((location_path, symbol, artifact, standard)):
-            raise ReviewError("REVIEW_FINDING_EVIDENCE_INVALID", "证据必须包含目标或 artifact/standard 定位。", path=item_path)
-        result.append(evidence)
-    return result
-
-
-def _validate_findings(raw: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw, list):
-        raise ReviewError("REVIEW_CONTRACT_TYPE_INVALID", "findings 必须是数组。", path="$.findings")
-    result = []
-    ids: set[str] = set()
-    for index, item in enumerate(raw):
-        path = f"$.findings[{index}]"
-        finding = _closed(item, FINDING_FIELDS, path)
-        finding_id = _nonempty_string(finding["id"], f"{path}.id")
-        if not FINDING_ID.fullmatch(finding_id):
-            raise ReviewError("REVIEW_FINDING_ID_INVALID", "finding id 必须使用 FIND-NNN 格式。", path=path)
-        if finding_id in ids:
-            raise ReviewError("REVIEW_CONTRACT_DUPLICATE_ID", "finding id 重复。", path=path)
-        ids.add(finding_id)
-        if finding["severity"] not in SEVERITIES:
-            raise ReviewError("REVIEW_FINDING_SEVERITY_INVALID", "未知 finding severity。", path=path)
-        if finding["status"] not in FINDING_STATUSES:
-            raise ReviewError("REVIEW_FINDING_STATUS_INVALID", "未知 finding status。", path=path)
-        if finding["confidence"] not in CONFIDENCES:
-            raise ReviewError("REVIEW_FINDING_CONFIDENCE_INVALID", "未知 confidence。", path=path)
-        for field in ("title", "claim", "impact", "recommendation"):
-            _nonempty_string(finding[field], f"{path}.{field}")
-        _validate_evidence(finding["evidence"], f"{path}.evidence")
-        disposition = finding["disposition_reason"]
-        if finding["status"] == "open" and disposition is not None:
-            raise ReviewError("REVIEW_FINDING_DISPOSITION_INVALID", "open finding 的 disposition_reason 必须为 null。", path=path)
-        if finding["status"] != "open":
-            _nonempty_string(disposition, f"{path}.disposition_reason")
-        if finding["severity"] == "blocking" and finding["confidence"] == "low":
-            raise ReviewError("REVIEW_FINDING_CONFIDENCE_INVALID", "低置信 finding 不能定为 blocking。", path=path)
-        result.append(finding)
-    return result
-
-
-def derive_open_counts(findings: Iterable[dict[str, Any]]) -> dict[str, int]:
-    counts = {severity: 0 for severity in SEVERITIES}
-    for finding in findings:
-        if finding["status"] == "open":
-            counts[finding["severity"]] += 1
-    return {**counts, "total": sum(counts.values())}
-
-
-def _validate_counts(raw: Any, derived: dict[str, int]) -> dict[str, int]:
-    counts = _closed(raw, COUNT_FIELDS, "$.open_counts")
-    for key, value in counts.items():
-        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
-            raise ReviewError("REVIEW_CONTRACT_COUNT_INVALID", "open count 必须是非负整数。", path=f"$.open_counts.{key}")
-    if counts != derived:
-        raise ReviewError(
-            "REVIEW_CONTRACT_COUNT_MISMATCH",
-            f"open_counts 必须由 findings 派生：expected={derived}, actual={counts}",
-        )
-    return counts
-
-
-def _expected_verdict(lenses: list[dict[str, Any]], findings: list[dict[str, Any]]) -> str:
-    if any(lens["status"] == "blocked" for lens in lenses):
-        return "blocked"
-    unresolved_major = any(
-        finding["severity"] in {"blocking", "major"}
-        and finding["status"] in {"open", "accepted", "deferred"}
-        for finding in findings
-    )
-    return "changes_required" if unresolved_major else "passed"
-
-
 def _validate_supersedes(receipt: dict[str, Any], previous: dict[str, Any] | None) -> None:
     previous_id = receipt["supersedes_review_id"]
     if previous_id is None:
@@ -321,9 +232,7 @@ def _validate_supersedes(receipt: dict[str, Any], previous: dict[str, Any] | Non
     _nonempty_string(previous_id, "$.supersedes_review_id")
     if previous is None:
         raise ReviewError("REVIEW_SUPERSEDES_MISSING", "声明 supersedes_review_id 时必须提供前序 receipt。")
-    predecessor = deepcopy(previous)
-    predecessor["supersedes_review_id"] = None
-    validate_receipt(predecessor, check_freshness=False)
+    validate_receipt(previous, check_freshness=False, _skip_lineage=True)
     if previous.get("review_id") != previous_id:
         raise ReviewError("REVIEW_SUPERSEDES_MISMATCH", "前序 receipt 的 review_id 不匹配。")
     if previous_id == receipt["review_id"] or previous.get("supersedes_review_id") == receipt["review_id"]:
@@ -346,6 +255,7 @@ def validate_receipt(
     expected_stage_id: str | None = None,
     expected_attempt: int | None = None,
     previous_receipt: dict[str, Any] | None = None,
+    _skip_lineage: bool = False,
 ) -> dict[str, Any]:
     value = _closed(receipt, ROOT_FIELDS, "$")
     review_id = _nonempty_string(value["review_id"], "$.review_id")
@@ -376,32 +286,69 @@ def validate_receipt(
         identity = target["identity"]
         if identity.get("stage_id") != scope["stage_id"] or identity.get("attempt") != scope["attempt"]:
             raise ReviewError("REVIEW_PROFILE_SCOPE_MISMATCH", "stage target identity 与 receipt scope 不一致。")
+    context = validate_context_target_shape(value["context"])
+    brief = None
+    if check_freshness:
+        verify_target_freshness(target, workspace=workspace, task_dir=task_dir)
+        verify_context_freshness(context, workspace=workspace, task_dir=task_dir)
+        brief = load_context_brief(context, workspace=workspace, task_dir=task_dir)
+        if brief["profile"] != profile or brief["scope"] != scope:
+            raise ReviewError(
+                "REVIEW_CONTEXT_SCOPE_MISMATCH",
+                "review brief 的 profile/scope 与 receipt 不一致。",
+            )
+    target_paths = [item["path"] for item in target["manifest"]]
+    context_paths = {item["path"] for item in context["manifest"]}
+    allowed_paths = set(target_paths) | context_paths
     _validate_reviewer(value["reviewer"])
     _validate_standards(value["standards"])
-    lenses = _validate_lenses(profile, value["lenses"])
-    findings = _validate_findings(value["findings"])
-    counts = _validate_counts(value["open_counts"], derive_open_counts(findings))
+    lenses = _validate_lenses(profile, value["lenses"], allowed_paths)
+    findings = validate_findings(value["findings"], allowed_paths)
+    strengths = validate_strengths(value["strengths"], allowed_paths)
+    gaps = validate_gaps(value["verification_gaps"], allowed_paths)
+    coverage = validate_coverage(
+        value["coverage"],
+        target_paths=target_paths,
+        context_paths=context_paths,
+        findings=findings,
+        gaps=gaps,
+        expected_requirement_refs=(brief["requirement_refs"] if brief is not None else None),
+        requested_risks=(brief["requested_risk_focus"] if brief is not None else []),
+    )
+    counts = validate_open_counts(value["open_counts"], derive_open_counts(findings))
     verdict = value["verdict"]
     if verdict not in VERDICTS:
         raise ReviewError("REVIEW_CONTRACT_VERDICT_INVALID", "未知 verdict。")
-    expected_verdict = _expected_verdict(lenses, findings)
-    if verdict != expected_verdict:
+    derived_verdict = expected_verdict(lenses, findings, gaps)
+    if verdict != derived_verdict:
         raise ReviewError(
             "REVIEW_CONTRACT_VERDICT_MISMATCH",
-            f"verdict 必须由 lenses/findings 派生：expected={expected_verdict}, actual={verdict}",
+            f"verdict 必须由 lenses/findings/gaps 派生：expected={derived_verdict}, actual={verdict}",
         )
     _nonempty_string(value["summary"], "$.summary")
-    _string_list(value["limitations"], "$.limitations")
+    limitations = _string_list(value["limitations"], "$.limitations")
+    if gaps and not limitations:
+        raise ReviewError("REVIEW_GAP_LIMITATION_MISSING", "存在 verification gap 时 limitations 不能为空。")
     _parse_reviewed_at(value["reviewed_at"])
-    _validate_supersedes(value, previous_receipt)
-    if check_freshness:
-        verify_target_freshness(target, workspace=workspace, task_dir=task_dir)
+    if _skip_lineage:
+        lineage = {
+            "predecessor_review_id": value["supersedes_review_id"],
+            "accounted_finding_count": 0,
+        }
+    else:
+        _validate_supersedes(value, previous_receipt)
+        lineage = validate_lineage(value, previous_receipt)
     return {
         "review_id": review_id,
         "profile": profile,
         "scope": scope,
         "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "verdict": verdict,
         "open_counts": counts,
+        "gap_counts": derive_gap_counts(gaps),
+        "coverage_summary": coverage_summary(coverage),
+        "lineage_summary": lineage,
+        "strength_count": len(strengths),
         "summary": value["summary"],
     }

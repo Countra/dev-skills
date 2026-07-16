@@ -27,6 +27,7 @@ from complex_coding_reviewer.contract import (
     derive_open_counts,
     validate_receipt,
 )
+from complex_coding_reviewer.context import RISK_IDS, build_context_target
 from complex_coding_reviewer.errors import ReviewError
 from complex_coding_reviewer.target import (
     build_file_manifest_target,
@@ -96,20 +97,20 @@ def create_code_target(root: Path) -> dict[str, Any]:
     return build_file_manifest_target(root, ["src/service.py"], label="reviewer-eval")
 
 
-def lenses(profile: str) -> list[dict[str, Any]]:
+def lenses(profile: str, evidence_ref: str) -> list[dict[str, Any]]:
     values = PLAN_LENSES if profile == "plan-review" else CODE_LENSES
     return [
         {
             "id": lens,
             "status": "reviewed",
-            "evidence_refs": ["target:fixture"],
+            "evidence_refs": [evidence_ref],
             "summary": f"{lens} 已完成 fixture 契约审查。",
         }
         for lens in values
     ]
 
 
-def receipt(target: dict[str, Any], profile: str) -> dict[str, Any]:
+def receipt(target: dict[str, Any], profile: str, root: Path) -> dict[str, Any]:
     scope = (
         {
             "kind": "managed-plan",
@@ -119,11 +120,43 @@ def receipt(target: dict[str, Any], profile: str) -> dict[str, Any]:
         if profile == "plan-review"
         else {"kind": "standalone"}
     )
+    review_id = "REV-EVAL-PLAN" if profile == "plan-review" else "REV-EVAL-CODE"
+    brief_relative = "artifacts/review-brief.json" if profile == "plan-review" else "review-brief.json"
+    write_json(
+        root / brief_relative,
+        {
+            "profile": profile,
+            "scope": scope,
+            "summary": "验证 deterministic eval contract。",
+            "requirement_refs": ["REQ-EVAL"],
+            "constraint_refs": [],
+            "claim_refs": [],
+            "requested_risk_focus": [],
+            "created_at": "2026-07-16T00:00:00+00:00",
+        },
+    )
+    context_entries = [(brief_relative, "brief")]
+    context_entries.extend(
+        (
+            str(item["path"]),
+            "requirement" if profile == "plan-review" else "adjacent-code",
+        )
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != brief_relative
+    )
+    context = build_context_target(
+        root,
+        root_kind="task-dir" if profile == "plan-review" else "workspace",
+        label=f"{review_id.lower()}-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
     return {
-        "review_id": "REV-EVAL-PLAN" if profile == "plan-review" else "REV-EVAL-CODE",
+        "review_id": review_id,
         "profile": profile,
         "scope": scope,
         "target": deepcopy(target),
+        "context": context,
         "reviewer": {
             "mode": "same-context",
             "identity": "deterministic-eval",
@@ -131,8 +164,44 @@ def receipt(target: dict[str, Any], profile: str) -> dict[str, Any]:
             "capability_limits": ["fixture 只验证 contract，不声明真实审查质量。"],
         },
         "standards": [],
-        "lenses": lenses(profile),
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "deterministic fixture 已覆盖该路径。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": "REQ-EVAL",
+                    "status": "satisfied",
+                    "evidence_refs": [brief_relative],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "fixture 提供了直接证据。",
+                }
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [brief_relative],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
+        "lenses": lenses(profile, brief_relative),
+        "strengths": [],
         "findings": [],
+        "verification_gaps": [],
         "verdict": "passed",
         "open_counts": {"blocking": 0, "major": 0, "minor": 0, "advisory": 0, "total": 0},
         "summary": "fixture receipt 完成结构验证。",
@@ -142,9 +211,11 @@ def receipt(target: dict[str, Any], profile: str) -> dict[str, Any]:
     }
 
 
-def seeded_finding(severity: str) -> dict[str, Any]:
+def seeded_finding(severity: str, evidence_path: str) -> dict[str, Any]:
     return {
         "id": "FIND-001",
+        "category": "correctness",
+        "origin": {"review_id": None, "finding_id": None},
         "severity": severity,
         "status": "open",
         "title": "Seeded contract finding",
@@ -153,12 +224,13 @@ def seeded_finding(severity: str) -> dict[str, Any]:
         "recommendation": "根据 finding severity 产生正确门禁。",
         "evidence": [
             {
-                "path": "src/service.py",
+                "path": evidence_path,
                 "line": 1,
                 "symbol": "value",
                 "artifact_ref": None,
                 "standard_ref": None,
                 "detail": "seeded evidence",
+                "claim_source": "read",
             }
         ],
         "confidence": "high",
@@ -170,18 +242,39 @@ def apply_mutation(value: dict[str, Any], mutation: str, root: Path) -> None:
     if mutation == "none":
         return
     if mutation == "open-minor":
-        value["findings"] = [seeded_finding("minor")]
+        value["findings"] = [seeded_finding("minor", value["target"]["manifest"][0]["path"])]
         value["open_counts"] = derive_open_counts(value["findings"])
+        value["coverage"]["requirement_checks"][0].update(
+            {
+                "status": "violated",
+                "finding_ids": ["FIND-001"],
+                "summary": "fixture requirement 存在 minor finding。",
+            }
+        )
     elif mutation == "blocked-lens":
         value["lenses"][0]["status"] = "blocked"
         value["verdict"] = "blocked"
     elif mutation == "major-forced-pass":
-        value["findings"] = [seeded_finding("major")]
+        value["findings"] = [seeded_finding("major", value["target"]["manifest"][0]["path"])]
         value["open_counts"] = derive_open_counts(value["findings"])
+        value["coverage"]["requirement_checks"][0].update(
+            {
+                "status": "violated",
+                "finding_ids": ["FIND-001"],
+                "summary": "fixture requirement 存在 major finding。",
+            }
+        )
     elif mutation == "missing-lens":
         value["lenses"].pop()
     elif mutation == "count-drift":
-        value["findings"] = [seeded_finding("minor")]
+        value["findings"] = [seeded_finding("minor", value["target"]["manifest"][0]["path"])]
+        value["coverage"]["requirement_checks"][0].update(
+            {
+                "status": "violated",
+                "finding_ids": ["FIND-001"],
+                "summary": "fixture requirement 存在未计数 finding。",
+            }
+        )
     elif mutation == "false-independence":
         value["reviewer"]["independence_claim"] = True
     elif mutation == "stale-target":
@@ -200,7 +293,7 @@ def evaluate_case(case: dict[str, Any], parent: Path) -> dict[str, Any]:
     root = create_case_root(parent)
     try:
         target = create_plan_target(root) if case["profile"] == "plan-review" else create_code_target(root)
-        value = receipt(target, case["profile"])
+        value = receipt(target, case["profile"], root)
         apply_mutation(value, case["mutation"], root)
         actual_valid = True
         actual_code = None

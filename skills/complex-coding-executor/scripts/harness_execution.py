@@ -184,12 +184,7 @@ def check_preflight(
     dependency_receipt: str | None = None,
 ) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
-    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
-    allow_stale = bool(
-        dependency["stale_approved_decision_ids"]
-        and dependency["runtime_recheck"]
-    )
-    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
+    evaluate_dependency_preflight(bundle, dependency_receipt)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["reapproval_required"]:
@@ -292,12 +287,7 @@ def check_final(
     dependency_receipt: str | None = None,
 ) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
-    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
-    allow_stale = bool(
-        dependency["stale_approved_decision_ids"]
-        and dependency["runtime_recheck"]
-    )
-    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
+    evaluate_dependency_preflight(bundle, dependency_receipt)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["lifecycle"] != "completed":

@@ -43,6 +43,7 @@ def validate_review_artifact(
     artifact_path: Path,
     task_dir: Path,
     attempt: int,
+    approval_context_paths: set[str],
     issue_path: str,
     issues: list[ValidationIssue],
 ) -> None:
@@ -142,6 +143,35 @@ def validate_review_artifact(
             f"plan-review verdict 必须为 passed，当前为 {verdict}。",
             "处理所有 blocking/major finding 和 blocked lens，再生成新 attempt。",
         )
+        return
+    try:
+        receipt = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        add_issue(
+            issues,
+            "TASK_ARTIFACT_REVIEW_VALIDATION_FAILED",
+            issue_path,
+            f"无法读取已通过校验的 plan-review receipt：{exc}",
+            "修复 receipt 文件后重新运行 approval checker。",
+        )
+        return
+    context = receipt.get("context") if isinstance(receipt, dict) else None
+    manifest = context.get("manifest") if isinstance(context, dict) else None
+    context_paths = {
+        item.get("path")
+        for item in manifest or []
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    unapproved = sorted(context_paths - approval_context_paths)
+    if unapproved:
+        add_issue(
+            issues,
+            "TASK_ARTIFACT_REVIEW_CONTEXT_UNATTESTED",
+            issue_path,
+            "plan-review context 包含未进入批准哈希集合的文件："
+            + ", ".join(unapproved),
+            "只引用 execution-plan.md、plan-contract.json 和 approval_included planning artifacts。",
+        )
 
 
 def validate_artifacts(
@@ -159,6 +189,8 @@ def validate_artifacts(
     artifact_kinds: set[str] = set()
     artifact_paths: set[Path] = set()
     review_artifact_count = 0
+    approval_context_paths = {"execution-plan.md", "plan-contract.json"}
+    review_validations: list[tuple[Path, int, str]] = []
     for index, item in enumerate(artifacts):
         path = f"$.artifacts[{index}]"
         fields = {"id", "kind", "path", "required", "approval_included"}
@@ -193,6 +225,12 @@ def validate_artifacts(
             else:
                 review_attempt = int(match.group(1))
         canonical_path = (task_dir / relative).resolve() if relative else None
+        if (
+            relative
+            and kind != "review"
+            and item.get("approval_included") is True
+        ):
+            approval_context_paths.add(relative.replace("\\", "/"))
         if canonical_path in artifact_paths:
             add_issue(
                 issues,
@@ -271,13 +309,16 @@ def validate_artifacts(
                 "写入实际证据或从 contract 移除该 artifact。",
             )
         elif kind == "review" and review_attempt is not None:
-            validate_review_artifact(
-                artifact_path,
-                task_dir,
-                review_attempt,
-                f"{path}.path",
-                issues,
-            )
+            review_validations.append((artifact_path, review_attempt, f"{path}.path"))
+    for artifact_path, review_attempt, issue_path in review_validations:
+        validate_review_artifact(
+            artifact_path,
+            task_dir,
+            review_attempt,
+            approval_context_paths,
+            issue_path,
+            issues,
+        )
     if review_artifact_count != 1:
         add_issue(
             issues,

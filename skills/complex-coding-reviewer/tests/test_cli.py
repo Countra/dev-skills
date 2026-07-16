@@ -96,7 +96,7 @@ class CliTests(unittest.TestCase):
     def test_validate_and_render_cli(self) -> None:
         with writable_tempdir() as temp:
             root = Path(temp)
-            receipt = receipt_for_target(create_file_target(root))
+            receipt = receipt_for_target(create_file_target(root), root=root)
             review_root = root / "reviews"
             receipt_path = review_root / "receipt.json"
             write_json(receipt_path, receipt)
@@ -131,10 +131,59 @@ class CliTests(unittest.TestCase):
             self.assertEqual(0, code, payload)
             self.assertIn("# Review REV-CODE-001", output.read_text(encoding="utf-8"))
 
+    def test_context_and_package_cli_are_bounded_and_read_only(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
+            review_root = root / "reviews"
+            context_path = review_root / "context.json"
+            code, payload = self.run_script(
+                "review_context.py",
+                "target",
+                "--root",
+                str(root),
+                "--root-kind",
+                "workspace",
+                "--label",
+                "cli-context",
+                "--entry",
+                "review-brief.json=brief",
+                "--entry",
+                "src/example.py=adjacent-code",
+                "--review-root",
+                str(review_root),
+                "--output",
+                str(context_path),
+            )
+            self.assertEqual(0, code, payload)
+            self.assertEqual(0, payload["result"]["agent_calls"])
+            target_path = review_root / "target.json"
+            write_json(target_path, receipt["target"])
+            package_path = review_root / "package.json"
+            code, payload = self.run_script(
+                "review_package.py",
+                "--target",
+                str(target_path),
+                "--context",
+                str(context_path),
+                "--workspace",
+                str(root),
+                "--generated-at",
+                "2026-07-16T00:00:00+00:00",
+                "--review-root",
+                str(review_root),
+                "--output",
+                str(package_path),
+            )
+            self.assertEqual(0, code, payload)
+            package = payload["result"]["package"]
+            self.assertEqual(receipt["target"]["digest"], package["target_digest"])
+            self.assertFalse(package["truncated"])
+
     def test_validate_rejects_receipt_outside_review_root(self) -> None:
         with writable_tempdir() as temp:
             root = Path(temp)
-            receipt = receipt_for_target(create_file_target(root))
+            receipt = receipt_for_target(create_file_target(root), root=root)
             receipt_path = root / "outside.json"
             review_root = root / "reviews"
             review_root.mkdir()

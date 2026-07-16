@@ -22,15 +22,32 @@ REVIEWER_SCRIPTS = (
     / "complex-coding-reviewer"
     / "scripts"
 )
-CODE_LENSES = (
-    "CODE-CORRECTNESS",
-    "CODE-BOUNDARIES",
-    "CODE-ARCHITECTURE",
-    "CODE-RISK",
-    "CODE-TESTS",
-    "CODE-DELIVERY",
-    "CODE-SCOPE",
-)
+if str(REVIEWER_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(REVIEWER_SCRIPTS))
+
+from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
+from complex_coding_reviewer.contract import CODE_LENSES  # noqa: E402
+
+
+def write_json(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def write_validation_evidence(
+    task_dir: Path,
+    stage_id: str,
+    validation_id: str,
+) -> str:
+    filename = f"{stage_id.lower()}-{validation_id.lower()}.txt"
+    ref = f"artifacts/validation/{filename}"
+    path = task_dir / ref
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("deterministic validation passed\n", encoding="utf-8")
+    return ref
 
 
 def run_git(workspace: Path, arguments: list[str]) -> str:
@@ -140,20 +157,110 @@ def create_review_evidence(
     scope: dict[str, Any],
     review_id: str,
     final_commit_recorded: bool = False,
+    target: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     stage_id = scope.get("stage_id")
     attempt = scope.get("attempt")
-    target = run_reviewer_target(
+    target = target or run_reviewer_target(
         workspace,
         stage_id=str(stage_id) if stage_id is not None else None,
         attempt=int(attempt) if attempt is not None else None,
         commit_range=scope.get("kind") == "final-integration" and final_commit_recorded,
     )
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    stages = {item["id"]: item for item in contract["stages"]}
+    if scope["kind"] == "stage-delta":
+        stage = stages[scope["stage_id"]]
+        requirement_refs = sorted(
+            {
+                item
+                for field in (
+                    "requirement_ids",
+                    "acceptance_ids",
+                    "nonfunctional_ids",
+                )
+                for item in stage.get(field, [])
+            }
+        ) or [scope["stage_id"]]
+        constraint_refs = sorted(
+            {scope["stage_id"], *stage.get("validation_ids", [])}
+        )
+    else:
+        requirement_refs = []
+        goal = contract.get("goal")
+        if isinstance(goal, dict) and isinstance(goal.get("id"), str):
+            requirement_refs.append(goal["id"])
+        for field in ("requirements", "acceptance_criteria", "nonfunctional_requirements"):
+            requirement_refs.extend(item["id"] for item in contract.get(field, []))
+        requirement_refs = sorted(set(requirement_refs)) or sorted(stages)
+        constraint_refs = sorted(
+            {
+                *stages,
+                *(item["id"] for item in contract.get("validations", [])),
+            }
+        )
+    effective_validations: dict[tuple[str, str], dict[str, Any]] = {}
+    ledger = task_dir / "ledger.jsonl"
+    if ledger.is_file():
+        for line in ledger.read_text(encoding="utf-8").splitlines():
+            event = json.loads(line)
+            if event.get("type") != "validation_recorded":
+                continue
+            if scope["kind"] == "stage-delta" and (
+                event.get("stage_id") != stage_id or event.get("attempt") != attempt
+            ):
+                continue
+            payload = event.get("payload", {})
+            key = (str(event.get("stage_id")), str(payload.get("validation_id")))
+            if payload.get("result") == "passed":
+                effective_validations[key] = event
+            else:
+                effective_validations.pop(key, None)
+    task_relative = task_dir.relative_to(workspace).as_posix()
+    validation_paths = sorted(
+        f"{task_relative}/{ref}"
+        for event in effective_validations.values()
+        for ref in event.get("evidence_refs", [])
+    )
+    filename = review_id.lower().replace("_", "-")
+    brief_relative = f"{task_relative}/artifacts/reviews/{filename}-brief.json"
+    brief = {
+        "profile": "code-review",
+        "scope": scope,
+        "summary": "验证 deterministic executor lifecycle target。",
+        "requirement_refs": requirement_refs,
+        "constraint_refs": constraint_refs,
+        "claim_refs": validation_paths,
+        "requested_risk_focus": [],
+        "created_at": "2026-07-16T00:00:00+00:00",
+    }
+    write_json(workspace / brief_relative, brief)
+    plan_relative = (task_dir / "execution-plan.md").relative_to(workspace).as_posix()
+    contract_relative = (task_dir / "plan-contract.json").relative_to(workspace).as_posix()
+    context_entries = [
+        (brief_relative, "brief"),
+        (plan_relative, "requirement"),
+        (contract_relative, "requirement"),
+    ]
+    context_entries.extend((path, "validation") for path in validation_paths)
+    for artifact in contract.get("artifacts", []):
+        if artifact.get("kind") == "standards":
+            context_entries.append(
+                (f"{task_relative}/{artifact['path']}", "standard")
+            )
+    context = build_context_target(
+        workspace,
+        root_kind="workspace",
+        label=f"{filename}-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
     receipt = {
         "review_id": review_id,
         "profile": "code-review",
         "scope": scope,
         "target": target,
+        "context": context,
         "reviewer": {
             "mode": "same-context",
             "identity": "deterministic-executor-eval",
@@ -168,16 +275,53 @@ def create_review_evidence(
                 "applicability": "约束确定性生命周期 fixture。",
             }
         ],
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "deterministic lifecycle fixture 已覆盖该路径。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": requirement_ref,
+                    "status": "satisfied",
+                    "evidence_refs": [brief_relative],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "当前 fixture 提供了直接证据。",
+                }
+                for requirement_ref in requirement_refs
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [brief_relative],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
         "lenses": [
             {
                 "id": lens,
                 "status": "reviewed",
-                "evidence_refs": ["src/eval_fixture.py:1"],
+                "evidence_refs": [brief_relative],
                 "summary": f"{lens} 已基于确定性 fixture 审查。",
             }
             for lens in CODE_LENSES
         ],
+        "strengths": [],
         "findings": [],
+        "verification_gaps": [],
         "verdict": "passed",
         "open_counts": {
             "blocking": 0,
@@ -191,8 +335,7 @@ def create_review_evidence(
         "supersedes_review_id": None,
         "reviewed_at": "2026-07-16T00:00:00+00:00",
     }
-    filename = review_id.lower().replace("_", "-") + ".json"
-    report_ref = f"artifacts/reviews/{filename}"
+    report_ref = f"artifacts/reviews/{filename}.json"
     report = task_dir / report_ref
     report.parent.mkdir(parents=True, exist_ok=True)
     report.write_text(
@@ -205,9 +348,22 @@ def create_review_evidence(
         "profile": "code-review",
         "scope": scope,
         "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "verdict": "passed",
         "report_ref": report_ref,
         "open_counts": receipt["open_counts"],
+        "gap_counts": {"blocking": 0, "major": 0, "minor": 0, "total": 0},
+        "coverage_summary": {
+            "target_paths": len(target_paths),
+            "requirements": len(requirement_refs),
+            "risks": len(RISK_IDS),
+            "context_expansions": 0,
+        },
+        "lineage_summary": {
+            "predecessor_review_id": None,
+            "accounted_finding_count": 0,
+        },
+        "strength_count": 0,
         "summary": receipt["summary"],
     }
     return compact, report_ref
@@ -264,12 +420,24 @@ def record_stage_cli(
         "harness_ledger_append.py",
         ["--event", "stage_started", "--stage-id", stage_id, "--attempt", "1"],
     )
+    target = run_reviewer_target(
+        workspace,
+        stage_id=stage_id,
+        attempt=1,
+    )
     for validation_id in stage["validation_ids"]:
+        evidence_ref = write_validation_evidence(task_dir, stage_id, validation_id)
         payload = json.dumps(
             {
                 "validation_id": validation_id,
                 "result": "passed",
+                "command": f"deterministic-eval::{validation_id}",
+                "claim_source": "observed",
+                "stage_attempt": 1,
+                "target_digest": target["digest"],
+                "exit_code": 0,
                 "summary": "CLI validation passed",
+                "claim_boundary": "只证明当前 stage target 的 deterministic fixture。",
             },
             ensure_ascii=False,
         )
@@ -282,8 +450,12 @@ def record_stage_cli(
                 "validation_recorded",
                 "--stage-id",
                 stage_id,
+                "--attempt",
+                "1",
                 "--payload-json",
                 payload,
+                "--evidence-ref",
+                evidence_ref,
             ],
         )
     review, report_ref = create_review_evidence(
@@ -291,6 +463,7 @@ def record_stage_cli(
         task_dir,
         scope={"kind": "stage-delta", "stage_id": stage_id, "attempt": 1},
         review_id=f"REV-CODE-{stage_id}-A1",
+        target=target,
     )
     run_cli(
         workspace,
