@@ -275,28 +275,37 @@ class ReviewGateTest(unittest.TestCase):
                 attempt=1,
             )
 
-    def test_stage_scope_can_inherit_dependency_paths(self) -> None:
+    def test_stage_scope_inherits_transitive_dependency_paths(self) -> None:
         bundle, _ = self.make_bundle()
+        del bundle.contract["stages"][0]["depends_on"]
         bundle.contract["stages"].append(
             {
                 "id": "STG-02",
                 "depends_on": ["STG-01"],
                 "validation_ids": [],
+                "allowed_changes": ["docs/**"],
+            }
+        )
+        bundle.contract["stages"].append(
+            {
+                "id": "STG-03",
+                "depends_on": ["STG-02"],
+                "validation_ids": [],
                 "allowed_changes": [
-                    "all files approved by STG-01",
+                    "all files approved by STG-01 through STG-02",
                     "task-local execution evidence",
                 ],
             }
         )
         target = build_working_tree_target(
             bundle.workspace,
-            paths=["src"],
-            stage_id="STG-02",
+            paths=["docs", "src"],
+            stage_id="STG-03",
             attempt=1,
         )
         receipt = self.receipt(
             target,
-            {"kind": "stage-delta", "stage_id": "STG-02", "attempt": 1},
+            {"kind": "stage-delta", "stage_id": "STG-03", "attempt": 1},
         )
         compact = self.write_receipt(bundle, receipt, "inherited-stage.json")
         self.assertEqual(
@@ -304,7 +313,7 @@ class ReviewGateTest(unittest.TestCase):
             validate_review_gate(
                 bundle,
                 compact,
-                stage_id="STG-02",
+                stage_id="STG-03",
                 attempt=1,
             ),
         )

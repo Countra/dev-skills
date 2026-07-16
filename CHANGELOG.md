@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-16
+
+### Breaking: Planner、Reviewer、Executor 审查职责重构
+
+- 新增 `complex-coding-reviewer`，以独立 `plan-review` 和 `code-review` profile 统一输出 target-bound canonical JSON receipt，不提供旧 critique 文本或旧 review payload 兼容层。
+- Planner 保留方案生产、调研、标准发现、依赖选择与 readiness，正式规划审查改由 Reviewer 完成；Executor 保留实现、验证、修复与状态写入，正式阶段和最终审查同样委托 Reviewer。
+- 审查目标支持 plan bundle、file manifest、working tree 和 commit range；回执绑定 scope、target digest、provenance、完整 lenses、findings、verdict、限制与 supersedes 链，目标变化后旧回执失败关闭。
+- Executor 的阶段门禁只接受 Reviewer 公共 validator 派生的 compact evidence；最终提交后必须从 execution baseline 到当前 HEAD 重新生成 `final-integration` commit-range 回执。
+- 新增 Reviewer 单测、双 profile deterministic eval 和 Planner/Reviewer/Executor 联合生命周期回归；所有确定性验证均不运行 Agent、模型、网络或目标项目代码。
+- 全分支 Windows、Ubuntu、macOS workflow 现统一运行三套 unit/eval 并上传 Planner、Reviewer、Executor 三份 evidence；安装脚本通过 `skills/*/SKILL.md` 自动发现 Reviewer。
+
 ## 2026-07-15
 
 ### Feature: Planner/Executor 依赖选型可信度门禁

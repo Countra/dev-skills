@@ -68,6 +68,8 @@ def _collect_stage_paths(
     stages: dict[str, dict[str, Any]],
     stage_id: str,
     visiting: set[str],
+    *,
+    include_ancestors: bool = False,
 ) -> set[str]:
     if stage_id in visiting:
         raise ReviewGateError(
@@ -87,18 +89,23 @@ def _collect_stage_paths(
         if isinstance(allowed, list)
         else set()
     )
-    if paths:
+    if paths and not include_ancestors:
         return paths
     dependencies = stage.get("depends_on")
     if not isinstance(dependencies, list):
-        return set()
+        return paths
     inherited: set[str] = set()
     for dependency in dependencies:
         if isinstance(dependency, str):
             inherited.update(
-                _collect_stage_paths(stages, dependency, visiting | {stage_id})
+                _collect_stage_paths(
+                    stages,
+                    dependency,
+                    visiting | {stage_id},
+                    include_ancestors=True,
+                )
             )
-    return inherited
+    return paths | inherited
 
 
 def _stage_paths(bundle: TaskBundle, stage_id: str) -> list[str]:

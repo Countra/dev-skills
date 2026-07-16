@@ -1,4 +1,4 @@
-name: Planner Executor Contract
+name: Planner Reviewer Executor Contract
 
 on:
   push:
@@ -11,12 +11,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: planner-executor-${{ github.workflow }}-${{ github.ref }}
+  group: planner-reviewer-executor-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   contract:
-    name: ${{ matrix.os }} planner and executor contract
+    name: ${{ matrix.os }} planner reviewer executor contract
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -39,21 +39,28 @@ jobs:
         run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p "test_*.py" -v
 
       - name: Run Planner deterministic evals
-        run: python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output .ci-artifacts/planner-executor/planner-evals.json
+        run: python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output .ci-artifacts/planner-reviewer-executor/planner-evals.json
+
+      - name: Run Reviewer unit tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p "test_*.py" -v
+
+      - name: Run Reviewer deterministic evals
+        run: python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --output .ci-artifacts/planner-reviewer-executor/reviewer-evals.json
 
       - name: Run Executor unit tests
         run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p "test_*.py" -v
 
       - name: Run Executor deterministic evals
-        run: python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output .ci-artifacts/planner-executor/executor-evals.json
+        run: python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output .ci-artifacts/planner-reviewer-executor/executor-evals.json
 
       - name: Upload deterministic evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.os }}-planner-executor-evidence
+          name: ${{ matrix.os }}-planner-reviewer-executor-evidence
           path: |
-            .ci-artifacts/planner-executor/planner-evals.json
-            .ci-artifacts/planner-executor/executor-evals.json
+            .ci-artifacts/planner-reviewer-executor/planner-evals.json
+            .ci-artifacts/planner-reviewer-executor/reviewer-evals.json
+            .ci-artifacts/planner-reviewer-executor/executor-evals.json
           if-no-files-found: error
           retention-days: 14
