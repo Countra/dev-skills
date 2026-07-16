@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -31,6 +32,17 @@ from complex_coding_reviewer.target import (
     build_file_manifest_target,
     build_plan_bundle_target,
 )
+
+
+SKILL_ROOT = REPO_ROOT / "skills" / "complex-coding-reviewer"
+EXPECTED_RISK_IDS = {
+    "RISK-SECURITY-PRIVACY",
+    "RISK-CONCURRENCY-INTEGRITY",
+    "RISK-PERFORMANCE-RESOURCES",
+    "RISK-API-DATA-COMPATIBILITY",
+    "RISK-UI-ACCESSIBILITY-I18N",
+    "RISK-REMOVAL-DEPENDENCIES",
+}
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -227,6 +239,117 @@ def evaluate_case(case: dict[str, Any], parent: Path) -> dict[str, Any]:
         remove_case_root(root)
 
 
+def static_contract_report() -> dict[str, Any]:
+    """验证 Skill 的公开能力边界和渐进披露链接。"""
+
+    required_files = {
+        "skill": SKILL_ROOT / "SKILL.md",
+        "plan": SKILL_ROOT / "references" / "plan-review.md",
+        "code": SKILL_ROOT / "references" / "code-review.md",
+        "workflow": SKILL_ROOT / "references" / "review-workflow.md",
+        "calibration": SKILL_ROOT / "references" / "review-calibration.md",
+        "risks": SKILL_ROOT / "references" / "risk-playbooks.md",
+        "contract": SKILL_ROOT / "references" / "review-contract.md",
+    }
+    texts: dict[str, str] = {}
+    checks: list[dict[str, Any]] = []
+    for name, path in required_files.items():
+        exists = path.is_file()
+        checks.append(
+            {
+                "id": f"file-{name}",
+                "passed": exists,
+                "detail": str(path.relative_to(REPO_ROOT)),
+            }
+        )
+        texts[name] = path.read_text(encoding="utf-8") if exists else ""
+
+    skill_links = {
+        "references/plan-review.md",
+        "references/code-review.md",
+        "references/review-workflow.md",
+        "references/review-calibration.md",
+        "references/risk-playbooks.md",
+        "references/review-contract.md",
+    }
+    missing_links = sorted(link for link in skill_links if link not in texts["skill"])
+    checks.append(
+        {
+            "id": "progressive-disclosure-links",
+            "passed": not missing_links,
+            "detail": f"missing={missing_links}",
+        }
+    )
+    checks.extend(
+        [
+            {
+                "id": "two-profile-boundary",
+                "passed": "不创建第三个通用 profile" in texts["skill"],
+                "detail": "入口必须保持 plan-review/code-review 双 profile。",
+            },
+            {
+                "id": "plan-professional-sequence",
+                "passed": all(
+                    value in texts["plan"]
+                    for value in ("需求符合性", "核心设计", "verification gap", "clean review")
+                ),
+                "detail": "plan-review 需要 spec、设计、gap 与 clean evidence。",
+            },
+            {
+                "id": "code-spec-first",
+                "passed": all(
+                    value in texts["code"]
+                    for value in ("Spec compliance first", "missing", "extra", "misunderstood")
+                ),
+                "detail": "code-review 必须先验证需求符合性。",
+            },
+            {
+                "id": "read-only-no-agent",
+                "passed": all(
+                    value in texts["skill"]
+                    for value in ("只审查显式目标", "不得修改计划", "不运行 `codex exec`")
+                ),
+                "detail": "Reviewer 只读且不自动运行 Agent/目标。",
+            },
+            {
+                "id": "full-rereview",
+                "passed": "完整复审" in texts["workflow"] and "前序 finding" in texts["workflow"],
+                "detail": "修复后必须完整复审并交代前序 finding。",
+            },
+        ]
+    )
+    actual_risk_ids = set(re.findall(r"`(RISK-[A-Z0-9-]+)`", texts["risks"]))
+    checks.append(
+        {
+            "id": "conditional-risk-playbooks",
+            "passed": actual_risk_ids == EXPECTED_RISK_IDS and "默认全量运行" in texts["risks"],
+            "detail": f"risk_ids={sorted(actual_risk_ids)}",
+        }
+    )
+    return {
+        "suite": "complex-coding-reviewer-static-contract",
+        "passed": sum(item["passed"] for item in checks),
+        "failed": sum(not item["passed"] for item in checks),
+        "total": len(checks),
+        "claim_boundaries": {
+            "semantic_review_quality_observed": False,
+            "agent_calls": 0,
+            "network_calls": 0,
+            "target_executions": 0,
+        },
+        "checks": checks,
+    }
+
+
+def emit_report(report: dict[str, Any], output_path: Path | None) -> int:
+    rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    print(rendered, end="")
+    if output_path:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+    return 0 if report["failed"] == 0 else 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="运行 reviewer deterministic eval")
     parser.add_argument("--manifest", type=Path, default=Path(__file__).with_name("manifest.json"))
@@ -236,7 +359,14 @@ def main() -> int:
         default=REPO_ROOT / ".harness" / "test-tmp" / "reviewer-evals",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--static-contract-only",
+        action="store_true",
+        help="只验证 Skill 能力边界与渐进披露，不运行 fixture contract cases",
+    )
     args = parser.parse_args()
+    if args.static_contract_only:
+        return emit_report(static_contract_report(), args.output)
     args.work_dir.mkdir(parents=True, exist_ok=True)
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     results = [evaluate_case(case, args.work_dir) for case in manifest["cases"]]
@@ -260,12 +390,7 @@ def main() -> int:
         },
         "results": results,
     }
-    rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    print(rendered, end="")
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered, encoding="utf-8")
-    return 0 if report["failed"] == 0 else 1
+    return emit_report(report, args.output)
 
 
 if __name__ == "__main__":

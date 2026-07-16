@@ -1,0 +1,603 @@
+{
+  "task_id": "2026-07-16-feature-complex-coding-reviewer-professionalization",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "在保持双 profile、只读目标和无自动 Agent 边界的前提下，把 complex-coding-reviewer 升级为专业、证据驱动、范围可审计、语义可评估且复审不丢问题的规划与代码审查系统"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "Reviewer 对外仍只有 plan-review 与 code-review，保持只读目标和无自动 Agent、网络、目标执行边界"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "plan-review 必须专业检查完整性、一致性、清晰度、范围与 YAGNI、可实施性和 plan-mandated defect"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "code-review 必须先证明 spec compliance，并区分 missing、extra、misunderstood 实现"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "通过风险 screen 条件化启用安全隐私、并发完整性、性能资源、API 数据兼容、UI 可访问性国际化、删除依赖六类 playbook"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "引入 closed review brief、独立 context target 和 bounded review package，固定目标、要求、规范、证据和 named-risk 扩展"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "coverage、evidence-bound strengths 与 verification gaps 成为 receipt 一等字段并参与 verdict 派生"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "finding 增加 category 和 origin、严重度校准、触发条件、影响、定位、修复方向和 claim source 约束"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "superseding attempt 必须逐项交代前序 finding，禁止 finding 无 lineage 地消失"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "validation evidence 必须区分 observed、reported、not-run，并绑定 target、context、attempt 和命令身份"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "Planner approval 与 Executor stage、final、ledger 原子消费新 Reviewer 契约，不保留旧分支"
+    },
+    {
+      "id": "REQ-11",
+      "priority": "must",
+      "summary": "新增 clean、near-miss、known-defect 语义 corpus、deterministic oracle、same-context smoke 和用户可运行 observation packet"
+    },
+    {
+      "id": "REQ-12",
+      "priority": "must",
+      "summary": "同步三平台 CI、README、CHANGELOG、安装发现、静态评估和跨 Skill lifecycle 回归"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "规划、代码或混合审查请求只路由到两个既有 profile；混合范围被拆分或澄清，写目标或第三 profile 被拒绝"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02"],
+      "summary": "plan-review 准确发现关键完整性、一致性、范围和可实施性缺口，同时不让纯措辞偏好阻塞 clean 或 near-miss 计划"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-03"],
+      "summary": "code-review 对漏实现、额外实现、误解实现和 clean 样本正确分类 requirement coverage，并给出可定位证据"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-04"],
+      "summary": "风险 screen 只加载适用 playbook；高风险静默跳过或对无关目标强制全量检查均被验证拒绝"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-05"],
+      "summary": "target 不变但 brief、规范、验证日志或扩展路径改变时，旧 receipt 因 context digest stale 被拒绝"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-06"],
+      "summary": "coverage、strengths、verification gaps 与 verdict 一致，关键未覆盖不能藏入自由文本或错误获得 passed"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-07"],
+      "summary": "偏好、维护建议、功能 bug 和安全或完整性风险的 severity、confidence、影响和证据按照正式校准规则区分"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-08"],
+      "summary": "superseding receipt 对每个前序 finding 记录 resolved、still-open、superseded 或 invalidated disposition，否则 validator 拒绝"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-09"],
+      "summary": "旧日志、实现者自述、部分测试和当前结果具有真实 claim source，并绑定适用 target、context 和 attempt"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-10"],
+      "summary": "Planner approval 只接受当前 target 和 context、完整 coverage、无 blocking gap 的 passed plan-review receipt"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-10"],
+      "summary": "Executor stage 和 final 遇到 wrong scope、stale context、lineage 丢失或 validation claim 漂移时不能完成"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-11"],
+      "summary": "semantic eval 和 observation 输出 recall、误报、severity、locator、evidence、gap honesty 和 provenance，未观察时明确 not_observed"
+    },
+    {
+      "id": "AC-13",
+      "requirement_ids": ["REQ-12"],
+      "summary": "任意普通 branch 的 Windows、Ubuntu、macOS CI 都发现并重复运行 unit、deterministic eval、static evaluation 与联合 lifecycle"
+    },
+    {
+      "id": "AC-14",
+      "requirement_ids": ["REQ-01", "REQ-05"],
+      "summary": "大或敏感目标受文件数、字节、路径和秘密预算约束，Reviewer 的 Agent、网络和目标执行计数保持零"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "确定性脚本使用 Python 3 标准库，canonical JSON 与 SHA-256 在 Windows、Linux、macOS 一致"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "路径越界、context stale、coverage 缺失、lineage 断裂、secret 或 package 超限一律 fail closed"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "SKILL.md 保持精炼，profile 和风险细则按需加载，避免入口复制长清单"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "不增加服务、数据库、缓存、模型运行时或第三方运行依赖，并以有界 package 控制成本"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "当前契约直接替换旧格式，不设置 schema 版本、转换器、双写或兼容层"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "所有结论明确 read、observed、reported、inferred、not-verified 边界，不夸大验证范围"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "target、context、package、schema validator、profile workflow、caller adapter、eval oracle 分层且各自高内聚"
+    },
+    {
+      "id": "NFR-08",
+      "summary": "只修改 ART-04 change map 批准范围，不制造无关格式化、重命名或行为 churn"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/reviewer-professionalization-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/review-standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/reviewer-professional-contract.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-review-attempt-1.json",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "专业审查语义与渐进式工作流",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-06", "REQ-07"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-06", "AC-07"],
+      "nonfunctional_ids": ["NFR-03", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-09", "VAL-10", "VAL-12"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/SKILL.md",
+        "skills/complex-coding-reviewer/references/plan-review.md",
+        "skills/complex-coding-reviewer/references/code-review.md",
+        "skills/complex-coding-reviewer/references/review-workflow.md",
+        "skills/complex-coding-reviewer/references/review-calibration.md",
+        "skills/complex-coding-reviewer/references/risk-playbooks.md",
+        "skills/complex-coding-reviewer/tests/**",
+        "evals/complex-coding-reviewer/**"
+      ],
+      "forbidden_changes": [
+        "third reviewer profile",
+        "automatic Codex, model, subagent, network or target execution",
+        "reviewer mutation of target code or plan",
+        "unconditional all-domain checklist"
+      ],
+      "entry_conditions": [
+        "ART-01、ART-02、ART-03 的专业语义决策已获 implementation approval",
+        "当前 Reviewer unit 和 eval 基线可重现",
+        "双 profile 与只读 writer 边界已冻结"
+      ],
+      "exit_conditions": [
+        "双 profile 流程不复制无条件通用清单",
+        "clean、near-miss、defect 示例能区分技术事实与偏好",
+        "专业能力不足生成 verification gap 而不是伪造 passed",
+        "Reviewer 仍不修改或执行被审目标"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-02",
+      "title": "双快照、覆盖、gap 与复审谱系契约",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-01", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09"],
+      "acceptance_ids": ["AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-14"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-08", "VAL-12", "VAL-13"],
+      "allowed_changes": [
+        "skills/complex-coding-reviewer/references/review-contract.md",
+        "skills/complex-coding-reviewer/scripts/review_context.py",
+        "skills/complex-coding-reviewer/scripts/review_package.py",
+        "skills/complex-coding-reviewer/scripts/review_target.py",
+        "skills/complex-coding-reviewer/scripts/review_validate.py",
+        "skills/complex-coding-reviewer/scripts/review_render.py",
+        "skills/complex-coding-reviewer/scripts/complex_coding_reviewer/**",
+        "skills/complex-coding-reviewer/templates/**",
+        "skills/complex-coding-reviewer/tests/**",
+        "evals/complex-coding-reviewer/**"
+      ],
+      "forbidden_changes": [
+        "legacy receipt compatibility parser or schema version",
+        "review package treated as canonical freshness source",
+        "unbounded workspace traversal or secret capture",
+        "finding disappearance without lineage disposition"
+      ],
+      "entry_conditions": [
+        "STG-01 专业语义冻结",
+        "root、path、canonical JSON 现有实现已读",
+        "字段复杂度预算经 unit fixture 证明可用"
+      ],
+      "exit_conditions": [
+        "target 或 context 任一变化稳定拒绝旧 receipt",
+        "关键 coverage、gap 或 lineage 不完整不能 passed",
+        "package 不被 validator 信任为 canonical source",
+        "Windows、Linux、macOS canonical digest fixtures 一致"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-03",
+      "title": "Planner 与 Executor 当前契约原子适配",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-08", "REQ-09", "REQ-10"],
+      "acceptance_ids": ["AC-08", "AC-09", "AC-10", "AC-11"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "validation_ids": ["VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-12", "VAL-13"],
+      "allowed_changes": [
+        "skills/complex-coding-planner/**",
+        "skills/complex-coding-executor/**",
+        "evals/complex-coding-planner/**",
+        "evals/complex-coding-executor/**",
+        "skills/complex-coding-reviewer/scripts/**"
+      ],
+      "forbidden_changes": [
+        "half-upgraded Planner or Executor contract",
+        "legacy review receipt fallback, dual write or schema branch",
+        "Planner or Executor copy of professional review rubric",
+        "unbound validation claim in Executor ledger"
+      ],
+      "entry_conditions": [
+        "Reviewer 新 validator 和 fixtures 已通过",
+        "Planner 与 Executor 当前 approval、review、ledger 调用点已有完整调用图",
+        "旧术语和旧 payload 清理列表已固定"
+      ],
+      "exit_conditions": [
+        "Planner 缺新 plan receipt 无法 approval",
+        "Executor wrong scope、context、lineage 或 validation claim 无法完成 stage 或 final",
+        "跨 Skill regression 不存在半新半旧路径"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-04",
+      "title": "语义场景、校准与 observation 工作包",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-02", "REQ-03", "REQ-04", "REQ-06", "REQ-07", "REQ-08", "REQ-11"],
+      "acceptance_ids": ["AC-02", "AC-03", "AC-04", "AC-06", "AC-07", "AC-08", "AC-12"],
+      "nonfunctional_ids": ["NFR-03", "NFR-04", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-02", "VAL-03", "VAL-09", "VAL-10", "VAL-11", "VAL-12"],
+      "allowed_changes": [
+        "evals/complex-coding-reviewer/**",
+        "skills/complex-coding-reviewer/tests/**",
+        "skills/complex-coding-reviewer/references/review-calibration.md",
+        "skills/complex-coding-reviewer/references/risk-playbooks.md",
+        "skills/skill-evaluation-lab/**",
+        "evals/skill-evaluation-lab/**",
+        ".harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/**"
+      ],
+      "forbidden_changes": [
+        "automatic codex exec, model call or subagent dispatch",
+        "semantic score inferred only from schema validity or keyword matching",
+        "known-defect-only corpus without clean and near-miss controls",
+        "fresh-context claim without user-run provenance"
+      ],
+      "entry_conditions": [
+        "三个 Skill 已消费 current Reviewer contract",
+        "semantic scenario 的 expected 和 forbidden findings、severity、locators 已校准",
+        "Skill Evaluation Lab 现有边界已复核"
+      ],
+      "exit_conditions": [
+        "CI 可重复验证 oracle 与 fixtures",
+        "same-context 报告包含真实 receipt 和 provenance",
+        "observation packet 静态闭合且无自动执行入口",
+        "误报和漏报指标可定位到具体 case"
+      ],
+      "risk": "medium",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-05",
+      "title": "三平台 CI、文档与 current-only 收口",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-01", "REQ-10", "REQ-11", "REQ-12"],
+      "acceptance_ids": ["AC-01", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14"],
+      "nonfunctional_ids": ["NFR-01", "NFR-03", "NFR-04", "NFR-05", "NFR-08"],
+      "validation_ids": ["VAL-08", "VAL-09", "VAL-11", "VAL-12", "VAL-13"],
+      "allowed_changes": [
+        ".github/workflows/planner-executor.yml",
+        "README.md",
+        "CHANGELOG.md",
+        "skills/complex-coding-reviewer/**",
+        "skills/complex-coding-planner/**",
+        "skills/complex-coding-executor/**",
+        "evals/complex-coding-reviewer/**",
+        "evals/complex-coding-planner/**",
+        "evals/complex-coding-executor/**",
+        "skills/skill-evaluation-lab/**",
+        "evals/skill-evaluation-lab/**"
+      ],
+      "forbidden_changes": [
+        "branch filters that skip ordinary branches",
+        "CI secrets, network, Agent or target application execution",
+        "old receipt terminology or compatibility documentation",
+        "unrelated skill behavior or repository-wide formatting"
+      ],
+      "entry_conditions": [
+        "STG-04 deterministic suites 通过",
+        "workflow 当前 job、OS 和 branch contract 已读",
+        "公共文档能力声明与 observation 边界已确认"
+      ],
+      "exit_conditions": [
+        "三个 OS 的本地等价命令可运行",
+        "普通 branch 不被过滤",
+        "静态扫描不存在旧 receipt 术语",
+        "文档声明不超过实际 deterministic、same-context、fresh-context 证据"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-06",
+      "title": "最终集成审查、回归与交付",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-09", "REQ-10", "REQ-11", "REQ-12"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-13", "VAL-14"],
+      "allowed_changes": [
+        "all files approved by ART-04 and STG-01 through STG-05",
+        "task-local execution, validation, review and observation artifacts",
+        "minimal fixes required by final review within approved scope"
+      ],
+      "forbidden_changes": [
+        "new feature scope, third profile or compatibility layer",
+        "automatic remote push, external write, Agent or target execution",
+        "claiming semantic or fresh-context success without matching evidence",
+        "commit without explicit authorization"
+      ],
+      "entry_conditions": [
+        "STG-05 完成且没有开放 blocking 或 major stage finding",
+        "working tree 只包含 ART-04 批准范围和任务证据",
+        "所有 validation command 可重建"
+      ],
+      "exit_conditions": [
+        "所有 required validation 通过",
+        "final receipt 绑定当前 target 和 context 且无 blocking gap",
+        "git diff check clean",
+        "交付说明准确列出验证、未运行项和 residual risk"
+      ],
+      "risk": "medium",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-14", "NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/reviewer-unit-tests.txt"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-06", "AC-07", "AC-08", "AC-12", "AC-14", "NFR-03", "NFR-04", "NFR-06"],
+      "command": "python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/reviewer-evals.json",
+      "evidence_path": "artifacts/validation/reviewer-evals.json"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-07", "AC-12", "NFR-06", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-reviewer/run_semantic_oracle.py --self-test --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/reviewer-oracle-self-test.json",
+      "evidence_path": "artifacts/validation/reviewer-oracle-self-test.json"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-05", "AC-06", "AC-08", "AC-10", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/planner-unit-tests.txt"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-10", "AC-12", "NFR-03", "NFR-06"],
+      "command": "python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/planner-evals.json",
+      "evidence_path": "artifacts/validation/planner-evals.json"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-05", "AC-08", "AC-09", "AC-11", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_*.py -v",
+      "evidence_path": "artifacts/validation/executor-unit-tests.txt"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-03", "AC-09", "AC-11", "AC-12", "NFR-03", "NFR-06"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/executor-evals.json",
+      "evidence_path": "artifacts/validation/executor-evals.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-05", "AC-08", "AC-09", "AC-10", "AC-11", "AC-13", "NFR-01", "NFR-02", "NFR-05", "NFR-07"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer --work-dir .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/tmp/cross-review --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/cross-review.json",
+      "evidence_path": "artifacts/validation/cross-review.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-04", "AC-12", "AC-13", "AC-14", "NFR-03", "NFR-04", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-reviewer --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/reviewer-static.json",
+      "evidence_path": "artifacts/validation/reviewer-static.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-04", "AC-06", "AC-07", "AC-12", "NFR-06"],
+      "command": "当前 Executor Agent 按新版 complex-coding-reviewer 对 seeded plan 和 code corpus 执行 same-context semantic smoke，并用 run_semantic_oracle.py 评分，不启动其它 Agent",
+      "evidence_path": "artifacts/validation/semantic-smoke-report.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-12", "AC-13", "AC-14", "NFR-03", "NFR-04", "NFR-06"],
+      "command": "python -u -X utf8 -B evals/complex-coding-reviewer/run_observation_packet.py --validate-only --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/observation-packet-validation.json",
+      "evidence_path": "artifacts/validation/observation-packet-validation.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-05", "AC-10", "AC-11", "AC-13", "AC-14", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --static-contract-only --output .harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/artifacts/validation/reviewer-static-contract.json，并拒绝旧 receipt 或 payload、自动 Agent、网络、目标执行入口和超出 ART-04 的能力声明",
+      "evidence_path": "artifacts/validation/reviewer-static-contract.json"
+    },
+    {
+      "id": "VAL-13",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-05", "NFR-08"],
+      "command": "git -c diff.autoRefreshIndex=false diff --check，并核对 changed paths 全部位于 ART-04",
+      "evidence_path": "artifacts/validation/git-diff-check.txt"
+    },
+    {
+      "id": "VAL-14",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08"],
+      "command": "使用 complex-coding-reviewer 的 code-review 和 final-integration scope 对当前完整 target 与 context 生成并校验正式 receipt",
+      "evidence_path": "artifacts/reviews/final-integration-attempt-N.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "dependency_selection": {
+    "mode": "none",
+    "necessity_result": "not-triggered",
+    "decision_ids": [],
+    "evidence_artifact_ids": [],
+    "decisions": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "新增第三个 review profile、改变 Reviewer 只读 writer 边界或允许自动 Agent、网络、目标执行",
+    "brief、target 或 context digest、coverage、gap、severity、verdict、lineage 或 package canonical 语义发生实质变化",
+    "Planner approval、Executor stage 或 final、ledger payload、Stage DAG、required validation 或 allowed/forbidden scope 发生变化",
+    "引入第三方运行依赖、后台服务、数据库、缓存、模型调用、secret、远端写入或提权要求",
+    "实现需要修改 ART-04 之外的其它 Skill 公共行为、保留旧契约兼容层或改变 CI branch/OS contract",
+    "active task pointer 冲突、用户相关改动或 baseline 漂移无法按当前计划安全处理"
+  ],
+  "stop_conditions": [
+    "用户请求暂停或尚未批准 implementation",
+    "任一 reapproval trigger 发生",
+    "当前 target 或 context 无法安全重建、路径越界或关键审查证据缺失",
+    "required validation、blocking 或 major finding、blocking verification gap 在有界修复后仍未关闭",
+    "需要未授权的依赖、Agent、网络、外部写入、提权或长期进程",
+    "active task pointer 属于另一非终态任务",
+    "无法真实声明 reviewer provenance、验证 claim 或关键专业覆盖"
+  ]
+}
