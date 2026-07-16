@@ -351,6 +351,10 @@ class ProfessionalWorkflowTests(unittest.TestCase):
         self.assertEqual(0, payload["claim_boundaries"]["agent_calls"])
         checks = {item["id"]: item for item in payload["checks"]}
         self.assertTrue(checks["semantic-runtime-negative-probes"]["passed"])
+        self.assertTrue(checks["repository-ci-contract"]["passed"])
+        self.assertTrue(checks["public-capability-boundaries"]["passed"])
+        self.assertTrue(checks["current-only-review-contract"]["passed"])
+        self.assertTrue(checks["current-only-scanner-probes"]["passed"])
 
 
 if __name__ == "__main__":

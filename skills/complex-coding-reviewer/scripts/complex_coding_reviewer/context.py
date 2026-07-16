@@ -93,6 +93,7 @@ def _string_list(
     path: str,
     *,
     allow_empty: bool = True,
+    ordered: bool = True,
 ) -> list[str]:
     if not isinstance(value, list) or not all(
         isinstance(item, str) and item.strip() for item in value
@@ -100,7 +101,7 @@ def _string_list(
         raise ReviewError("REVIEW_CONTEXT_TYPE_INVALID", "值必须是非空字符串数组。", path=path)
     if not allow_empty and not value:
         raise ReviewError("REVIEW_CONTEXT_VALUE_INVALID", "数组不能为空。", path=path)
-    if value != sorted(set(value)):
+    if len(value) != len(set(value)) or (ordered and value != sorted(value)):
         raise ReviewError(
             "REVIEW_CONTEXT_ORDER_INVALID",
             "字符串数组必须排序且去重。",
@@ -156,7 +157,11 @@ def validate_review_brief(value: Any) -> dict[str, Any]:
                 "claim_refs 必须使用 canonical 相对路径。",
                 path=f"$.brief.claim_refs[{index}]",
             )
-    risks = _string_list(brief["requested_risk_focus"], "$.brief.requested_risk_focus")
+    risks = _string_list(
+        brief["requested_risk_focus"],
+        "$.brief.requested_risk_focus",
+        ordered=False,
+    )
     unknown_risks = sorted(set(risks) - set(RISK_IDS))
     if unknown_risks:
         raise ReviewError(

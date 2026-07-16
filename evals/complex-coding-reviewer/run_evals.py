@@ -90,6 +90,36 @@ RUNTIME_NEGATIVE_PROBES = {
     "dynamic-import": "import importlib\nimportlib.import_module('subprocess')\n",
     "model-runtime": "import litellm\nlitellm.completion(model='x', messages=[])\n",
 }
+CI_REQUIRED_SNIPPETS = (
+    'branches: ["**"]',
+    "os: [windows-latest, ubuntu-latest, macos-latest]",
+    "run_semantic_oracle.py --self-test",
+    "run_evals.py --static-contract-only",
+    "run_observation_packet.py --validate-only",
+    "skills/skill-evaluation-lab/scripts/se_check.py",
+    "cross_skill_regression.py --include-reviewer",
+)
+CI_FORBIDDEN_SNIPPETS = (
+    "${{ secrets.",
+    "branches-ignore:",
+    "codex exec",
+    "run_semantic_oracle.py --input",
+    "--prepare-dir",
+    "continue-on-error: true",
+    "Invoke-WebRequest",
+    "curl ",
+    "wget ",
+)
+CURRENT_ONLY_FORBIDDEN_TERMS = (
+    "critique_ref",
+    "development_quality",
+    "legacy_receipt",
+    "receipt_schema_version",
+    "review_payload",
+    "review_report",
+    "review_schema_version",
+)
+REVIEWER_ONLY_FORBIDDEN_TERMS = ("schema_version",)
 
 
 def dotted_name(node: ast.AST) -> str:
@@ -134,6 +164,123 @@ def runtime_negative_probe_failures() -> list[str]:
         if not runtime_tree_violations(tree, probe_id):
             failures.append(probe_id)
     return failures
+
+
+def current_only_legacy_hits(documents: list[tuple[str, str]]) -> list[str]:
+    hits: list[str] = []
+    for relative, content in documents:
+        terms = CURRENT_ONLY_FORBIDDEN_TERMS
+        if relative.startswith("skills/complex-coding-reviewer/"):
+            terms += REVIEWER_ONLY_FORBIDDEN_TERMS
+        for term in terms:
+            if term in content:
+                hits.append(f"{relative}:{term}")
+    return hits
+
+
+def repository_contract_checks() -> list[dict[str, Any]]:
+    workflow_path = REPO_ROOT / ".github" / "workflows" / "planner-executor.yml"
+    readme_path = REPO_ROOT / "README.md"
+    changelog_path = REPO_ROOT / "CHANGELOG.md"
+    contract_paths = [readme_path]
+    for skill_name in (
+        "complex-coding-reviewer",
+        "complex-coding-planner",
+        "complex-coding-executor",
+    ):
+        skill_root = REPO_ROOT / "skills" / skill_name
+        contract_paths.append(skill_root / "SKILL.md")
+        contract_paths.extend(sorted((skill_root / "references").glob("*.md")))
+
+    required_paths = [workflow_path, changelog_path, *contract_paths]
+    missing_paths = sorted(
+        path.relative_to(REPO_ROOT).as_posix()
+        for path in required_paths
+        if not path.is_file()
+    )
+    workflow = workflow_path.read_text(encoding="utf-8") if workflow_path.is_file() else ""
+    readme = readme_path.read_text(encoding="utf-8") if readme_path.is_file() else ""
+    changelog = changelog_path.read_text(encoding="utf-8") if changelog_path.is_file() else ""
+
+    missing_ci = [snippet for snippet in CI_REQUIRED_SNIPPETS if snippet not in workflow]
+    forbidden_ci = [snippet for snippet in CI_FORBIDDEN_SNIPPETS if snippet in workflow]
+    all_branches = workflow.count('branches: ["**"]') == 2
+
+    readme_markers = (
+        "requirement/risk/path coverage",
+        "verification gaps",
+        "spec compliance",
+        "fresh-context",
+        "`not_observed`",
+        "--prepare-dir",
+        "current checker",
+        "attestation",
+    )
+    changelog_markers = (
+        "target/context digest",
+        "spec-first",
+        "observation packet",
+        "`not_observed`",
+        "current-only breaking contract",
+        "attestation",
+    )
+    missing_public_markers = [
+        *(f"README:{value}" for value in readme_markers if value not in readme),
+        *(f"CHANGELOG:{value}" for value in changelog_markers if value not in changelog),
+    ]
+
+    contract_documents: list[tuple[str, str]] = []
+    for path in contract_paths:
+        if not path.is_file():
+            continue
+        contract_documents.append(
+            (
+                path.relative_to(REPO_ROOT).as_posix(),
+                path.read_text(encoding="utf-8"),
+            )
+        )
+    legacy_hits = current_only_legacy_hits(contract_documents)
+    probe_hits = current_only_legacy_hits(
+        [
+            (
+                "skills/complex-coding-planner/references/example-schema.md",
+                "schema_version",
+            ),
+            (
+                "skills/complex-coding-reviewer/references/review-contract.md",
+                "schema_version",
+            ),
+        ]
+    )
+    expected_probe_hits = [
+        "skills/complex-coding-reviewer/references/review-contract.md:schema_version"
+    ]
+
+    return [
+        {
+            "id": "repository-ci-contract",
+            "passed": not missing_paths and all_branches and not missing_ci and not forbidden_ci,
+            "detail": (
+                f"missing_paths={missing_paths}, all_branches={all_branches}, "
+                f"missing={missing_ci}, forbidden={forbidden_ci}"
+            ),
+        },
+        {
+            "id": "public-capability-boundaries",
+            "passed": not missing_public_markers,
+            "detail": f"missing={missing_public_markers}",
+        },
+        {
+            "id": "current-only-review-contract",
+            "passed": not missing_paths and not legacy_hits,
+            "detail": f"legacy_hits={legacy_hits}",
+        },
+        {
+            "id": "current-only-scanner-probes",
+            "passed": probe_hits == expected_probe_hits,
+            "detail": f"expected={expected_probe_hits}, actual={probe_hits}",
+        },
+    ]
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -574,6 +721,7 @@ def static_contract_report() -> dict[str, Any]:
             "detail": f"risk_ids={sorted(actual_risk_ids)}",
         }
     )
+    checks.extend(repository_contract_checks())
     return {
         "suite": "complex-coding-reviewer-static-contract",
         "passed": sum(item["passed"] for item in checks),

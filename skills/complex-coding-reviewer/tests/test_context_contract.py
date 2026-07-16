@@ -16,7 +16,7 @@ from helpers import (
     write_json,
 )
 
-from complex_coding_reviewer.context import build_context_target
+from complex_coding_reviewer.context import build_context_target, validate_review_brief
 from complex_coding_reviewer.contract import validate_receipt
 from complex_coding_reviewer.errors import ReviewError
 from complex_coding_reviewer.package import build_review_package
@@ -50,6 +50,27 @@ def rebuild_context(receipt: dict[str, object], root: Path) -> None:
 
 
 class ContextContractTests(unittest.TestCase):
+    def test_multiple_requested_risks_use_domain_order(self) -> None:
+        brief = {
+            "profile": "code-review",
+            "scope": {"kind": "standalone"},
+            "summary": "验证多个风险焦点的业务顺序。",
+            "requirement_refs": ["REQ-UNIT"],
+            "constraint_refs": [],
+            "claim_refs": [],
+            "requested_risk_focus": [
+                "security-privacy",
+                "api-data-compatibility",
+                "removal-dependencies",
+            ],
+            "created_at": "2026-07-16T00:00:00+00:00",
+        }
+        validated = validate_review_brief(brief)
+        self.assertEqual(brief["requested_risk_focus"], validated["requested_risk_focus"])
+        brief["requested_risk_focus"] = list(reversed(brief["requested_risk_focus"]))
+        with self.assertRaisesRegex(ReviewError, "REVIEW_CONTEXT_ORDER_INVALID"):
+            validate_review_brief(brief)
+
     def test_context_order_has_stable_digest(self) -> None:
         with writable_tempdir() as temp:
             root = Path(temp)

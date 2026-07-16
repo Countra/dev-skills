@@ -226,6 +226,11 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
             "final-integration",
             "review_validate.py",
             "target_digest",
+            "context_digest",
+            "coverage_summary",
+            "lineage_summary",
+            "report_ref",
+            "verification_gaps",
         )
     missing_terms = [term for term in required_terms if term not in consumer_text]
     if missing_terms:
@@ -242,7 +247,14 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
         "default port is 18080",
     )
     if include_reviewer:
-        forbidden_terms += ("development_quality",)
+        forbidden_terms += (
+            "critique_ref",
+            "development_quality",
+            "legacy_receipt",
+            "receipt_schema_version",
+            "review_payload",
+            "review_report",
+        )
     present_forbidden = [term for term in forbidden_terms if term in consumer_text]
     if present_forbidden:
         failures.append("current consumer 残留旧契约: " + ", ".join(present_forbidden))

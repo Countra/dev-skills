@@ -34,11 +34,14 @@
 核心约束：
 
 - Reviewer 独占正式 review verdict；Planner 负责方案生产与 readiness，Executor 负责实现、验证、修复和 ledger 状态。
-- target 支持 managed plan、显式文件、working tree 和 commit range，并以 manifest 与 SHA-256 固定审查对象；目标变化后旧回执立即 stale。
-- canonical JSON receipt 记录 profile、scope、standards、完整 lenses、findings、provenance、verdict、限制和 supersedes 链；Markdown 仅为派生视图。
+- target 支持 managed plan、显式文件、working tree 和 commit range；独立 context manifest 只纳入适用要求、规范和验证证据，任一 digest 变化都会让旧回执 stale。
+- canonical JSON receipt 记录 profile、scope、双 digest、standards、完整 lenses、requirement/risk/path coverage、evidence-bound strengths、带 category/origin 的 findings、verification gaps、provenance、verdict、限制和 supersedes lineage；Markdown 仅为派生视图。
 - `plan-review` 与 `code-review` 不混用清单；stage 使用 `stage-delta`，最终提交后使用 execution baseline 到当前 HEAD 的 `final-integration` commit range。
-- same-context 审查必须如实声明非独立；blocking/major finding 未 resolved 或 invalidated 时不能通过。
-- Reviewer 只读目标，不运行 Agent、模型、网络、目标程序、测试或 Git write；三个公共 CLI 只使用 Python 标准库。
+- `plan-review` 检查完整性、一致性、范围和可实施性；`code-review` 先做 spec compliance，再按风险 screen 条件化加载安全隐私、并发完整性、性能资源、API/数据兼容、UI/可访问性/国际化和删除依赖 playbook。
+- superseding receipt 必须逐项交代前序 finding；blocking/major finding 或关键 verification gap 未关闭时不能通过。
+- deterministic contract、same-context semantic smoke 和用户 fresh-context observation 分层报告；same-context 必须声明非独立，未由用户运行的 fresh-context 保持 `not_observed`。
+- Reviewer 只读目标，不运行 Agent、模型、网络、目标程序、测试或 Git write；公共 CLI 只使用 Python 标准库，当前契约不提供旧 receipt/payload 的兼容读写。
+- 用户可运行 `python -u -X utf8 -B evals/complex-coding-reviewer/run_observation_packet.py --prepare-dir .harness/observations/reviewer` 生成不可执行工作包，再在独立任务中按包内步骤观察并通过 Skill Evaluation Lab 导入结果；Skill 本身不会启动其它 Agent。
 
 ### complex-coding-executor
 
@@ -48,7 +51,7 @@
 
 核心约束：
 
-- 每轮读取 pointer、contract、attestation、append-only ledger 和派生 `run-state.json`；不解析 Markdown 状态。
+- 每轮读取 pointer、contract、attestation、append-only ledger 和派生 `run-state.json`；不解析 Markdown 状态。Planner/Reviewer current checker 只在新批准或 amendment 激活前运行，恢复、transition 和 final 只验证批准时 attestation 的不可变文件 hashes。
 - 执行前运行 `harness_exec_check.py --mode preflight`，恢复时使用 `status|reconcile`，阶段完成后使用 `transition`。
 - `dependency_selection.mode=none` 时依赖门禁直接返回 `not-applicable`；其它模式精确核对批准的包、来源、选择类别、版本策略和 manifest，并按 critical-runtime/runtime/dev-build 的 30/60/90 天上限要求 task-local runtime receipt。
 - 每个开始、attempt、validation、review、stage completion、block、amendment 和 commit 都先追加合法 event，再原子刷新 snapshot。
@@ -58,7 +61,7 @@
 - scope、DAG、required validation、风险或授权变化时归档上一 revision，重新批准并用新 ledger 首事件连接旧 hash。
 - 阶段完成不是停止条件；只有所有 stage、验证、阶段回执、提交后的 `final-integration` 回执、授权、pointer closure 和 final checker 闭环后才能交付。
 - 实施授权不等于提交授权；提交必须由 attestation 明确授权并使用 `git commit -F`。
-- `.github/workflows/planner-executor.yml` 在所有 push/pull request 分支上运行 Windows、Ubuntu、macOS 的 Planner、Reviewer、Executor 单测与确定性 eval，不需要 secrets 或依赖安装。
+- `.github/workflows/planner-executor.yml` 在所有 push/pull request 分支上运行 Windows、Ubuntu、macOS 的三套单测/确定性 eval、Reviewer oracle/static contract、Skill 静态检查、不可执行 observation packet 校验和三 Skill 联合回归；候选验证命令不读取 secrets、不访问网络，也不启动 Agent 或目标应用。
 
 ### process-manager
 
