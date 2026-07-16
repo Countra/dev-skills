@@ -11,6 +11,7 @@
 7. [Strength 与 Verification Gap](#strength-与-verification-gap)
 8. [Clean Review](#clean-review)
 9. [反馈处置](#反馈处置)
+10. [效果证据分层](#效果证据分层)
 
 ## 判断原则
 
@@ -123,3 +124,17 @@ Planner/Executor 收到 finding 后先核对事实和适用性：
 
 不能把 blocking/major 标为 accepted/deferred 后获取 passed，也不能在新 attempt 中省略前序 finding。任何修复都会改变目标，必须
 重建 target/context 并执行完整复审。
+
+## 效果证据分层
+
+Reviewer 的效果声明必须分三层报告，不能互相替代：
+
+| Layer | Proves | Does not prove |
+| --- | --- | --- |
+| deterministic contract | receipt、freshness、lineage、计数和 closed schema 门禁可重复工作 | finding 语义正确或实际独立会话行为 |
+| same-context semantic | 当前 reviewer 在固定 corpus 上的 finding、误报、severity、locator、evidence 和 gap 表现 | 独立性、跨会话稳定性或总体触发率 |
+| user fresh-context observation | 用户按固定 packet 在独立会话中观察到的 case/variant 结果 | 未覆盖场景、其它模型或未来版本的总体质量 |
+
+语义 oracle 只对人工裁定后的 expectation ID 做确定性评分，不用关键词代替语义匹配。clean 与 near-miss 是误报控制，不能为了
+提高 recall 删除；known-defect 是漏报控制。fresh-context 没有用户导入 provenance 时必须保持 `not_observed`，same-context
+receipt 必须声明 `independence_claim=false`。

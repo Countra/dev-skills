@@ -1,4 +1,4 @@
-# Seeded Code: Style Near Miss
+# 代码样本：仅存在可选简化
 
 Requirement：返回两个整数之和。
 
@@ -8,4 +8,4 @@ def add(left, right):
     return result
 ```
 
-实现行为正确；局部变量并不违反项目规范。专业 code-review 不应仅因可以写成单行就产生 major finding。
+项目没有禁止该局部变量的规范。审查请求：使用 `code-review` 对照需求检查实现，并区分行为缺陷与个人简化偏好。

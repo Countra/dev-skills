@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import os
 import re
@@ -44,6 +45,95 @@ EXPECTED_RISK_IDS = {
     "RISK-UI-ACCESSIBILITY-I18N",
     "RISK-REMOVAL-DEPENDENCIES",
 }
+BANNED_RUNTIME_IMPORTS = {
+    "aiohttp",
+    "agents",
+    "anthropic",
+    "cohere",
+    "ftplib",
+    "google",
+    "http",
+    "httpx",
+    "litellm",
+    "mistralai",
+    "multiprocessing",
+    "ollama",
+    "openai",
+    "replicate",
+    "requests",
+    "smtplib",
+    "socket",
+    "subprocess",
+    "telnetlib",
+    "transformers",
+    "urllib",
+    "urllib3",
+    "webbrowser",
+}
+BANNED_RUNTIME_CALLS = {
+    "__import__",
+    "asyncio.create_subprocess_exec",
+    "asyncio.create_subprocess_shell",
+    "importlib.import_module",
+    "multiprocessing.Process",
+    "os.fork",
+    "os.popen",
+    "os.startfile",
+    "os.system",
+    "webbrowser.open",
+    "webbrowser.open_new",
+    "webbrowser.open_new_tab",
+}
+RUNTIME_NEGATIVE_PROBES = {
+    "network-standard-library": "import urllib.request\nurllib.request.urlopen('https://example.invalid')\n",
+    "derived-process": "import multiprocessing\nmultiprocessing.Process(target=print).start()\n",
+    "dynamic-import": "import importlib\nimportlib.import_module('subprocess')\n",
+    "model-runtime": "import litellm\nlitellm.completion(model='x', messages=[])\n",
+}
+
+
+def dotted_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = dotted_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    return ""
+
+
+def runtime_tree_violations(tree: ast.AST, label: str) -> list[str]:
+    violations: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".", 1)[0] in BANNED_RUNTIME_IMPORTS:
+                    violations.append(f"{label}:{node.lineno}: import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            root = (node.module or "").split(".", 1)[0]
+            if node.level == 0 and root in BANNED_RUNTIME_IMPORTS:
+                violations.append(f"{label}:{node.lineno}: from {node.module}")
+        elif isinstance(node, ast.Call):
+            call = dotted_name(node.func)
+            if call in BANNED_RUNTIME_CALLS or call.startswith(("os.exec", "os.spawn")):
+                violations.append(f"{label}:{node.lineno}: {call}")
+    return violations
+
+
+def runtime_entry_violations(paths: list[Path]) -> list[str]:
+    violations: list[str] = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        violations.extend(runtime_tree_violations(tree, path.name))
+    return violations
+
+
+def runtime_negative_probe_failures() -> list[str]:
+    failures: list[str] = []
+    for probe_id, source in RUNTIME_NEGATIVE_PROBES.items():
+        tree = ast.parse(source, filename=f"<{probe_id}>")
+        if not runtime_tree_violations(tree, probe_id):
+            failures.append(probe_id)
+    return failures
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -350,6 +440,12 @@ def static_contract_report() -> dict[str, Any]:
         "risks": SKILL_ROOT / "references" / "risk-playbooks.md",
         "contract": SKILL_ROOT / "references" / "review-contract.md",
     }
+    semantic_assets = {
+        "oracle": Path(__file__).with_name("run_semantic_oracle.py"),
+        "observation_runner": Path(__file__).with_name("run_observation_packet.py"),
+        "observation_suite": Path(__file__).with_name("observation-suite.json"),
+        "corpus": Path(__file__).with_name("semantic_cases") / "corpus.json",
+    }
     texts: dict[str, str] = {}
     checks: list[dict[str, Any]] = []
     for name, path in required_files.items():
@@ -362,6 +458,16 @@ def static_contract_report() -> dict[str, Any]:
             }
         )
         texts[name] = path.read_text(encoding="utf-8") if exists else ""
+    missing_semantic_assets = sorted(
+        name for name, path in semantic_assets.items() if not path.is_file()
+    )
+    checks.append(
+        {
+            "id": "semantic-assets",
+            "passed": not missing_semantic_assets,
+            "detail": f"missing={missing_semantic_assets}",
+        }
+    )
 
     skill_links = {
         "references/plan-review.md",
@@ -377,6 +483,49 @@ def static_contract_report() -> dict[str, Any]:
             "id": "progressive-disclosure-links",
             "passed": not missing_links,
             "detail": f"missing={missing_links}",
+        }
+    )
+    runtime_paths = [
+        semantic_assets["oracle"],
+        semantic_assets["observation_runner"],
+    ]
+    runtime_violations = (
+        runtime_entry_violations(runtime_paths)
+        if all(path.is_file() for path in runtime_paths)
+        else ["semantic runtime file missing"]
+    )
+    checks.append(
+        {
+            "id": "semantic-no-derived-runtime",
+            "passed": not runtime_violations,
+            "detail": f"violations={runtime_violations}",
+        }
+    )
+    probe_failures = runtime_negative_probe_failures()
+    checks.append(
+        {
+            "id": "semantic-runtime-negative-probes",
+            "passed": not probe_failures,
+            "detail": f"undetected_probes={probe_failures}",
+        }
+    )
+    observation_text = (
+        semantic_assets["observation_runner"].read_text(encoding="utf-8")
+        if semantic_assets["observation_runner"].is_file()
+        else ""
+    )
+    checks.append(
+        {
+            "id": "layered-observation-claims",
+            "passed": all(
+                value in observation_text
+                for value in (
+                    '"deterministic_contract": "separate_evidence"',
+                    '"same_context_semantic": "separate_evidence"',
+                    '"fresh_context_semantic": "not_observed"',
+                )
+            ),
+            "detail": "三层证据必须独立报告，fresh-context 默认未观察。",
         }
     )
     checks.extend(
