@@ -1,6 +1,6 @@
 ---
 name: complex-coding-executor
-description: 执行由 complex-coding-planner 生成并获用户批准的复杂 coding task bundle。用于开始实现、继续或恢复 managed 任务、执行剩余 stages；只消费不可变 execution-plan.md、plan-contract.json 和 attestation，独占 run-state.json 与 ledger.jsonl，并强制执行阶段验证、review、Git/process、amendment、提交授权和最终交付门禁。
+description: 执行由 complex-coding-planner 生成并获用户批准的复杂 coding task bundle。用于开始实现、继续或恢复 managed 任务、执行剩余 stages；只消费不可变 execution-plan.md、plan-contract.json 和 attestation，独占 run-state.json 与 ledger.jsonl，并通过 complex-coding-reviewer 的 target-bound receipt 强制执行阶段/最终审查、验证、Git/process、amendment、提交授权和交付门禁。
 ---
 
 # Complex Coding Executor
@@ -20,8 +20,9 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - `plan-contract.json` 是可执行约束，`execution-plan.md` 解释批准意图；不得从 prose 推断 stage、授权或状态。
 - 执行前运行 `scripts/harness_exec_check.py --mode preflight`，验证 planner approval checker、attestation 和 state replay。
 - 恢复或转移时运行 `--mode status|transition`；仅用 `--mode reconcile` 修复可由合法 ledger 唯一推导的 snapshot drift。
-- 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、review、验证、修复与 exit。
-- 每个阶段必须执行 `Development Quality Check`：读取计划中的 standards index、`Standards Discovery Gate` 和 `Development Quality Gate`，按本阶段范围复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
+- 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、验证、正式审查、修复与 exit。
+- standards index、`Standards Discovery Gate` 和 `Development Quality Gate` 是实现与验证输入；正式 verdict 必须使用 `complex-coding-reviewer` 的 `code-review` profile，Executor 不复制审查 rubric，也不自行声明通过。
+- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；stage 使用 `stage-delta` scope，任务完成前另需当前 `final-integration` scope。目标变化后旧 receipt stale。
 - contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
 - 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
 - stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。
@@ -41,6 +42,7 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 执行状态检查: `scripts/harness_exec_check.py`
 - 任务解析: `scripts/harness_task_resolver.py`
 - 依赖执行检查: `scripts/harness_dependency_check.py`
+- 审查回执门禁: `scripts/harness_review.py`、`../complex-coding-reviewer/scripts/review_validate.py`
 - 计划证明: `scripts/harness_attest_plan.py`
 - 进度 ledger: `scripts/harness_ledger_append.py`、`scripts/harness_ledger_summary.py`
 
@@ -48,6 +50,7 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 
 - 不修改批准后的 plan、contract 或 approved artifacts。
 - 不跳过 review、验证、Stage Transition Gate 或 Resume Summary。
+- 不在 Executor 中维护正式 code-review checklist、伪造独立审查，或用 stage receipt 替代 final receipt。
 - 不保留旧契约分支、active 状态镜像或 Markdown 状态解析。
 - 不把阶段完成、阶段提交完成或恢复点完成当作最终停止条件。
 - 不自动 stash、reset、rebase、覆盖用户改动或删除未知文件。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""验证 electron、planner 与 executor 消费 current process-manager 契约。"""
+"""验证跨 skill 公共契约与可选 Reviewer 生命周期。"""
 
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ELECTRON_SCRIPTS = REPO_ROOT / "skills" / "electron-ui-verifier" / "scripts"
 PROCESS_SCRIPTS = REPO_ROOT / "skills" / "process-manager" / "scripts"
+EXECUTOR_EVAL = REPO_ROOT / "evals" / "complex-coding-executor" / "run_evals.py"
 sys.path.insert(0, str(ELECTRON_SCRIPTS))
 
 from ev_init import service_config  # noqa: E402
@@ -68,7 +69,67 @@ def run_validate(config: Path, service: Path) -> tuple[int, dict[str, Any]]:
     return result.returncode, value if isinstance(value, dict) else {}
 
 
-def evaluate(work_dir: Path) -> dict[str, Any]:
+def run_reviewer_lifecycle(work_dir: Path) -> dict[str, Any]:
+    manifest = work_dir / "reviewer-lifecycle-manifest.json"
+    report_path = work_dir / "reviewer-lifecycle-report.json"
+    write_json(
+        manifest,
+        {
+            "capability": [
+                {
+                    "id": "joint-reviewer-lifecycle",
+                    "profile": "lite",
+                    "scenario": "complete-cli",
+                    "commit_authorized": False,
+                }
+            ],
+            "regression": [],
+        },
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-u",
+            "-X",
+            "utf8",
+            "-B",
+            str(EXECUTOR_EVAL),
+            "--manifest",
+            str(manifest),
+            "--work-dir",
+            str(work_dir / "reviewer-lifecycle-work"),
+            "--output",
+            str(report_path),
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=180,
+        check=False,
+    )
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        report = {}
+    passed = (
+        result.returncode == 0
+        and isinstance(report, dict)
+        and report.get("total") == 1
+        and report.get("passed") == 1
+        and report.get("failed") == 0
+    )
+    return {
+        "passed": passed,
+        "exit_code": result.returncode,
+        "total": report.get("total") if isinstance(report, dict) else None,
+        "passed_cases": report.get("passed") if isinstance(report, dict) else None,
+        "failed_cases": report.get("failed") if isinstance(report, dict) else None,
+        "report": str(report_path),
+    }
+
+
+def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any]:
     work_dir.mkdir(parents=True, exist_ok=True)
     manager_config = work_dir / "manager.json"
     service_path = work_dir / "electron-service.json"
@@ -123,6 +184,27 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
         REPO_ROOT / ".gitignore",
         REPO_ROOT / ".harness" / "environment.md",
     ]
+    if include_reviewer:
+        consumer_paths.extend(
+            [
+                REPO_ROOT / "skills" / "complex-coding-reviewer" / "SKILL.md",
+                REPO_ROOT
+                / "skills"
+                / "complex-coding-reviewer"
+                / "references"
+                / "review-contract.md",
+                REPO_ROOT
+                / "skills"
+                / "complex-coding-reviewer"
+                / "references"
+                / "plan-review.md",
+                REPO_ROOT
+                / "skills"
+                / "complex-coding-reviewer"
+                / "references"
+                / "code-review.md",
+            ]
+        )
     consumer_text = "\n".join(path.read_text(encoding="utf-8") for path in consumer_paths)
     required_terms = (
         "pm_init.py",
@@ -136,6 +218,15 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
         "不判断 OS/backend",
         "普通流程不先运行",
     )
+    if include_reviewer:
+        required_terms += (
+            "plan-review",
+            "code-review",
+            "stage-delta",
+            "final-integration",
+            "review_validate.py",
+            "target_digest",
+        )
     missing_terms = [term for term in required_terms if term not in consumer_text]
     if missing_terms:
         failures.append("consumer 规则缺失: " + ", ".join(missing_terms))
@@ -150,6 +241,8 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
         "powershell-file",
         "default port is 18080",
     )
+    if include_reviewer:
+        forbidden_terms += ("development_quality",)
     present_forbidden = [term for term in forbidden_terms if term in consumer_text]
     if present_forbidden:
         failures.append("current consumer 残留旧契约: " + ", ".join(present_forbidden))
@@ -159,8 +252,20 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
     if "process-manager-platform-transparent-gate" not in planner_ids:
         failures.append("planner eval 缺少 process-manager 平台透明门禁")
     required_executor_ids = {"process-manager-required-dev-server", "process-manager-doctor-on-demand"}
+    if include_reviewer:
+        required_executor_ids.update(
+            {
+                "review-handoff-uses-standards-and-current-target",
+                "final-missing-current-review-receipt-blocked",
+            }
+        )
     if not required_executor_ids.issubset(executor_ids):
         failures.append("executor eval 缺少 process-manager current workflow 场景")
+    reviewer_lifecycle = None
+    if include_reviewer:
+        reviewer_lifecycle = run_reviewer_lifecycle(work_dir)
+        if reviewer_lifecycle["passed"] is not True:
+            failures.append("Planner/Reviewer/Executor 公共 CLI 生命周期未闭环")
     return {
         "ok": not failures,
         "electron_validate_exit": validation_code,
@@ -172,6 +277,8 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
         "present_forbidden_terms": present_forbidden,
         "planner_fixture_count": len(planner_ids),
         "executor_fixture_count": len(executor_ids),
+        "reviewer_included": include_reviewer,
+        "reviewer_lifecycle": reviewer_lifecycle,
         "failures": failures,
     }
 
@@ -180,9 +287,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--include-reviewer", action="store_true")
     args = parser.parse_args()
     try:
-        result = evaluate(args.work_dir.resolve())
+        result = evaluate(
+            args.work_dir.resolve(),
+            include_reviewer=args.include_reviewer,
+        )
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         result = {"ok": False, "failures": [f"cross-skill regression 环境无效: {exc}"]}
     output = args.output or args.work_dir / "cross-skill-regression.json"

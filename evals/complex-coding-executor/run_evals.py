@@ -6,14 +6,22 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
+import shutil
+import stat
 import sys
-import tempfile
+import uuid
 from datetime import date
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Callable
 
-from cli_scenarios import run_amendment_cli, run_complete_cli
+from cli_scenarios import (
+    create_review_evidence,
+    initialize_review_repository,
+    run_amendment_cli,
+    run_complete_cli,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -39,6 +47,17 @@ from harness_task_bundle import resolve_task_bundle  # noqa: E402
 
 EVAL_TODAY = date(2026, 7, 15)
 DEPENDENCY_RUNTIME_PATH = "artifacts/execution/dependency-runtime.json"
+
+
+def remove_eval_tree(path: Path) -> None:
+    if not path.exists():
+        return
+
+    def remove_readonly(function, target, _error):
+        os.chmod(target, stat.S_IWRITE)
+        function(target)
+
+    shutil.rmtree(path, onerror=remove_readonly)
 
 
 def load_planner_factory() -> ModuleType:
@@ -72,9 +91,12 @@ def build_workspace(
     factory: ModuleType,
 ) -> tuple[Path, Path]:
     workspace = root / case["id"]
+    initialize_review_repository(workspace)
     task_dir = workspace / ".harness" / "tasks" / case["id"]
     task_dir.mkdir(parents=True)
     contract = factory.build_contract(case["id"], case["profile"])
+    for stage in contract["stages"]:
+        stage["allowed_changes"] = ["src/**"]
     if case.get("commit_expectation"):
         for stage in contract["stages"]:
             stage["commit_expectation"] = case["commit_expectation"]
@@ -88,6 +110,7 @@ def build_workspace(
         contract,
         include_online_source=True,
     )
+    factory.write_current_review(task_dir, contract, "none")
     write_pointer(workspace, task_dir, case["id"])
     return workspace, task_dir
 
@@ -125,15 +148,23 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
                     "summary": "deterministic validation passed",
                 },
             )
+        stage_review, stage_report_ref = create_review_evidence(
+            bundle.workspace,
+            bundle.task_dir,
+            scope={
+                "kind": "stage-delta",
+                "stage_id": stage_id,
+                "attempt": 1,
+            },
+            review_id=f"REV-CODE-{stage_id}-A1",
+        )
         append_event_and_update(
             bundle,
             "review_recorded",
             stage_id=stage_id,
-            payload={
-                "result": "passed",
-                "summary": "stage review passed",
-                "development_quality": "passed",
-            },
+            attempt=1,
+            payload=stage_review,
+            evidence_refs=[stage_report_ref],
         )
         append_event_and_update(bundle, "stage_completed", stage_id=stage_id)
         if commit_authorized and stage["commit_expectation"] == "stage":
@@ -147,10 +178,11 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
                 },
             )
         check_transition(bundle)
-    if commit_authorized and any(
+    final_commit_recorded = commit_authorized and any(
         stage["commit_expectation"] == "final"
         for stage in bundle.contract["stages"]
-    ):
+    )
+    if final_commit_recorded:
         append_event_and_update(
             bundle,
             "commit_recorded",
@@ -159,6 +191,19 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
                 "repository": "eval-workspace",
             },
         )
+    final_review, final_report_ref = create_review_evidence(
+        bundle.workspace,
+        bundle.task_dir,
+        scope={"kind": "final-integration"},
+        review_id="REV-CODE-FINAL-DIRECT-001",
+        final_commit_recorded=final_commit_recorded,
+    )
+    append_event_and_update(
+        bundle,
+        "review_recorded",
+        payload=final_review,
+        evidence_refs=[final_report_ref],
+    )
     append_event_and_update(bundle, "completed")
 
 
@@ -528,16 +573,24 @@ def main() -> int:
     args = parser.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    if args.work_dir:
-        args.work_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = (
+        args.work_dir
+        if args.work_dir is not None
+        else REPO_ROOT / ".harness" / "test-tmp" / "executor-evals"
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
+    work_dir = work_dir.resolve()
 
     factory = load_planner_factory()
-    with tempfile.TemporaryDirectory(dir=args.work_dir) as temporary:
-        root = Path(temporary)
+    root = work_dir / f"run-{uuid.uuid4().hex}"
+    root.mkdir()
+    try:
         results = [
             evaluate_case(root, suite, case, factory)
             for suite, case in load_cases(args.manifest.resolve())
         ]
+    finally:
+        remove_eval_tree(root)
     report = build_report(results)
     rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     print(rendered)

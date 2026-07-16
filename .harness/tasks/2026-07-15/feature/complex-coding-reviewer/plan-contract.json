@@ -1,6 +1,6 @@
 {
   "task_id": "2026-07-15-feature-complex-coding-reviewer",
-  "plan_revision": 1,
+  "plan_revision": 2,
   "lifecycle_route": "managed",
   "plan_profile": "full",
   "goal": {
@@ -93,76 +93,53 @@
     },
     {
       "id": "STG-02",
-      "title": "plan-review 与 Planner 职责迁移",
+      "title": "三 Skill review contract 原子切换",
       "depends_on": ["STG-01"],
-      "requirement_ids": ["REQ-03", "REQ-06", "REQ-08", "REQ-10"],
-      "acceptance_ids": ["AC-04", "AC-05", "AC-08", "AC-09", "AC-10"],
-      "nonfunctional_ids": ["NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
-      "validation_ids": ["VAL-02", "VAL-03", "VAL-04", "VAL-07", "VAL-10"],
+      "requirement_ids": ["REQ-03", "REQ-04", "REQ-05", "REQ-06", "REQ-07", "REQ-08", "REQ-10"],
+      "acceptance_ids": ["AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-04", "VAL-05", "VAL-06", "VAL-07", "VAL-10"],
       "allowed_changes": [
         "skills/complex-coding-reviewer/references/plan-review.md",
-        "skills/complex-coding-planner/**",
-        "evals/complex-coding-planner/**",
-        "evals/complex-coding-reviewer/**"
-      ],
-      "forbidden_changes": [
-        "Planner implementation or executor runtime state",
-        "duplicate plan-review checklist retained in Planner",
-        "Markdown keyword as canonical review verdict",
-        "fake independent-review claim"
-      ],
-      "entry_conditions": [
-        "STG-01 completed",
-        "plan-bundle canonical target fixtures available",
-        "current Planner producer gates and approval flow understood"
-      ],
-      "exit_conditions": [
-        "plan-review has profile-specific lenses and findings-first workflow",
-        "Planner produces/fixes plans but delegates formal review",
-        "approval rejects missing, wrong-profile, open-major and stale plan receipts"
-      ],
-      "risk": "high",
-      "commit_expectation": "none"
-    },
-    {
-      "id": "STG-03",
-      "title": "code-review 与 Executor 状态迁移",
-      "depends_on": ["STG-01"],
-      "requirement_ids": ["REQ-04", "REQ-05", "REQ-07", "REQ-08", "REQ-10"],
-      "acceptance_ids": ["AC-03", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10"],
-      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-05", "NFR-06", "NFR-07"],
-      "validation_ids": ["VAL-01", "VAL-02", "VAL-05", "VAL-06", "VAL-07", "VAL-10"],
-      "allowed_changes": [
         "skills/complex-coding-reviewer/references/code-review.md",
+        "skills/complex-coding-planner/**",
         "skills/complex-coding-executor/**",
-        "skills/complex-coding-planner/references/task-contract.md",
+        "evals/complex-coding-planner/**",
         "evals/complex-coding-executor/**",
         "evals/complex-coding-reviewer/**"
       ],
       "forbidden_changes": [
-        "reviewer ledger or run-state writes",
+        "duplicate plan-review checklist retained in Planner",
+        "Markdown keyword as canonical review verdict",
         "duplicate code-review rubric retained in Executor",
         "legacy development_quality review payload",
-        "stage-delta receipt accepted as final-integration"
+        "stage-delta receipt accepted as final-integration",
+        "fake independent-review claim",
+        "compatibility parser for archived review payloads"
       ],
       "entry_conditions": [
-        "STG-01 completed",
-        "planned self-hosting amendment approved and current ledger rotated with STG-01/STG-02 carried",
-        "current ledger reducer, event writer and transition/final flow understood",
-        "Git target identity and stage attempt semantics fixed by fixtures"
+        "STG-01 completed in revision 1 and is carried unchanged",
+        "revision 1 archive is valid and revision 2 ledger starts with amendment_approved",
+        "archived STG-01 commit evidence and current HEAD both resolve to b532208c052ff6e9623e881c030c03e588047bed, and every pre-existing non-task-bundle worktree path is inside STG-02 allowed scope",
+        "plan-bundle and Git canonical target fixtures are available",
+        "current Planner approval and Executor event/reducer/transition flows are understood"
       ],
       "exit_conditions": [
+        "plan-review has profile-specific lenses and findings-first workflow",
+        "Planner produces/fixes plans but delegates formal review",
+        "approval rejects missing, wrong-profile, open-major and stale plan receipts",
         "code-review supports stage-delta, final-integration and standalone scopes",
-        "review_recorded stores validated compact receipt identity rather than free text",
+        "STG-02 stage-delta is rebuilt from the carried STG-01 commit to the current worktree and includes both revision 1 Planner carryover changes and revision 2 Executor changes",
+        "revision 2 ledger contains only the new compact review receipt payload",
         "source change invalidates old review and stage/final checkers reject stale or wrong scope"
       ],
       "risk": "high",
-      "commit_expectation": "none"
+      "commit_expectation": "stage"
     },
     {
       "id": "STG-04",
       "title": "双 profile 评估与联合契约回归",
-      "depends_on": ["STG-02", "STG-03"],
+      "depends_on": ["STG-02"],
       "requirement_ids": ["REQ-02", "REQ-03", "REQ-04", "REQ-05", "REQ-08", "REQ-09", "REQ-10"],
       "acceptance_ids": ["AC-02", "AC-03", "AC-04", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11"],
       "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-07"],
@@ -182,7 +159,7 @@
         "platform skips used to hide canonicalization defects"
       ],
       "entry_conditions": [
-        "STG-02 and STG-03 completed",
+        "STG-02 completed",
         "new review contract frozen for current implementation",
         "seeded expected claims reviewed against actual fixture behavior"
       ],
@@ -332,7 +309,7 @@
     {
       "id": "ART-06",
       "kind": "review",
-      "path": "artifacts/reviews/plan-review.json",
+      "path": "artifacts/reviews/plan-review-attempt-1.json",
       "required": true,
       "approval_included": true
     },
@@ -460,7 +437,7 @@
       "kind": "test",
       "required": true,
       "covers": ["AC-02", "AC-03", "AC-05", "AC-07", "AC-10", "AC-12", "NFR-01", "NFR-02", "NFR-06", "NFR-07"],
-      "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer",
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --work-dir .harness/test-tmp/reviewer-cross-skill --output .harness/tasks/2026-07-15/feature/complex-coding-reviewer/artifacts/validation/cross-skill-regression.json --include-reviewer",
       "evidence_path": "artifacts/validation/cross-skill-regression.json"
     },
     {
@@ -523,7 +500,6 @@
     "elevated_tool_requires_explicit_authorization": true
   },
   "reapproval_triggers": [
-    "STG-02 完成后执行计划内 self-hosting amendment，轮换旧 review ledger 并携带 STG-01/STG-02，再切换 Executor contract",
     "新增第三个 review profile、改变 reviewer writer 边界或允许自动修改 target",
     "review receipt、target canonicalization、severity/verdict、stale 或 supersedes 语义发生实质变化",
     "Planner approval、Executor stage/final、ledger payload、stage DAG 或 required validation 边界变化",
@@ -533,7 +509,6 @@
   ],
   "stop_conditions": [
     "用户请求暂停或尚未批准 implementation",
-    "STG-02 已完成但 self-hosting amendment 尚未获得用户重新批准",
     "任一 reapproval trigger 发生",
     "当前 target 无法安全重建、路径越界或审查证据缺失",
     "blocking/major finding 或 required validation 在有界修复后仍未关闭",

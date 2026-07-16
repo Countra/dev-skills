@@ -19,10 +19,9 @@ GATE_RESULTS = {
     "规范发现门禁": ("Standards result", {"passed", "not-applicable"}),
     "开发质量门禁": ("Development quality result", {"passed"}),
     "方案质量门禁": ("Quality result", {"passed"}),
-    "规划自查": ("Review result", {"passed"}),
     "就绪门禁": (
         "Readiness result",
-        {"ready_for_approval", "approved_for_execution"},
+        {"ready_for_review"},
     ),
 }
 
@@ -116,6 +115,44 @@ def validate_gate_semantics(plan: str, issues: list[ValidationIssue]) -> None:
                 f"{gate} 只有结论、URL 或形式文本，没有最低语义证据。",
                 "补充决策依据、结构化引用以及对实施或验证的影响。",
             )
+
+
+def validate_review_handoff(
+    plan: str,
+    contract: dict[str, Any],
+    issues: list[ValidationIssue],
+) -> None:
+    gate_text = plan_section(plan, "正式方案审查")
+    artifacts = contract.get("artifacts")
+    review_paths = (
+        [
+            item.get("path")
+            for item in artifacts
+            if isinstance(item, dict)
+            and item.get("kind") == "review"
+            and isinstance(item.get("path"), str)
+        ]
+        if isinstance(artifacts, list)
+        else []
+    )
+    expected = ["plan-review", "managed-plan", "review_validate.py", *review_paths]
+    missing = [value for value in expected if value not in gate_text]
+    if missing:
+        add_issue(
+            issues,
+            "TASK_PLAN_REVIEW_HANDOFF_DRIFT",
+            "$plan.正式方案审查",
+            f"正式方案审查缺少 Reviewer handoff：{', '.join(missing)}。",
+            "同步 profile、scope、当前 receipt 路径和公共 validator。",
+        )
+    if re.search(r"(?:Review result|审查结论)\s*[:：]", gate_text, re.IGNORECASE):
+        add_issue(
+            issues,
+            "TASK_PLAN_REVIEW_VERDICT_DUPLICATED",
+            "$plan.正式方案审查",
+            "计划正文不得复制正式 review verdict。",
+            "只让 canonical JSON receipt 承载 verdict，由 approval checker 消费。",
+        )
 
 
 def validate_online_research(

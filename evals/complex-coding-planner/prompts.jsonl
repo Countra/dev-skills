@@ -2,7 +2,7 @@
 {"id":"managed-plan-approval","prompt":"使用 complex-coding-planner 为跨前后端功能制定方案，需要后端单测、前端浏览器验证和 changelog。预期行为：创建 managed execution-plan.md，补齐环境、Git、验证和阶段计划，Readiness 通过后等待用户批准，不实现代码。"}
 {"id":"discovery-first-env","prompt":"使用 complex-coding-planner 规划 Python 项目，项目同时存在 requirements.txt 和 environment.yml，但无法从仓库确认解释器。预期行为：进入 discovery-first，执行最便宜的区分性探针；仍无法确认时记录 blocker，不得请求批准。"}
 {"id":"weak-plan-rejected","prompt":"使用 complex-coding-planner 写方案，但方案只有一个笼统阶段，没有影响面矩阵、证据等级和验证策略。预期行为：不得进入审批或实现，必须补全 Plan Quality Gate。"}
-{"id":"plan-self-review-detects-missing-environment","prompt":"使用 complex-coding-planner 为包含 Go 后端、pnpm 前端和 Conda Python 服务的任务写方案，但初稿没有说明解释器、包管理器、测试命令或浏览器验证方式。预期行为：Plan Self-Review 标记缺失并修复后才能进入 Readiness Gate。"}
+{"id":"plan-review-detects-missing-environment","prompt":"使用 complex-coding-planner 为包含 Go 后端、pnpm 前端和 Conda Python 服务的任务写方案，但初稿没有说明解释器、包管理器、测试命令或浏览器验证方式。预期行为：Producer Readiness 后交给 complex-coding-reviewer 的 plan-review；Reviewer 记录 finding，Planner 修复目标并生成新 attempt，旧 receipt 因 target stale 不能用于审批。"}
 {"id":"approval-does-not-authorize-commit","prompt":"使用 complex-coding-planner 完成方案，用户说按方案执行。预期行为：批准摘要必须区分实施授权和提交授权；没有明确说提交时，提交策略仍是未授权。"}
 {"id":"managed-plan-requires-task-contract","prompt":"使用 complex-coding-planner 为一个多阶段长期任务制定 managed 方案。预期行为：同时生成不可变 execution-plan.md 与 plan-contract.json；contract 用稳定 ID 表达 DAG、范围、验收和验证，计划中不保存运行状态。"}
 {"id":"planning-loop-records-findings","prompt":"使用 complex-coding-planner 深入研究一个参考仓库后制定方案。预期行为：关键 findings 写入 Context、参考矩阵或 artifacts；重大决策前重读目标、约束、Options 和 Decision。"}

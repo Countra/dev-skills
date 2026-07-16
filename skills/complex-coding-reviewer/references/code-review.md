@@ -11,6 +11,16 @@ contract、当前 stage、已存在验证 evidence 和声明规范。
 
 三者都是 `code-review` 内部 scope。stage receipt 不能替代 final receipt。
 
+## Managed Handoff
+
+- Executor 先固定 execution/stage baseline、批准路径和当前 attempt；Reviewer 只消费 target、contract、standards 与已有验证 evidence，不修改代码、ledger 或 Git。
+- `stage-delta` target identity 必须同时携带当前 `stage_id` 与 `attempt`，并覆盖 baseline 后的 staged/unstaged、deletion 及范围内 untracked 文件。
+- managed Executor 必须把 contract 的 `allowed_changes` 规范化为最小 path prefix 集合，并要求 target identity 的 `paths` 精确匹配；fresh 但只覆盖局部路径的 receipt 仍然无效。
+- `final-integration` 必须从 execution baseline 覆盖整体变更。若 final commit 改变 `HEAD`，pre-commit receipt 立即 stale，必须对真实 commit-range 重新审查。
+- canonical receipt 只写入显式 review root，attempt 不覆盖旧文件；修复后用 `supersedes_review_id` 连接同 profile、同 scope kind 的前序 receipt。
+- managed caller 必须用 `review_validate.py` 传入 expected profile/scope/stage/attempt，并在 transition/final 前重验 freshness；不得从 Markdown 或摘要推断 verdict。
+- same-context 审查必须如实声明 `independence_claim=false`；只有真实 fresh context、external agent 或 human 才能按对应 provenance 声明能力边界。
+
 ## 必需 Lenses
 
 按以下顺序完整记录：

@@ -3,12 +3,13 @@ from __future__ import annotations
 import copy
 import json
 import sys
-import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -98,7 +99,7 @@ def runtime_receipt() -> dict[str, object]:
 
 class DependencyGateTest(unittest.TestCase):
     def setUp(self) -> None:
-        temporary = tempfile.TemporaryDirectory()
+        temporary = WritableTemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.workspace = Path(temporary.name)
         self.task_dir = self.workspace / ".harness" / "tasks" / "dependency"

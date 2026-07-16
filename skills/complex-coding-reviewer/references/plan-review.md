@@ -31,3 +31,10 @@
 - `blocked`：缺少用户决策、关键权限、必要证据或合格专业审查能力。
 
 目标修改后必须重新生成 plan target 与完整 receipt。旧 review artifact 保留为历史，不得覆盖。
+
+## Planner Handoff
+
+- Planner 在 contract 中只索引当前 `artifacts/reviews/plan-review-attempt-N.json`；历史 attempt 留在目录中但不进入当前批准 artifact index。
+- attempt 大于 1 时，当前 receipt 必须通过 `supersedes_review_id` 指向紧邻前序 receipt；不得跳号、覆盖或跨 profile/scope 连接。
+- Planner approval 调用 `review_validate.py`，固定传入 `--expected-profile plan-review`、`--expected-scope managed-plan` 与当前 `--task-dir`；只有返回的 verdict 为 `passed` 才能请求批准。
+- Reviewer 不修改 plan、contract 或非 review artifacts。存在 finding 时，把修复责任交还 Planner；修复后旧 target 必然 stale，必须完整复审。

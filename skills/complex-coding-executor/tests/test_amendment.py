@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
 from unittest import mock
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -59,9 +60,29 @@ def contract(revision: int, include_second_stage: bool = False) -> dict[str, obj
     }
 
 
+def stage_review_payload() -> dict[str, object]:
+    return {
+        "result": "passed",
+        "review_id": "REV-CODE-AMENDMENT-001",
+        "profile": "code-review",
+        "scope": {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+        "target_digest": "a" * 64,
+        "verdict": "passed",
+        "report_ref": "artifacts/reviews/stage-01.json",
+        "open_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "advisory": 0,
+            "total": 0,
+        },
+        "summary": "review passed",
+    }
+
+
 class AmendmentTest(unittest.TestCase):
     def make_bundle(self):
-        temp = tempfile.TemporaryDirectory()
+        temp = WritableTemporaryDirectory()
         self.addCleanup(temp.cleanup)
         workspace = Path(temp.name)
         task_dir = workspace / ".harness" / "tasks" / "task"
@@ -85,6 +106,10 @@ class AmendmentTest(unittest.TestCase):
         write_attestation(bundle.attestation_path, payload)
 
     def complete_first_stage(self, bundle) -> None:
+        review = stage_review_payload()
+        report = bundle.task_dir / str(review["report_ref"])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("{}\n", encoding="utf-8")
         events = [
             ("execution_started", {}),
             ("stage_started", {"stage_id": "STG-01", "attempt": 1}),
@@ -103,22 +128,24 @@ class AmendmentTest(unittest.TestCase):
                 "review_recorded",
                 {
                     "stage_id": "STG-01",
-                    "payload": {
-                        "result": "passed",
-                        "summary": "review passed",
-                        "development_quality": "passed",
-                    },
+                    "attempt": 1,
+                    "payload": review,
+                    "evidence_refs": [str(review["report_ref"])],
                 },
             ),
             ("stage_completed", {"stage_id": "STG-01"}),
         ]
-        for index, (event_type, kwargs) in enumerate(events, start=1):
-            append_event_and_update(
-                bundle,
-                event_type,
-                occurred_at=f"2026-07-10T00:00:{index:02d}+00:00",
-                **kwargs,
-            )
+        with mock.patch(
+            "harness_event_writer.validate_review_gate",
+            return_value=review,
+        ):
+            for index, (event_type, kwargs) in enumerate(events, start=1):
+                append_event_and_update(
+                    bundle,
+                    event_type,
+                    occurred_at=f"2026-07-10T00:00:{index:02d}+00:00",
+                    **kwargs,
+                )
 
     def request_amendment(self, bundle) -> None:
         append_event_and_update(

@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Planning artifact 的路径、批准集合与 critique 门禁。"""
+"""Planning artifact 的路径、批准集合与正式审查门禁。"""
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -25,41 +28,119 @@ ARTIFACT_KINDS = {
     "review",
     "other",
 }
+PLAN_REVIEW_PATH = re.compile(
+    r"^artifacts/reviews/plan-review-attempt-([1-9][0-9]*)\.json$"
+)
+REVIEWER_VALIDATOR = (
+    Path(__file__).resolve().parents[2]
+    / "complex-coding-reviewer"
+    / "scripts"
+    / "review_validate.py"
+)
 
 
 def validate_review_artifact(
     artifact_path: Path,
+    task_dir: Path,
+    attempt: int,
     issue_path: str,
     issues: list[ValidationIssue],
 ) -> None:
-    try:
-        review_text = artifact_path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
+    if not REVIEWER_VALIDATOR.is_file():
         add_issue(
             issues,
-            "TASK_ARTIFACT_UNREADABLE",
+            "TASK_ARTIFACT_REVIEW_TOOL_UNAVAILABLE",
             issue_path,
-            f"无法读取 review artifact：{exc}",
-            "使用 UTF-8 文本记录 critique 结论。",
+            f"缺少 Reviewer 公共 validator：{REVIEWER_VALIDATOR}",
+            "安装 complex-coding-reviewer，并保持两个 skill 位于同一 skills 目录。",
         )
         return
-    blocking_closed = re.search(
-        r"Open blocking findings\s*[:：]\s*(?:none|无|0)",
-        review_text,
-        re.IGNORECASE,
-    )
-    ready = re.search(
-        r"Ready for approval\s*[:：]\s*(?:yes|true|是|ready)",
-        review_text,
-        re.IGNORECASE,
-    )
-    if not blocking_closed or not ready:
+
+    review_root = task_dir / "artifacts" / "reviews"
+    command = [
+        sys.executable,
+        "-u",
+        "-X",
+        "utf8",
+        "-B",
+        str(REVIEWER_VALIDATOR),
+        "--receipt",
+        str(artifact_path),
+        "--review-root",
+        str(review_root),
+        "--task-dir",
+        str(task_dir),
+        "--expected-profile",
+        "plan-review",
+        "--expected-scope",
+        "managed-plan",
+    ]
+    if attempt > 1:
+        predecessor = review_root / f"plan-review-attempt-{attempt - 1}.json"
+        if not predecessor.is_file():
+            add_issue(
+                issues,
+                "TASK_ARTIFACT_REVIEW_HISTORY_MISSING",
+                issue_path,
+                f"缺少前序 plan-review receipt：{predecessor.name}",
+                "保留不可变前序 attempt，并让当前 receipt 通过 supersedes 连接它。",
+            )
+            return
+        command.extend(("--supersedes", str(predecessor)))
+
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
         add_issue(
             issues,
-            "TASK_ARTIFACT_REVIEW_INCOMPLETE",
+            "TASK_ARTIFACT_REVIEW_VALIDATION_FAILED",
             issue_path,
-            "critique 未明确关闭 blocking finding 或确认可审批。",
-            "填写 Gate Result；独立 evaluator 不可用时声明 fallback。",
+            f"无法执行 Reviewer validator：{exc}",
+            "修复 Python/skill 安装或超时问题后重试。",
+        )
+        return
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        payload = None
+    if not isinstance(payload, dict):
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        add_issue(
+            issues,
+            "TASK_ARTIFACT_REVIEW_VALIDATION_FAILED",
+            issue_path,
+            f"Reviewer validator 未返回 JSON envelope：{detail[:500]}",
+            "直接运行 review_validate.py 并修复其稳定诊断。",
+        )
+        return
+    if completed.returncode != 0 or payload.get("ok") is not True:
+        error = payload.get("error")
+        error_code = error.get("code") if isinstance(error, dict) else "REVIEW_UNKNOWN"
+        message = error.get("message") if isinstance(error, dict) else "validator rejected receipt"
+        add_issue(
+            issues,
+            "TASK_ARTIFACT_REVIEW_INVALID",
+            issue_path,
+            f"plan-review receipt 被拒绝 [{error_code}]：{message}",
+            "由 Planner 修复目标后生成新 attempt，或修复 receipt 再重新校验。",
+        )
+        return
+    result = payload.get("result")
+    if not isinstance(result, dict) or result.get("verdict") != "passed":
+        verdict = result.get("verdict") if isinstance(result, dict) else "missing"
+        add_issue(
+            issues,
+            "TASK_ARTIFACT_REVIEW_NOT_PASSED",
+            issue_path,
+            f"plan-review verdict 必须为 passed，当前为 {verdict}。",
+            "处理所有 blocking/major finding 和 blocked lens，再生成新 attempt。",
         )
 
 
@@ -77,6 +158,7 @@ def validate_artifacts(
     )
     artifact_kinds: set[str] = set()
     artifact_paths: set[Path] = set()
+    review_artifact_count = 0
     for index, item in enumerate(artifacts):
         path = f"$.artifacts[{index}]"
         fields = {"id", "kind", "path", "required", "approval_included"}
@@ -93,7 +175,23 @@ def validate_artifacts(
             )
         else:
             artifact_kinds.add(kind)
+            if kind == "review":
+                review_artifact_count += 1
         relative = check_relative_path(item.get("path"), f"{path}.path", task_dir, issues)
+        review_attempt = None
+        if kind == "review" and relative:
+            normalized_path = relative.replace("\\", "/")
+            match = PLAN_REVIEW_PATH.fullmatch(normalized_path)
+            if relative != normalized_path or match is None:
+                add_issue(
+                    issues,
+                    "TASK_CONTRACT_REVIEW_PATH_INVALID",
+                    f"{path}.path",
+                    "plan-review receipt 路径必须包含不可变 attempt 编号。",
+                    "使用 artifacts/reviews/plan-review-attempt-N.json。",
+                )
+            else:
+                review_attempt = int(match.group(1))
         canonical_path = (task_dir / relative).resolve() if relative else None
         if canonical_path in artifact_paths:
             add_issue(
@@ -122,6 +220,17 @@ def validate_artifacts(
                 "required planning artifact 必须进入批准哈希集合。",
                 "将 approval_included 设为 true。",
             )
+        if kind == "review" and (
+            item.get("required") is not True
+            or item.get("approval_included") is not True
+        ):
+            add_issue(
+                issues,
+                "TASK_CONTRACT_REVIEW_NOT_ATTESTED",
+                path,
+                "当前 plan-review receipt 必须 required 且进入批准哈希集合。",
+                "将 required 与 approval_included 同时设为 true。",
+            )
         artifact_path = task_dir / relative if relative else None
         missing = artifact_path is not None and not artifact_path.is_file()
         approval_requires_file = (
@@ -132,7 +241,9 @@ def validate_artifacts(
         if missing:
             add_issue(
                 issues,
-                "TASK_ARTIFACT_MISSING",
+                "TASK_ARTIFACT_REVIEW_MISSING"
+                if kind == "review"
+                else "TASK_ARTIFACT_MISSING",
                 f"{path}.path",
                 f"批准 artifact 不存在：{relative}",
                 "创建文件或修正 artifact index。",
@@ -159,6 +270,20 @@ def validate_artifacts(
                 f"批准 artifact 为空：{relative}",
                 "写入实际证据或从 contract 移除该 artifact。",
             )
-        elif kind == "review":
-            validate_review_artifact(artifact_path, f"{path}.path", issues)
+        elif kind == "review" and review_attempt is not None:
+            validate_review_artifact(
+                artifact_path,
+                task_dir,
+                review_attempt,
+                f"{path}.path",
+                issues,
+            )
+    if review_artifact_count != 1:
+        add_issue(
+            issues,
+            "TASK_CONTRACT_REVIEW_ARTIFACT_COUNT",
+            "$.artifacts",
+            f"managed plan 必须索引一个当前 plan-review receipt，实际为 {review_artifact_count}。",
+            "只索引当前 attempt；历史 attempts 保留在 review 目录但不进入 artifact index。",
+        )
     return artifacts, artifact_ids, artifact_kinds

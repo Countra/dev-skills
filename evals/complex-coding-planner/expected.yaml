@@ -12,9 +12,10 @@ discovery-first-env:
 weak-plan-rejected:
   requires_plan_quality_gate: true
   does_not_enter_implementation: true
-plan-self-review-detects-missing-environment:
-  requires_plan_self_review: true
-  fixes_missing_environment_before_readiness: true
+plan-review-detects-missing-environment:
+  requires_formal_plan_review: true
+  planner_fixes_findings_before_new_attempt: true
+  rejects_stale_review_after_plan_change: true
 approval-does-not-authorize-commit:
   records_commit_authorization: true
   implementation_approval_is_not_commit_authorization: true

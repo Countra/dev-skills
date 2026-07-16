@@ -47,10 +47,12 @@
 
 1. `stage_started` 的 attempt 必须逐次递增，依赖 stage 必须完成。
 2. `validation_recorded` 只能引用该 stage 声明的 VAL，result 只能是 `passed` 或 `failed`。
-3. passed validation 必须有摘要；passed review 必须有摘要和 `development_quality=passed`。
-4. validation/review failure 会撤销旧通过证据；修复后必须重跑相关验证与 review。
-5. required VAL 和 review 未全部通过时不能追加 `stage_completed`。
-6. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
+3. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、`stage_id`、`attempt` 与 Reviewer 公共 validator 结果必须精确一致。
+4. `REVIEW_TARGET_STALE` 表示 receipt 后目标已变化；修复或重新验证后必须生成新 target/receipt，不得只改 ledger 摘要。
+5. `RUN_STATE_REVIEW_EVIDENCE_MISSING`、`REPORT_INVALID` 或 `PAYLOAD_MISMATCH` 分别表示 evidence ref 未绑定、路径越界/缺失或 compact payload 不是由 receipt 派生。
+6. `RUN_STATE_REVIEW_SCOPE_MISMATCH` 还可能表示 target paths 没有精确覆盖 canonical `allowed_changes`，或 final commit 后仍在使用 working-tree target；重新按 contract 生成完整 target，不要只改 receipt 摘要。
+7. validation failure 会撤销当前 stage review；failed review 不建立通过门禁。required VAL 和当前 attempt 的 `stage-delta` receipt 未通过时不能追加 `stage_completed`。
+7. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
 
 ## Dependency Execution Gate
 
@@ -73,11 +75,12 @@
 
 ## Final 与提交
 
-1. 最后一个 stage 完成后先确认无 current/remaining stage、required VAL 与 review 完整，但此时尚不追加 `completed`。
-2. contract 预期提交且 attestation 已授权时，完成 pre-commit 门禁、实际提交并写 `commit_recorded`；未授权 commit event 会被拒绝。
-3. commit expectation 闭环后追加 `completed` 并关闭 active pointer，再运行 final；final 要求 lifecycle completed 且 pointer 已关闭。
-4. 提交前完成 code review、`git diff --check` 和范围检查；同仓库 Git 命令串行。
-5. 使用 `git commit -F <message-file>`，不要用多个 `-m` 拼接正文。
+1. 最后一个 stage 完成后先确认无 current/remaining stage，并生成 `code-review/final-integration` receipt；此时尚不追加 `completed`。
+2. contract 预期 final 提交且 attestation 已授权时，完成 pre-commit 门禁、实际提交并写 `commit_recorded`；该事件会撤销 pre-commit final receipt。
+3. final commit 后对真实 commit-range 重新生成 `final-integration` receipt。出现 `RUN_STATE_FINAL_REVIEW_INCOMPLETE` 时检查是否漏了这次 post-commit 重审。
+4. commit expectation 与当前 final receipt 闭环后追加 `completed` 并关闭 active pointer，再运行 final；final 要求 lifecycle completed、pointer 已关闭且 receipt freshness 仍有效。
+5. 提交前完成 Reviewer 审查、`git diff --check` 和范围检查；同仓库 Git 命令串行。
+6. 使用 `git commit -F <message-file>`，不要用多个 `-m` 拼接正文。
 
 ## Windows 与沙箱
 

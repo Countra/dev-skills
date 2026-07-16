@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from harness_attestation import AttestationError, validate_attestation
+from harness_review import ReviewGateError, validate_review_gate
 from harness_state import (
     commit_evidence_gaps,
     replay_events,
@@ -77,6 +78,14 @@ def append_event_and_update(
                 "completed 前缺少已授权的 stage/final commit evidence："
                 f"missing stages={missing_stages}, final={missing_final}",
             )
+    event_payload = payload or {}
+    if event_type == "review_recorded":
+        report_ref = event_payload.get("report_ref")
+        if not isinstance(report_ref, str) or report_ref not in (evidence_refs or []):
+            raise EventWriteError(
+                "RUN_STATE_REVIEW_EVIDENCE_MISSING",
+                "review_recorded.evidence_refs 必须包含 payload.report_ref。",
+            )
     for ref in evidence_refs or []:
         candidate = (bundle.task_dir / ref).resolve()
         try:
@@ -100,13 +109,48 @@ def append_event_and_update(
                 "append 前 snapshot 与 ledger 不一致；先运行 reconcile。",
             )
 
+    try:
+        final_commit_recorded = any(
+            item.get("type") == "commit_recorded" and item.get("stage_id") is None
+            for item in events
+        )
+        if event_type == "review_recorded":
+            validate_review_gate(
+                bundle,
+                event_payload,
+                stage_id=stage_id,
+                attempt=attempt,
+                final_commit_recorded=final_commit_recorded,
+                require_lifecycle_baseline=True,
+            )
+        elif event_type == "stage_completed" and stage_id is not None:
+            stage_review = existing.stage_reviews.get(stage_id)
+            if stage_review is not None:
+                validate_review_gate(
+                    bundle,
+                    stage_review,
+                    stage_id=stage_id,
+                    attempt=existing.attempts.get(stage_id),
+                )
+        elif event_type == "completed" and existing.final_review is not None:
+            validate_review_gate(
+                bundle,
+                existing.final_review,
+                stage_id=None,
+                attempt=None,
+                final_commit_recorded=final_commit_recorded,
+                require_lifecycle_baseline=True,
+            )
+    except ReviewGateError as exc:
+        raise EventWriteError(exc.code, exc.message) from exc
+
     event = build_event(
         bundle.contract,
         len(events) + 1,
         event_type,
         stage_id=stage_id,
         attempt=attempt,
-        payload=payload,
+        payload=event_payload,
         evidence_refs=evidence_refs,
         occurred_at=occurred_at,
     )

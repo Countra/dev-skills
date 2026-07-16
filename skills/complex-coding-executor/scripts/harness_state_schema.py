@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -62,9 +63,23 @@ STAGE_EVENT_TYPES = {
     "stage_started",
     "attempt_failed",
     "validation_recorded",
-    "review_recorded",
     "stage_completed",
 }
+
+REVIEW_RECORD_FIELDS = {
+    "result",
+    "review_id",
+    "profile",
+    "scope",
+    "target_digest",
+    "verdict",
+    "report_ref",
+    "open_counts",
+    "summary",
+}
+REVIEW_COUNT_FIELDS = {"blocking", "major", "minor", "advisory", "total"}
+REVIEW_VERDICTS = {"passed", "changes_required", "blocked"}
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class StateError(Exception):
@@ -83,8 +98,154 @@ class StateError(Exception):
 class ReplayResult:
     state: dict[str, Any]
     passed_validations: dict[str, set[str]]
-    reviewed_stages: set[str]
+    stage_reviews: dict[str, dict[str, Any]]
+    final_review: dict[str, Any] | None
+    carried_stage_ids: set[str]
     attempts: dict[str, int]
+
+
+def _require_review(
+    condition: bool,
+    code: str,
+    message: str,
+) -> None:
+    if not condition:
+        raise StateError(code, message)
+
+
+def _validate_review_scope(
+    scope: Any,
+    *,
+    stage_id: str | None,
+    attempt: int | None,
+) -> dict[str, Any]:
+    _require_review(
+        isinstance(scope, dict),
+        "RUN_STATE_REVIEW_SCOPE_INVALID",
+        "review payload scope 必须是 object。",
+    )
+    assert isinstance(scope, dict)
+    kind = scope.get("kind")
+    if kind == "stage-delta":
+        expected_fields = {"kind", "stage_id", "attempt"}
+        _require_review(
+            set(scope) == expected_fields,
+            "RUN_STATE_REVIEW_SCOPE_INVALID",
+            "stage-delta scope 必须只包含 kind、stage_id、attempt。",
+        )
+        _require_review(
+            stage_id is not None
+            and attempt is not None
+            and scope.get("stage_id") == stage_id
+            and scope.get("attempt") == attempt,
+            "RUN_STATE_REVIEW_SCOPE_MISMATCH",
+            "stage-delta scope 必须与 event 的 stage_id/attempt 一致。",
+        )
+        return scope
+    if kind == "final-integration":
+        _require_review(
+            set(scope) == {"kind"} and stage_id is None and attempt is None,
+            "RUN_STATE_REVIEW_SCOPE_MISMATCH",
+            "final-integration review 不得绑定 stage_id 或 attempt。",
+        )
+        return scope
+    raise StateError(
+        "RUN_STATE_REVIEW_SCOPE_INVALID",
+        "managed executor 只接受 stage-delta 或 final-integration review。",
+    )
+
+
+def validate_review_record(
+    payload: Any,
+    *,
+    stage_id: str | None,
+    attempt: int | None,
+) -> dict[str, Any]:
+    """校验 ledger 中由 Reviewer 公共校验器派生的紧凑回执。"""
+
+    _require_review(
+        isinstance(payload, dict),
+        "RUN_STATE_REVIEW_PAYLOAD_INVALID",
+        "review payload 必须是 object。",
+    )
+    assert isinstance(payload, dict)
+    unknown = sorted(set(payload) - REVIEW_RECORD_FIELDS)
+    missing = sorted(REVIEW_RECORD_FIELDS - set(payload))
+    _require_review(
+        not unknown and not missing,
+        "RUN_STATE_REVIEW_PAYLOAD_INVALID",
+        f"review payload 字段不封闭：unknown={unknown}, missing={missing}",
+    )
+    _require_review(
+        payload.get("profile") == "code-review",
+        "RUN_STATE_REVIEW_PROFILE_INVALID",
+        "executor review profile 必须是 code-review。",
+    )
+    scope = _validate_review_scope(
+        payload.get("scope"),
+        stage_id=stage_id,
+        attempt=attempt,
+    )
+    for field in ("review_id", "report_ref", "summary"):
+        value = payload.get(field)
+        _require_review(
+            isinstance(value, str) and bool(value.strip()),
+            "RUN_STATE_REVIEW_PAYLOAD_INVALID",
+            f"review payload.{field} 必须是非空字符串。",
+        )
+    report_ref_text = str(payload["report_ref"])
+    report_ref = Path(report_ref_text)
+    _require_review(
+        not report_ref.is_absolute()
+        and "\\" not in report_ref_text
+        and ".." not in report_ref.parts
+        and tuple(report_ref.parts[:2]) == ("artifacts", "reviews"),
+        "RUN_STATE_REVIEW_REPORT_INVALID",
+        "review report_ref 必须位于 task-dir 的 artifacts/reviews 下。",
+    )
+    digest = payload.get("target_digest")
+    _require_review(
+        isinstance(digest, str) and SHA256.fullmatch(digest) is not None,
+        "RUN_STATE_REVIEW_TARGET_INVALID",
+        "review target_digest 必须是小写 SHA-256。",
+    )
+    verdict = payload.get("verdict")
+    _require_review(
+        verdict in REVIEW_VERDICTS,
+        "RUN_STATE_REVIEW_VERDICT_INVALID",
+        "review verdict 无效。",
+    )
+    result = payload.get("result")
+    expected_result = "passed" if verdict == "passed" else "failed"
+    _require_review(
+        result == expected_result,
+        "RUN_STATE_REVIEW_RESULT_INVALID",
+        f"review result 必须由 verdict 派生为 {expected_result}。",
+    )
+    counts = payload.get("open_counts")
+    _require_review(
+        isinstance(counts, dict) and set(counts) == REVIEW_COUNT_FIELDS,
+        "RUN_STATE_REVIEW_COUNTS_INVALID",
+        "review open_counts 字段不完整。",
+    )
+    assert isinstance(counts, dict)
+    _require_review(
+        all(
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0
+            for value in counts.values()
+        )
+        and counts["total"]
+        == sum(counts[severity] for severity in ("blocking", "major", "minor", "advisory")),
+        "RUN_STATE_REVIEW_COUNTS_INVALID",
+        "review open_counts 必须是自洽的非负整数。",
+    )
+    _require_review(
+        result != "passed"
+        or (counts["blocking"] == 0 and counts["major"] == 0),
+        "RUN_STATE_REVIEW_COUNTS_INVALID",
+        "passed review 不得包含开放 blocking 或 major finding。",
+    )
+    return {**payload, "scope": scope}
 
 
 def parse_timestamp(value: Any) -> None:

@@ -22,7 +22,15 @@
     }
   ],
   "nonfunctional_requirements": [],
-  "artifacts": [],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-review-attempt-1.json",
+      "required": true,
+      "approval_included": true
+    }
+  ],
   "stages": [
     {
       "id": "STG-01",

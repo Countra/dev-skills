@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -18,6 +19,7 @@ from harness_attestation import (  # noqa: E402
     write_attestation,
 )
 from harness_event_writer import EventWriteError, append_event_and_update  # noqa: E402
+from harness_review import ReviewGateError  # noqa: E402
 from harness_execution import (  # noqa: E402
     ExecutionError,
     reconcile_snapshot,
@@ -45,9 +47,29 @@ def task_contract() -> dict[str, object]:
     }
 
 
+def stage_review_payload() -> dict[str, object]:
+    return {
+        "result": "passed",
+        "review_id": "REV-CODE-RECOVERY-001",
+        "profile": "code-review",
+        "scope": {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+        "target_digest": "b" * 64,
+        "verdict": "passed",
+        "report_ref": "artifacts/reviews/stage-01.json",
+        "open_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "advisory": 0,
+            "total": 0,
+        },
+        "summary": "review passed",
+    }
+
+
 class RecoveryTest(unittest.TestCase):
     def make_bundle(self, *, commit_authorized: bool = True):
-        temp = tempfile.TemporaryDirectory()
+        temp = WritableTemporaryDirectory()
         self.addCleanup(temp.cleanup)
         workspace = Path(temp.name)
         task_dir = workspace / ".harness" / "tasks" / "task"
@@ -157,6 +179,10 @@ class RecoveryTest(unittest.TestCase):
 
     def test_completed_rejects_missing_authorized_commit_evidence(self) -> None:
         bundle = self.make_bundle()
+        review = stage_review_payload()
+        report = bundle.task_dir / str(review["report_ref"])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("{}\n", encoding="utf-8")
         append_event_and_update(bundle, "execution_started")
         append_event_and_update(
             bundle,
@@ -174,17 +200,19 @@ class RecoveryTest(unittest.TestCase):
                 "summary": "validation passed",
             },
         )
-        append_event_and_update(
-            bundle,
-            "review_recorded",
-            stage_id="STG-01",
-            payload={
-                "result": "passed",
-                "summary": "review passed",
-                "development_quality": "passed",
-            },
-        )
-        append_event_and_update(bundle, "stage_completed", stage_id="STG-01")
+        with mock.patch(
+            "harness_event_writer.validate_review_gate",
+            return_value=review,
+        ):
+            append_event_and_update(
+                bundle,
+                "review_recorded",
+                stage_id="STG-01",
+                attempt=1,
+                payload=review,
+                evidence_refs=[str(review["report_ref"])],
+            )
+            append_event_and_update(bundle, "stage_completed", stage_id="STG-01")
         with self.assertRaisesRegex(
             EventWriteError,
             "RUN_STATE_COMMIT_EVIDENCE_MISSING",
@@ -216,6 +244,76 @@ class RecoveryTest(unittest.TestCase):
                 "execution_started",
                 evidence_refs=["artifacts/validation/missing.md"],
             )
+
+    def test_review_event_requires_report_ref_evidence(self) -> None:
+        bundle = self.make_bundle()
+        append_event_and_update(bundle, "execution_started")
+        append_event_and_update(
+            bundle,
+            "stage_started",
+            stage_id="STG-01",
+            attempt=1,
+        )
+        with self.assertRaisesRegex(
+            EventWriteError,
+            "RUN_STATE_REVIEW_EVIDENCE_MISSING",
+        ):
+            append_event_and_update(
+                bundle,
+                "review_recorded",
+                stage_id="STG-01",
+                attempt=1,
+                payload=stage_review_payload(),
+            )
+
+    def test_stage_completion_revalidates_current_receipt(self) -> None:
+        bundle = self.make_bundle()
+        review = stage_review_payload()
+        report = bundle.task_dir / str(review["report_ref"])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("{}\n", encoding="utf-8")
+        append_event_and_update(bundle, "execution_started")
+        append_event_and_update(
+            bundle,
+            "stage_started",
+            stage_id="STG-01",
+            attempt=1,
+        )
+        append_event_and_update(
+            bundle,
+            "validation_recorded",
+            stage_id="STG-01",
+            payload={
+                "validation_id": "VAL-01",
+                "result": "passed",
+                "summary": "validation passed",
+            },
+        )
+        with mock.patch(
+            "harness_event_writer.validate_review_gate",
+            return_value=review,
+        ):
+            append_event_and_update(
+                bundle,
+                "review_recorded",
+                stage_id="STG-01",
+                attempt=1,
+                payload=review,
+                evidence_refs=[str(review["report_ref"])],
+            )
+        with mock.patch(
+            "harness_event_writer.validate_review_gate",
+            side_effect=ReviewGateError(
+                "REVIEW_TARGET_STALE",
+                "target changed",
+            ),
+        ):
+            with self.assertRaisesRegex(EventWriteError, "REVIEW_TARGET_STALE"):
+                append_event_and_update(
+                    bundle,
+                    "stage_completed",
+                    stage_id="STG-01",
+                )
 
     def test_planner_checker_requires_valid_json_result(self) -> None:
         bundle = self.make_bundle()

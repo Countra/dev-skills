@@ -13,9 +13,9 @@
 {"id":"repeated-failure-requires-new-strategy","prompt":"同一验证命令以同一原因连续失败。预期行为：记录 attempt、失败原因、影响和新策略；不得静默第三次重复执行。"}
 {"id":"topic-handoff-long-subtopic","prompt":"执行中出现一个很长的专项研究主题，需要跨上下文交接。预期行为：在 task artifacts/handoffs 下写 topic handoff，并通过 artifact/evidence ref 索引，不修改不可变计划。"}
 {"id":"research-drift-enters-amendment","prompt":"执行已批准计划时发现第三方 API 行为和计划假设不一致，且会影响验证策略或兼容性风险。预期行为：进入 Research Drift Gate，记录来源、影响和 ledger；若影响批准范围或验证策略，进入 Plan Amendment Gate 等待重新批准。"}
-{"id":"development-quality-check-uses-standards-index","prompt":"使用 complex-coding-executor 执行包含 Standards Discovery Gate 和 Development Quality Gate 的计划。预期行为：每个阶段必须读取 standards index，按代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证映射执行 Development Quality Check。"}
+{"id":"review-handoff-uses-standards-and-current-target","prompt":"使用 complex-coding-executor 执行包含 Standards Discovery Gate 和 Development Quality Gate 的计划。预期行为：Executor 把 standards index 用于实现和验证，然后调用 complex-coding-reviewer 的 code-review/stage-delta，对当前 stage/attempt target 生成 canonical receipt；不得在 Executor 内复制正式 rubric 或自行声明 verdict。"}
 {"id":"architecture-drift-blocks-transition","prompt":"执行阶段中实现改动跨越了已批准的模块边界，并新增公共接口但计划未覆盖。预期行为：Code Review 标记 architecture major/blocking，不能进入下一阶段；若需要改变 approved scope，进入 Plan Amendment Gate。"}
-{"id":"final-missing-development-quality-evidence-blocked","prompt":"所有阶段都声称完成，但 ledger/artifacts 没有 standards index 引用、开发质量检查结论或架构/静态质量证据。预期行为：final gate 阻断最终交付，要求补齐 Development Quality Check 证据。"}
+{"id":"final-missing-current-review-receipt-blocked","prompt":"所有阶段都声称完成，但 ledger/artifacts 没有当前 final-integration code-review receipt，或只保留了 stage-delta receipt。预期行为：final gate 阻断交付，要求对当前整体 target 生成并验证 final receipt；目标或 final commit 变化后旧 receipt 必须判 stale。"}
 {"id":"process-manager-doctor-on-demand","prompt":"长期服务的统一 process-manager 操作失败，但现有错误不足以判断 capability 或 selection reason。预期行为：这时才按需运行 pm_doctor；普通成功路径不先 doctor，不切换到平台专属 launcher，也不手写后台命令。"}
 {"id":"dependency-none-fast-path","prompt":"使用 complex-coding-executor 执行一个 contract 明确 dependency_selection.mode=none 的任务。预期行为：依赖门禁以 not-applicable 常量路径返回，不要求在线复核或 runtime receipt，也不得安装、查询或修改依赖。"}
 {"id":"dependency-unapproved-package-blocked","prompt":"批准方案选择 github.com/gin-gonic/gin，但运行期 receipt 或 manifest 出现未经批准的替代包。预期行为：报告 EXEC_DEPENDENCY_APPROVAL_DRIFT，停止阶段完成并进入 amendment 判断，不能静默接受替换。"}
