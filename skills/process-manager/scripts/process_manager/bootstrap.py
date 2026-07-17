@@ -13,9 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
 
-from .atomic import atomic_write_bytes, atomic_write_json, read_json_file
+from .atomic import atomic_write_bytes, read_json_file
 from .client import ManagerClient
 from .errors import ConflictError, EnvironmentUnverifiableError, ManagerUnresponsiveError, PMError, RuntimeCorruptError
+from .logs import write_capped_bytes, write_capped_json
 from .models import ManagerConfig
 from .platforms.base import PlatformAdapter
 from .runtime import SHA256_RE, config_digest, now_text, remove_manager_identity
@@ -96,7 +97,7 @@ def write_bootstrap_capture(
             "createdAt": now_text(),
         },
     )
-    atomic_write_json(config.paths.bootstrap, value)
+    write_capped_json(config.paths.bootstrap, value, MAX_BOOTSTRAP_CAPTURE_BYTES)
     adapter.secure_file(config.paths.bootstrap)
     return value
 
@@ -313,7 +314,11 @@ class ManagerBootstrap:
         try:
             if not self.config.paths.manager.exists() and not self._cleanup_launchd_job(domain):
                 raise ManagerUnresponsiveError("launchd manager residue 清理未验证")
-            atomic_write_bytes(self.launchd_plist, plistlib.dumps(plist, fmt=plistlib.FMT_XML))
+            write_capped_bytes(
+                self.launchd_plist,
+                plistlib.dumps(plist, fmt=plistlib.FMT_XML),
+                MAX_BOOTSTRAP_CAPTURE_BYTES,
+            )
             self.adapter.secure_file(self.launchd_plist)
             result = self._run(["/bin/launchctl", "bootstrap", domain, str(self.launchd_plist)], 10)
         except (OSError, subprocess.SubprocessError) as exc:

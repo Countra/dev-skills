@@ -21,7 +21,9 @@ from .manager_start import StartDrainGate
 from .models import ManagerConfig, ServiceConfig
 from .platforms.base import PlatformAdapter, RunOwner
 from .probes import wait_for_readiness
+from .protocol import public_resource_summary
 from .run_finalization import ManagedRun, OwnerFinalization, RunFinalizationCoordinator
+from .resources import ResourceGovernor
 from .sessions import SessionController
 from .state import ACTIVE_STATES, StateStore
 MANAGER_SHUTDOWN_SECONDS = 30.0
@@ -47,6 +49,8 @@ class ProcessManager:
         self._lock = threading.RLock()
         self._start_gate = StartDrainGate()
         self._finalization = RunFinalizationCoordinator(state, adapter, instance_id)
+        self._resources = ResourceGovernor(state)
+        self._control_request_count = lambda: 0
         digest = workspace_digest or hashlib.sha256(
             os.path.normcase(str(config.workspace_root.resolve())).encode()).hexdigest()
         self._sessions = SessionController(
@@ -55,6 +59,7 @@ class ProcessManager:
         )
         self._shutdown_operation_id: str | None = None
         self._shutdown_deadline: float | None = None
+        self.resource_reconciliation = self._resources.automatic_gc()
         self.reconciled_records = self._finalization.reconcile_manager_loss(deadline=time.monotonic() + MANAGER_SHUTDOWN_SECONDS)
         self.session_reconciliation = self._sessions.reconcile_startup()
         if session_sweeper:
@@ -65,17 +70,26 @@ class ProcessManager:
             "managerReady": True, "supervisorReady": True,
             "instance": {"id": self.instance_id}, "operationId": self.operation_id,
             "runtimeFingerprint": self.runtime_fingerprint, "endpointHealthy": True,
+            "resources": self._resources.summary(
+                active_control_requests=self._control_request_count(), strict=False
+            ),
         }
     def doctor(self) -> dict[str, Any]:
+        resources = self._resources.diagnostics(
+            active_control_requests=self._control_request_count()
+        )
         return {
             "managerReady": True, "supervisorReady": True,
             "instance": {"id": self.instance_id}, "operationId": self.operation_id,
             "runtimeFingerprint": self.runtime_fingerprint,
+            "resources": public_resource_summary(resources),
             "diagnostics": {
                 "bootstrapBackend": self.bootstrap_backend,
                 "bootstrapSelectionReason": self.bootstrap_selection_reason,
                 **self.adapter.diagnostics(),
                 "managerLossReconciliation": self.reconciled_records,
+                "resourceReconciliation": self.resource_reconciliation,
+                "resourceAccounting": resources,
                 "sessionReconciliation": self.session_reconciliation, "sessions": self._sessions.diagnostics(),
             },
         }
@@ -286,13 +300,9 @@ class ProcessManager:
             }
         return result
     def logs(
-        self,
-        *,
-        service: str | None = None,
-        process_key: str | None = None,
+        self, *, service: str | None = None, process_key: str | None = None,
         stream: str = "stdout",
-        tail_lines: int = 80,
-        max_bytes: int = 262144,
+        tail_lines: int = 80, max_bytes: int = 262144,
     ) -> dict[str, Any]:
         if stream not in {"stdout", "stderr"}:
             raise ValidationError("stream 只允许 stdout 或 stderr")
@@ -318,10 +328,7 @@ class ProcessManager:
             **value,
         }
     def ready(
-        self,
-        *,
-        service: str | None = None,
-        process_key: str | None = None,
+        self, *, service: str | None = None, process_key: str | None = None,
         timeout_seconds: float | None = None,
     ) -> dict[str, Any]:
         record = self.state.get(service=service, key=process_key)
@@ -361,11 +368,7 @@ class ProcessManager:
             )
         return {"processKey": key, **result, "state": record["status"]}
     def _finalize_run_record(
-        self,
-        record: dict[str, Any],
-        *,
-        reason: str,
-        terminal_status: str,
+        self, record: dict[str, Any], *, reason: str, terminal_status: str,
         public_updates: dict[str, Any] | None = None,
         deadline: float | None = None,
     ) -> dict[str, Any]:
@@ -443,14 +446,11 @@ class ProcessManager:
         return self._sessions.status(session_id)
     def close_session(self, session_id: str) -> dict[str, Any]:
         return self._sessions.close(session_id)
-    def prune(
-        self, *, max_inactive: int | None = None, dry_run: bool = True,
-        keep_runs: bool = False,
-    ) -> dict[str, Any]:
+    def prune(self, *, max_inactive: int | None = None, dry_run: bool = True,
+              keep_runs: bool = False) -> dict[str, Any]:
         return self.state.prune(max_inactive=max_inactive, dry_run=dry_run, keep_runs=keep_runs)
-    def accept_shutdown(
-        self, *, operation_id: str, timeout_seconds: float = MANAGER_SHUTDOWN_SECONDS,
-    ) -> dict[str, Any]:
+    def accept_shutdown(self, *, operation_id: str,
+                        timeout_seconds: float = MANAGER_SHUTDOWN_SECONDS) -> dict[str, Any]:
         try:
             canonical_operation_id = uuid.UUID(operation_id).hex
         except (ValueError, AttributeError) as exc:

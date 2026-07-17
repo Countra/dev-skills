@@ -183,6 +183,7 @@ class ManagerTests(unittest.TestCase):
                 "operationId",
                 "runtimeFingerprint",
                 "endpointHealthy",
+                "resources",
             },
             )
 

@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import uuid
 from pathlib import Path
 
 from process_manager.config import load_manager_config
 from process_manager.control_api import ControlServer
-from process_manager.errors import RuntimeCorruptError
+from process_manager.errors import RuntimeCorruptError, SupervisorError
 from process_manager.manager import ProcessManager
+from process_manager.logs import RotatingTextLog
 from process_manager.platforms import select_platform_adapter
 from process_manager.protocol import failure, print_json, success
 from process_manager.bootstrap import remove_bootstrap_capture, write_bootstrap_capture
@@ -73,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
     manager = None
     server = None
     capture = None
+    stdout_log = None
+    stderr_log = None
     try:
         config = load_manager_config(config_path)
         adapter = select_platform_adapter(config.workspace_root, config.state_root)
@@ -104,6 +108,27 @@ def main(argv: list[str] | None = None) -> int:
             runtime_fingerprint=current_fingerprint,
         )
         initialize_runtime(config, adapter)
+        stdout_log = RotatingTextLog(
+            config.paths.logs / "manager-stdout.log",
+            config.log_max_bytes,
+            config.log_backups,
+            adapter,
+        )
+        try:
+            stderr_log = RotatingTextLog(
+                config.paths.logs / "manager-stderr.log",
+                config.log_max_bytes,
+                config.log_backups,
+                adapter,
+            )
+        except BaseException:
+            stdout_log.close()
+            stdout_log = None
+            raise
+        inherited_stdout, inherited_stderr = sys.stdout, sys.stderr
+        sys.stdout, sys.stderr = stdout_log, stderr_log
+        inherited_stdout.close()
+        inherited_stderr.close()
         manager_lock = adapter.acquire_manager_lock()
         state = StateStore(config, adapter)
         manager = ProcessManager(
@@ -146,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         capture = None
         print_json(success("manager.start", {"state": "listening", "host": config.host, "port": port}, instance_id=instance_id))
         server.serve_forever(poll_interval=0.2)
-        server.wait_for_shutdown(timeout=30)
+        if not server.wait_for_shutdown(timeout=3610):
+            raise SupervisorError("manager shutdown coordinator 未在 hard deadline 内结束")
         if server.shutdown_error is not None:
             raise server.shutdown_error
         return 0
@@ -175,6 +201,12 @@ def main(argv: list[str] | None = None) -> int:
                 pass
         if manager_lock is not None:
             manager_lock.close()
+        if stdout_log is not None:
+            sys.stdout = None
+            stdout_log.close()
+        if stderr_log is not None:
+            sys.stderr = None
+            stderr_log.close()
 
 
 if __name__ == "__main__":

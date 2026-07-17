@@ -30,9 +30,7 @@ STOP_PHASE_CHECKPOINTS = frozenset("stop-requested restart-requested intake-clos
 RESTART_START_CHECKPOINTS = frozenset("runtime-verified bootstrap-launched identity-published endpoint-ready".split())
 class ManagerConverger:
     def __init__(
-        self,
-        context: RuntimeContext,
-        *,
+        self, context: RuntimeContext, *,
         adapter_factory: AdapterFactory = select_platform_adapter,
         client_factory: ClientFactory = ManagerClient,
         bootstrap_factory: BootstrapFactory = ManagerBootstrap,
@@ -55,6 +53,15 @@ class ManagerConverger:
             bootstrap_factory=self.bootstrap_factory,
             fingerprint_factory=self.fingerprint_factory,
         )
+    def _resolve(self, deadline: float, *, reconcile_operation_id: str | None = None) -> Any:
+        while True:
+            current = self._resolver().resolve(reconcile_operation_id=reconcile_operation_id)
+            if current.evidence.get("endpointState") != "busy":
+                return current
+            remaining = self._remaining(deadline)
+            if remaining <= 0:
+                raise state_error(current)
+            self.sleeper(min((current.retry_after_ms or 250) / 1000, remaining))
     @staticmethod
     def _remaining(deadline: float) -> float:
         return max(0.0, deadline - time.monotonic())
@@ -65,10 +72,7 @@ class ManagerConverger:
         adapter = self.adapter_factory(config.workspace_root, config.state_root)
         return config, adapter, operation_store(self.context, adapter)
     def _start_coordinator(
-        self,
-        config: Any,
-        adapter: PlatformAdapter,
-        store: OperationStore,
+        self, config: Any, adapter: PlatformAdapter, store: OperationStore,
     ) -> ManagerStartCoordinator:
         return ManagerStartCoordinator(
             config,
@@ -99,7 +103,7 @@ class ManagerConverger:
         with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
             state = StateStore(config, adapter)
             state.clear_terminal_intake_fence(store)
-            current = self._resolver().resolve()
+            current = self._resolve(deadline)
             operation = store.read()
             launch_authorized = False
             if current.state == "ready":
@@ -148,13 +152,8 @@ class ManagerConverger:
                 "manager": manager,
             }
     def _destructive_operation(
-        self,
-        kind: str,
-        store: OperationStore,
-        state: StateStore,
-        *,
-        timeout: float,
-        confirmed: bool,
+        self, kind: str, store: OperationStore, state: StateStore, *,
+        timeout: float, confirmed: bool,
         expected_instance_id: str | None = None,
         expected_work_generation: int | None = None,
         require_idle: bool = False,
@@ -243,12 +242,8 @@ class ManagerConverger:
                 ) from exc
             return store.update(operation, checkpoint="intake-closed"), affected
     def _stop_exact_manager(
-        self,
-        operation: dict[str, Any],
-        store: OperationStore,
-        config: Any,
-        adapter: PlatformAdapter,
-        deadline: float,
+        self, operation: dict[str, Any], store: OperationStore,
+        config: Any, adapter: PlatformAdapter, deadline: float,
     ) -> dict[str, Any]:
         manager_path = adapter.validate_runtime_path(config.paths.manager)
         if not manager_path.exists():
@@ -259,7 +254,7 @@ class ManagerConverger:
             raise IdentityError("manager identity 在 operation 内发生变化")
         if expected_instance is None:
             operation = store.update(operation, expectedInstanceId=identity["instanceId"])
-        current = self._resolver().resolve(reconcile_operation_id=str(operation["operationId"]))
+        current = self._resolve(deadline, reconcile_operation_id=str(operation["operationId"]))
         exact_state = current.state
         if current.state == "stopping":
             if (
@@ -291,14 +286,8 @@ class ManagerConverger:
         )
         return operation
     def _stop_phase(
-        self,
-        kind: str,
-        operation: dict[str, Any],
-        store: OperationStore,
-        state: StateStore,
-        config: Any,
-        adapter: PlatformAdapter,
-        *,
+        self, kind: str, operation: dict[str, Any], store: OperationStore,
+        state: StateStore, config: Any, adapter: PlatformAdapter, *,
         deadline: float,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         checkpoint = str(operation["checkpoint"])
@@ -353,8 +342,7 @@ class ManagerConverger:
             "sessions": sessions,
         }
     def stop(
-        self,
-        *,
+        self, *,
         timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
         confirm_stop_owned_runs: bool = False,
         expected_work_generation: int | None = None,
@@ -376,7 +364,7 @@ class ManagerConverger:
         with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
             state = StateStore(config, adapter)
             state.clear_terminal_intake_fence(store)
-            current = self._resolver().resolve()
+            current = self._resolve(deadline)
             existing = store.read()
             work = state.work_summary()
             affected = [*work["activeRunKeys"], *work["activeSessionIds"]]
@@ -413,9 +401,7 @@ class ManagerConverger:
             state.clear_terminal_intake_fence(store)
             return {**outcome, "operationId": completed["operationId"]}
     def restart(
-        self,
-        *,
-        timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
+        self, *, timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
         confirm_stop_owned_runs: bool = False,
     ) -> dict[str, Any]:
         timeout = validate_operation_timeout(timeout)

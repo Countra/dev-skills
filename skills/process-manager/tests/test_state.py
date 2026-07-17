@@ -67,6 +67,43 @@ class StateTests(unittest.TestCase):
             self.assertIn(record["processKey"], recovered["processes"])
             self.assertEqual(recovered["active"]["demo"], record["processKey"])
 
+    def test_corrupt_index_merges_resource_evidence_without_stale_backup_state(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config, _, store = self.make_store(workspace)
+            old_service = create_service(workspace, config, name="old")
+            old = store.reserve(
+                old_service,
+                manager_instance_id="manager",
+                capability_hash="old-hash",
+            )
+            store.update(
+                old["processKey"],
+                status="stopped",
+                clear_active=True,
+                public_updates={
+                    "ownerEmpty": True,
+                    "cleanupVerified": True,
+                    "finalizedAt": "2026-07-17T00:00:00+00:00",
+                },
+            )
+            store.prune(max_inactive=0, dry_run=False)
+            current_service = create_service(workspace, config, name="current")
+            current = store.reserve(
+                current_service,
+                manager_instance_id="manager",
+                capability_hash="current-hash",
+            )
+            backup = json.loads(config.paths.processes_backup.read_text(encoding="utf-8"))
+            self.assertIn(f"run:{old['processKey']}", backup["tombstones"])
+            self.assertNotIn(current["processKey"], backup["processes"])
+            config.paths.processes.write_text("{broken", encoding="utf-8")
+            recovered = store.load()
+            self.assertEqual(recovered["active"]["current"], current["processKey"])
+            self.assertIn(current["processKey"], recovered["processes"])
+            self.assertIn(f"run:{old['processKey']}", recovered["tombstones"])
+            self.assertNotIn(old["processKey"], recovered["processes"])
+
     def test_pending_record_commit_is_visible_and_replayed(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
@@ -188,7 +225,10 @@ class StateTests(unittest.TestCase):
             for _ in range(3):
                 record = store.reserve(service, manager_instance_id="manager", capability_hash="hash")
                 run_dirs.append(Path(record["runDir"]))
-                store.update(record["processKey"], status="stopped", clear_active=True)
+                store.update(
+                    record["processKey"], status="stopped", clear_active=True,
+                    public_updates={"ownerEmpty": True, "cleanupVerified": True},
+                )
             preview = store.prune(max_inactive=1, dry_run=True)
             self.assertEqual(preview["candidateCount"], 2)
             self.assertTrue(all(path.exists() for path in run_dirs))
@@ -204,7 +244,10 @@ class StateTests(unittest.TestCase):
             config, _, store = self.make_store(workspace)
             service = create_service(workspace, config)
             record = store.reserve(service, manager_instance_id="manager", capability_hash="hash")
-            store.update(record["processKey"], status="stopped", clear_active=True)
+            store.update(
+                record["processKey"], status="stopped", clear_active=True,
+                public_updates={"ownerEmpty": True, "cleanupVerified": True},
+            )
             run_dir = Path(record["runDir"])
             applied = store.prune(max_inactive=0, dry_run=False, keep_runs=True)
             self.assertTrue(applied["keepRuns"])

@@ -14,35 +14,15 @@ SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 ACTIVE_STATES = {"starting", "running", "stopping", "terminating"}
 SESSION_ACTIVE_STATES = {"open", "terminating", "expired", "cleanup_failed"}
-STATE_KEYS = frozenset("schema stateRevision workGeneration intakeFence active processes sessions".split())
-RUN_RECORD_REQUIRED_KEYS = {
-    "schema",
-    "service",
-    "processId",
-    "processKey",
-    "status",
-    "runDir",
-    "processFile",
-    "createdAt",
-    "recordRevision",
-    "cleanupClaim",
-    "ownership",
-    "public",
-    "internal",
-}
+STATE_KEYS = frozenset("schema stateRevision workGeneration intakeFence active processes sessions "
+                       "pendingPrunes tombstones".split())
+RUN_RECORD_REQUIRED_KEYS = frozenset(
+    "schema service processId processKey status runDir processFile createdAt recordRevision "
+    "cleanupClaim ownership public internal".split()
+)
 RUN_RECORD_OPTIONAL_KEYS = {"updatedAt"}
-INTAKE_FENCE_KEYS = {
-    "operationId",
-    "kind",
-    "expectedWorkGeneration",
-    "installedAt",
-}
-CLEANUP_CLAIM_KEYS = {
-    "claimId",
-    "managerInstanceId",
-    "claimedAt",
-    "deadlineAt",
-}
+INTAKE_FENCE_KEYS = frozenset("operationId kind expectedWorkGeneration installedAt".split())
+CLEANUP_CLAIM_KEYS = frozenset("claimId managerInstanceId claimedAt deadlineAt".split())
 OWNERSHIP_KEYS = {"kind", "sessionId"}
 SESSION_KEYS = frozenset("schema sessionId revision holder kind state workspaceDigest managerInstanceId "
                          "leaseDurationSeconds createdAt renewedAt expiresAt closingReason runKeys cleanup".split())
@@ -126,6 +106,8 @@ def empty_state() -> dict[str, Any]:
         "active": {},
         "processes": {},
         "sessions": {},
+        "pendingPrunes": {},
+        "tombstones": {},
     }
 
 
@@ -350,12 +332,16 @@ class StateSchema:
         active = value.get("active")
         processes = value.get("processes")
         sessions = value.get("sessions")
+        pending_prunes = value.get("pendingPrunes")
+        tombstones = value.get("tombstones")
         revision = value.get("stateRevision")
         generation = value.get("workGeneration")
         if (
             not isinstance(active, dict)
             or not isinstance(processes, dict)
             or not isinstance(sessions, dict)
+            or not isinstance(pending_prunes, dict)
+            or not isinstance(tombstones, dict)
             or isinstance(revision, bool)
             or not isinstance(revision, int)
             or revision < 0
@@ -369,6 +355,8 @@ class StateSchema:
             self.validate_record(key, record)
         for session_id, session in sessions.items():
             self.validate_session(session_id, session)
+        from .protocol import validate_resource_state
+        validate_resource_state(pending_prunes, tombstones, processes, sessions)
         for service, key in active.items():
             if not isinstance(service, str) or not isinstance(key, str) or key not in processes:
                 raise StateError("active 索引引用无效")
@@ -423,7 +411,10 @@ class ManagerConfig:
     port: int
     max_request_bytes: int
     history_max_inactive: int
+    history_max_age_seconds: int
+    history_max_tombstones: int
     history_delete_run_dirs: bool
+    limits: dict[str, int]
     log_max_bytes: int
     log_backups: int
     config_path: Path
@@ -443,8 +434,11 @@ class ManagerConfig:
             },
             "history": {
                 "maxInactive": self.history_max_inactive,
+                "maxAgeSeconds": self.history_max_age_seconds,
+                "maxTombstones": self.history_max_tombstones,
                 "deleteRunDirs": self.history_delete_run_dirs,
             },
+            "limits": dict(self.limits),
             "logs": {
                 "maxBytes": self.log_max_bytes,
                 "backups": self.log_backups,

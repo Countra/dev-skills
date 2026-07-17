@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from .atomic import atomic_write_bytes, atomic_write_json, read_json_file
+from .atomic import atomic_write_bytes, read_json_file
 from .errors import (
     IdentityError,
     ManagerOfflineError,
@@ -22,6 +22,7 @@ from .errors import (
     StateError,
 )
 from .models import ManagerConfig
+from .logs import write_capped_json
 from .platforms.base import PlatformAdapter
 
 
@@ -263,7 +264,7 @@ class OperationStore:
 
     def write(self, operation: dict[str, Any]) -> None:
         self._validate(operation)
-        atomic_write_json(self.config.paths.operation, operation)
+        write_capped_json(self.config.paths.operation, operation, MAX_OPERATION_BYTES)
         self.adapter.secure_file(self.config.paths.operation)
 
     def update(self, operation: dict[str, Any], **changes: Any) -> dict[str, Any]:
@@ -412,7 +413,7 @@ def build_manager_identity(
 
 def write_manager_identity(config: ManagerConfig, adapter: PlatformAdapter, identity: dict[str, Any]) -> None:
     path = adapter.validate_runtime_path(config.paths.manager)
-    atomic_write_json(path, identity)
+    write_capped_json(path, identity, MAX_IDENTITY_BYTES)
     adapter.secure_file(path)
 
 

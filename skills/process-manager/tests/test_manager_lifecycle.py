@@ -102,6 +102,26 @@ class OfflineClient(ReadyClient):
         raise ManagerOfflineError("fixture endpoint offline")
 
 
+class UnresponsiveClient(ReadyClient):
+    def request(self, method, path):  # noqa: ANN001,ANN201
+        self.assert_request(method, path)
+        raise ManagerUnresponsiveError("fixture response timeout", recommended_action="wait")
+
+
+class HealthErrorClient(ReadyClient):
+    code = "runtime_insecure"
+
+    def request(self, method, path):  # noqa: ANN001,ANN201
+        self.assert_request(method, path)
+        identity = read_manager_identity_record(self.config, self.adapter)
+        return 503, {
+            "ok": False,
+            "operation": "health",
+            "error": {"code": self.code, "message": "fixture", "retryable": False},
+            "meta": {"managerInstanceId": identity["instanceId"]},
+        }
+
+
 class ManagerLifecycleTests(unittest.TestCase):
     def make_control_fixture(self, workspace: Path, *, endpoint_online: bool = True):  # noqa: ANN201
         config = create_config(workspace)
@@ -294,6 +314,13 @@ class ManagerLifecycleTests(unittest.TestCase):
                 client_factory=OfflineClient,
             ).resolve()
             self.assertEqual(unresponsive.state, "unresponsive")
+            timed_out = ManagerStateResolver(
+                context,
+                adapter_factory=lambda *_: adapter,
+                client_factory=UnresponsiveClient,
+            ).resolve()
+            self.assertEqual(timed_out.state, "unresponsive")
+            self.assertEqual(timed_out.evidence["endpointState"], "unresponsive")
             adapter.identity_valid = False
             stale = ManagerStateResolver(
                 context,
@@ -334,6 +361,56 @@ class ManagerLifecycleTests(unittest.TestCase):
                 ).resolve()
                 self.assertEqual(status.state, expected_state)
                 self.assertEqual(status.evidence["runtimeSecure"], expected_secure)
+
+    def test_authenticated_health_failure_preserves_security_category(self) -> None:
+        cases = (
+            ("runtime_insecure", "runtime_insecure", False),
+            ("runtime_permission_denied", "runtime_permission_denied", None),
+            ("resource_usage_unverifiable", "environment_unverifiable", None),
+        )
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config = create_config(workspace)
+            context = resolve_runtime_context(config=config.config_path)
+            adapter = FakeAdapter(workspace, config.state_root)
+            initialize_runtime(config, adapter)
+            write_manager_identity(
+                config,
+                adapter,
+                build_manager_identity(
+                    config,
+                    adapter,
+                    operation_id=TEST_OPERATION_ID,
+                    instance_id="health-error-manager",
+                    port=32123,
+                    bootstrap_backend="fixture",
+                    bootstrap_selection_reason="fixture",
+                    runtime_fingerprint=TEST_RUNTIME_FINGERPRINT,
+                ),
+            )
+            for code, expected_state, expected_secure in cases:
+                with self.subTest(code=code), mock.patch.object(HealthErrorClient, "code", code):
+                    status = ManagerStateResolver(
+                        context,
+                        adapter_factory=lambda *_: adapter,
+                        client_factory=HealthErrorClient,
+                    ).resolve()
+                    self.assertEqual(status.state, expected_state)
+                    self.assertEqual(status.evidence["runtimeSecure"], expected_secure)
+                    self.assertEqual(status.evidence["endpointState"], "error")
+            original = HealthErrorClient.request
+
+            def malformed(client, method, path):  # noqa: ANN001,ANN202
+                status_code, response = original(client, method, path)
+                return status_code, {**response, "unexpected": True}
+
+            with mock.patch.object(HealthErrorClient, "request", malformed):
+                status = ManagerStateResolver(
+                    context,
+                    adapter_factory=lambda *_: adapter,
+                    client_factory=HealthErrorClient,
+                ).resolve()
+            self.assertEqual(status.state, "corrupt")
 
     def test_bootstrap_residue_without_identity_is_stale_and_read_only(self) -> None:
         with workspace_directory() as directory:
@@ -828,6 +905,20 @@ class ManagerLifecycleTests(unittest.TestCase):
             self.assertFalse(repeated["changed"])
             self.assertEqual(control["shutdowns"], 1)
             self.assertFalse(config.paths.manager.exists())
+
+    def test_manager_stop_uses_busy_aware_resolver_before_mutation(self) -> None:
+        with workspace_directory() as directory:
+            _, _, _, _, _, converger = self.make_control_fixture(Path(directory))
+            ready = converger._resolver().resolve()  # noqa: SLF001
+            with (
+                mock.patch.object(converger, "_resolve", return_value=ready) as bounded,
+                mock.patch.object(
+                    converger, "_resolver", side_effect=AssertionError("raw resolver used")
+                ),
+            ):
+                stopped = converger.stop(timeout=2)
+            self.assertEqual(stopped["state"], "absent")
+            self.assertGreaterEqual(bounded.call_count, 2)
 
     def test_manager_stop_forwards_one_deadline_to_owner_reconciliation(self) -> None:
         with workspace_directory() as directory:

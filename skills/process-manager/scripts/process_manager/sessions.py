@@ -6,63 +6,16 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
-from .atomic import atomic_write_json, read_json_file
-from .errors import ConflictError, RuntimeRebuildRequiredError, SessionCleanupPendingError, SessionExpiredError, SessionNotFoundError, StateError, SupervisorError, ValidationError
+from .atomic import read_json_file
+from .errors import ConflictError, SessionCleanupPendingError, SessionExpiredError, SessionNotFoundError, StateError, SupervisorError, ValidationError
+from .logs import RESOURCE_CAPS
 from .models import SESSION_ACTIVE_STATES, SESSION_ID_RE
+from .protocol import public_session_tombstone
+from .resources import ResourceGovernor
 from .runtime import now_text
 DEFAULT_SESSION_TTL_SECONDS, MIN_SESSION_TTL_SECONDS, MAX_SESSION_TTL_SECONDS = 1800, 60, 86400
 DEFAULT_SWEEP_INTERVAL_SECONDS, DEFAULT_SWEEP_BATCH = 1.0, 8
 DEFAULT_CLOCK_DRIFT_TOLERANCE_SECONDS = 5.0
-MAX_STATE_TRANSACTION_BYTES = 32 * 1024 * 1024
-class RepositoryCommitter:
-    """提交并重放中央状态、run 与 session record。"""
-    def __init__(self, store: Any) -> None:
-        self.store = store
-        self.path = store.paths.state_root / "processes.pending.json"
-    def read(self) -> dict[str, Any] | None:
-        path = self.store.adapter.validate_runtime_path(self.path)
-        if not path.exists():
-            return None
-        self.store.adapter.verify_file(path)
-        value = read_json_file(path, max_bytes=MAX_STATE_TRANSACTION_BYTES)
-        if not isinstance(value, dict) or set(value) != {"schema", "state", "records", "sessions"}:
-            raise StateError("process state pending transaction 字段集合无效")
-        if value.get("schema") != "process-manager-state-transaction":
-            raise RuntimeRebuildRequiredError("process state pending transaction 使用旧或未知 schema")
-        state = self.store.schema.validate_state(value.get("state"))
-        records, sessions = value.get("records"), value.get("sessions")
-        if not isinstance(records, list) or len(records) > 1 or not isinstance(sessions, list) or len(sessions) > 1:
-            raise StateError("pending transaction record 数量无效")
-        for record in records:
-            key = record.get("processKey") if isinstance(record, dict) else None
-            if not isinstance(key, str) or self.store.schema.validate_record(key, record) != state["processes"].get(key):
-                raise StateError("pending transaction run record 与中央状态不一致")
-        for session in sessions:
-            session_id = session.get("sessionId") if isinstance(session, dict) else None
-            if not isinstance(session_id, str) or self.store.schema.validate_session(
-                session_id, session) != state["sessions"].get(session_id):
-                raise StateError("pending transaction session record 与中央状态不一致")
-        return {"schema": value["schema"], "state": state, "records": records, "sessions": sessions}
-    def apply(self, value: dict[str, Any]) -> None:
-        for record in value["records"]:
-            _, path = self.store.schema.run_paths(str(record["service"]), str(record["processId"]))
-            atomic_write_json(self.store.adapter.validate_runtime_path(path), record)
-            self.store.adapter.secure_file(path)
-        for session in value["sessions"]:
-            path = self.store.schema.session_path(str(session["sessionId"]))
-            atomic_write_json(self.store.adapter.validate_runtime_path(path), session)
-            self.store.adapter.secure_file(path)
-        self.store._save(value["state"])  # noqa: SLF001
-        self.store.adapter.validate_runtime_path(self.path).unlink(missing_ok=True)
-    def commit(self, state: dict[str, Any], records: list[dict[str, Any]], sessions: list[dict[str, Any]]) -> None:
-        state["stateRevision"] = int(state.get("stateRevision", 0)) + 1
-        self.store.schema.validate_state(state)
-        pending = {"schema": "process-manager-state-transaction", "state": state,
-                   "records": records, "sessions": sessions}
-        path = self.store.adapter.validate_runtime_path(self.path)
-        atomic_write_json(path, pending)
-        self.store.adapter.secure_file(path)
-        self.store._apply_pending_transaction(pending)  # noqa: SLF001
 def restore_session_index(store: Any, state: dict[str, Any]) -> dict[str, Any]:
     """从受限 session 目录恢复中央索引，不猜测损坏记录。"""
     root = store.adapter.validate_runtime_path(store.paths.sessions)
@@ -70,7 +23,7 @@ def restore_session_index(store: Any, state: dict[str, Any]) -> dict[str, Any]:
         return state
     store.adapter.verify_directory(root)
     scanned = 0
-    for path in sorted(root.iterdir()):
+    for path in root.iterdir():
         scanned += 1
         if scanned > 10000:
             raise StateError("session record 重建扫描超过 10000 项")
@@ -78,7 +31,7 @@ def restore_session_index(store: Any, state: dict[str, Any]) -> dict[str, Any]:
             raise StateError("sessions 目录包含未知 record")
         store.adapter.verify_file(path)
         session = store.schema.validate_session(
-            path.stem, read_json_file(path, max_bytes=store.max_state_bytes))
+            path.stem, read_json_file(path, max_bytes=RESOURCE_CAPS["session"]))
         state["sessions"][path.stem] = session
         state["workGeneration"] += int(session["revision"])
     store.schema.validate_state(state)
@@ -87,6 +40,7 @@ def close_orphaned_sessions(state_store: Any, *, reason: str) -> dict[str, Any]:
     """在 run owners 已收口后关闭遗留 session。"""
     closed: list[str] = []
     pending: list[str] = []
+    resources = ResourceGovernor(state_store)
     with state_store.transaction():
         state = state_store.load()
         for session_id, original in list(state["sessions"].items()):
@@ -103,7 +57,8 @@ def close_orphaned_sessions(state_store: Any, *, reason: str) -> dict[str, Any]:
                             "closedAt": now_text(), "failures": []}})
             state["sessions"][session_id] = session
             state["workGeneration"] += 1
-            state_store.commit_repository(state, sessions=[session])
+            resources.compact_session(state, session)
+            state_store.commit_repository(state, delete_sessions=[session_id])
             closed.append(session_id)
     return {"closedSessionIds": closed, "pendingSessionIds": pending, "cleanupVerified": not pending}
 class SessionController:
@@ -123,6 +78,7 @@ class SessionController:
         self.manager_instance_id = manager_instance_id
         self.workspace_digest = workspace_digest
         self.finalize_record = finalize_record
+        self._resources = ResourceGovernor(state)
         self.wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
         self.monotonic = monotonic
         self.sweep_interval = sweep_interval
@@ -163,12 +119,16 @@ class SessionController:
         if not isinstance(session_id, str) or SESSION_ID_RE.fullmatch(session_id) is None:
             raise ValidationError("sessionId 必须是 canonical UUID hex")
         return {"kind": "session", "sessionId": session_id}
-    @staticmethod
-    def _session(state: dict[str, Any], session_id: str) -> dict[str, Any]:
+    def _session(self, state: dict[str, Any], session_id: str) -> dict[str, Any]:
         session = state["sessions"].get(session_id)
         if not isinstance(session, dict):
+            if self._closed(state, session_id) is not None:
+                raise SessionExpiredError("session 已关闭")
             raise SessionNotFoundError("session 不存在")
         return session
+    def _closed(self, state: dict[str, Any], session_id: str) -> dict[str, Any] | None:
+        value = state["tombstones"].get(f"session:{session_id}")
+        return public_session_tombstone(value) if isinstance(value, dict) else None
     def _anchor_valid(self, wall: datetime, monotonic_now: float) -> bool:
         wall_elapsed = (wall - self._anchor_wall).total_seconds()
         monotonic_elapsed = monotonic_now - self._anchor_monotonic
@@ -232,11 +192,13 @@ class SessionController:
             "expiresAt": (wall + timedelta(seconds=ttl)).isoformat(),
             "closingReason": None, "runKeys": [], "cleanup": None,
         }
+        self._resources.automatic_gc(candidate_capacity=2 * RESOURCE_CAPS["session"])
         self.state.adapter.secure_directory(self.state.paths.sessions)
         with self._lock, self.state.transaction():
             state = self.state.load()
             if state["intakeFence"] is not None:
                 raise ConflictError("manager intake 已关闭，拒绝创建 session")
+            self._resources.admit_session(state)
             self._deadlines[session_id] = monotonic_now + ttl
             try:
                 self._commit_session(state, session, work_delta=1)
@@ -321,7 +283,12 @@ class SessionController:
     def status(self, session_id: str) -> dict[str, Any]:
         with self._lock:
             state = self.state.load()
-            session = self._session(state, session_id)
+            session = state["sessions"].get(session_id)
+            if not isinstance(session, dict):
+                closed = self._closed(state, session_id)
+                if closed is not None:
+                    return closed
+                raise SessionNotFoundError("session 不存在")
             result = self._public(session)
             if session["state"] == "open":
                 result["leaseExpired"] = self._expiry_reason(
@@ -331,9 +298,11 @@ class SessionController:
     def close(self, session_id: str, *, reason: str = "close_requested") -> dict[str, Any]:
         with self._lock, self.state.transaction():
             state = self.state.load()
-            session = self._session(state, session_id)
-            if session["state"] == "closed":
-                result = self._public(session)
+            session = state["sessions"].get(session_id)
+            if not isinstance(session, dict):
+                result = self._closed(state, session_id)
+                if result is None:
+                    raise SessionNotFoundError("session 不存在")
                 result["workGeneration"] = state["workGeneration"]
                 return result
             if session["state"] in {"open", "cleanup_failed"}:
@@ -345,9 +314,12 @@ class SessionController:
         return result
     def _finalize(self, session_id: str, *, deadline: float | None) -> dict[str, Any]:
         state = self.state.load()
-        session = self._session(state, session_id)
-        if session["state"] == "closed":
-            return self._public(session)
+        session = state["sessions"].get(session_id)
+        if not isinstance(session, dict):
+            closed = self._closed(state, session_id)
+            if closed is not None:
+                return closed
+            raise SessionNotFoundError("session 不存在")
         failures: list[str] = []
         for key in list(session["runKeys"]):
             try:
@@ -360,11 +332,15 @@ class SessionController:
                     failures.append(f"{key}:cleanup_unverified")
             except Exception as exc:  # noqa: BLE001
                 failures.append(f"{key}:{type(exc).__name__}")
+        compacted: dict[str, Any] | None = None
         with self.state.transaction():
             state = self.state.load()
-            session = self._session(state, session_id)
-            if session["state"] == "closed":
-                return self._public(session)
+            session = state["sessions"].get(session_id)
+            if not isinstance(session, dict):
+                closed = self._closed(state, session_id)
+                if closed is not None:
+                    return closed
+                raise SessionNotFoundError("session 不存在")
             if not session["runKeys"]:
                 session = dict(session)
                 session.update({
@@ -372,15 +348,22 @@ class SessionController:
                     "state": "closed",
                     "cleanup": self._cleanup(True, []),
                 })
-                self._commit_session(state, session, work_delta=1)
-                return self._public(session)
-            session = dict(session)
-            session.update({
-                "revision": int(session["revision"]) + 1,
-                "state": "cleanup_failed",
-                "cleanup": self._cleanup(False, failures or ["owned_runs_remaining"]),
-            })
-            self._commit_session(state, session)
+                state["sessions"][session_id] = session
+                state["workGeneration"] += 1
+                tombstone = self._resources.compact_session(state, session)
+                self.state.commit_repository(state, delete_sessions=[session_id])
+                compacted = public_session_tombstone(tombstone)
+            else:
+                session = dict(session)
+                session.update({
+                    "revision": int(session["revision"]) + 1,
+                    "state": "cleanup_failed",
+                    "cleanup": self._cleanup(False, failures or ["owned_runs_remaining"]),
+                })
+                self._commit_session(state, session)
+        if compacted is not None:
+            self._resources.automatic_gc()
+            return compacted
         raise SessionCleanupPendingError(
             "session owned run 清理尚未完成",
             diagnostics={"sessionId": session_id, "runKeys": list(session["runKeys"])},

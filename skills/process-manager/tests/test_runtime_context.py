@@ -63,7 +63,16 @@ class RuntimeContextTests(unittest.TestCase):
                     "workspaceRoot": str(first_root),
                     "stateRoot": str(first_root / ".harness" / "process-manager"),
                     "control": {"host": "127.0.0.1", "port": 0, "maxRequestBytes": 65536},
-                    "history": {"maxInactive": 20, "deleteRunDirs": True},
+                    "history": {
+                        "maxInactive": 20, "maxAgeSeconds": 604800,
+                        "maxTombstones": 200, "deleteRunDirs": True,
+                    },
+                    "limits": {
+                        "maxActiveRuns": 16, "maxOpenSessions": 32,
+                        "maxSessionRecords": 128, "maxPendingPrunes": 32,
+                        "maxConcurrentControlRequests": 16,
+                        "maxRetainedBytes": 536870912,
+                    },
                     "logs": {"maxBytes": 10485760, "backups": 3},
                 },
             )
@@ -84,7 +93,16 @@ class RuntimeContextTests(unittest.TestCase):
                     "workspaceRoot": str(workspace),
                     "stateRoot": str(state_root),
                     "control": {"host": "127.0.0.1", "port": 0, "maxRequestBytes": 65536},
-                    "history": {"maxInactive": 20, "deleteRunDirs": True},
+                    "history": {
+                        "maxInactive": 20, "maxAgeSeconds": 604800,
+                        "maxTombstones": 200, "deleteRunDirs": True,
+                    },
+                    "limits": {
+                        "maxActiveRuns": 16, "maxOpenSessions": 32,
+                        "maxSessionRecords": 128, "maxPendingPrunes": 32,
+                        "maxConcurrentControlRequests": 16,
+                        "maxRetainedBytes": 536870912,
+                    },
                     "logs": {"maxBytes": 10485760, "backups": 3},
                 },
             )

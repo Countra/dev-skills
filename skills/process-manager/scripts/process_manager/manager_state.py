@@ -11,8 +11,8 @@ from .client import ManagerClient
 from .errors import (
     EnvironmentUnverifiableError,
     ManagerStaleError,
-    ManagerUnresponsiveError,
     ManagerOfflineError,
+    ManagerUnresponsiveError,
     PMError,
     RestartConfirmationRequiredError,
     RuntimeCorruptError,
@@ -21,6 +21,7 @@ from .errors import (
     RuntimeUninitializedError,
     StopConfirmationRequiredError,
     SupervisorError,
+    authenticated_health_error_state,
 )
 from .platforms import select_platform_adapter
 from .platforms.base import PlatformAdapter
@@ -46,6 +47,7 @@ def empty_evidence() -> dict[str, bool | str | None]:
         "identityValid": None,
         "processAlive": None,
         "endpointReachable": None,
+        "endpointState": None,
         "instanceMatched": None,
         "runtimeContractMatched": None,
         "bootstrapResidue": False,
@@ -62,6 +64,7 @@ class ManagerStateSnapshot:
     retry_after_ms: int | None
     context: RuntimeContext
     manager_instance_id: str | None = None
+    resources: dict[str, Any] | None = None
 
     @property
     def manager_ready(self) -> bool:
@@ -79,6 +82,7 @@ class ManagerStateSnapshot:
             "workspaceDigest": self.context.workspace_digest,
             "configDigest": self.context.config_digest,
             "managerInstanceId": self.manager_instance_id,
+            "resources": self.resources,
         }
 
 
@@ -86,7 +90,11 @@ def state_error(state: ManagerStateSnapshot) -> PMError:
     if state.state == "stale":
         return ManagerStaleError("manager runtime 已过期", recommended_action="restart")
     if state.state == "unresponsive":
-        return ManagerUnresponsiveError("manager 进程存活但控制面不可达", recommended_action="restart")
+        return ManagerUnresponsiveError(
+            "manager 进程存活但控制面不可达",
+            recommended_action=state.recommended_action,
+            retryable=state.recommended_action == "wait",
+        )
     if state.state == "runtime_insecure":
         return RuntimeInsecureError("manager runtime 权限不安全", recommended_action="doctor")
     if state.state == "runtime_permission_denied":
@@ -184,6 +192,8 @@ class ManagerStateResolver:
         operation: dict[str, Any] | None = None,
         store: OperationStore | None = None,
         instance_id: str | None = None,
+        retry_after_ms: int | None = None,
+        resources: dict[str, Any] | None = None,
     ) -> ManagerStateSnapshot:
         if state not in MANAGER_STATES:
             raise AssertionError(f"未知 manager state: {state}")
@@ -193,13 +203,13 @@ class ManagerStateResolver:
             "starting": "wait",
             "stopping": "wait",
             "stale": "restart",
-            "unresponsive": "restart",
+            "unresponsive": "wait" if retry_after_ms is not None else "restart",
             "runtime_insecure": "doctor",
             "runtime_permission_denied": "doctor",
             "environment_unverifiable": "doctor",
             "corrupt": "doctor",
         }
-        retry_after = 250 if state in {"starting", "stopping"} else None
+        retry_after = 250 if state in {"starting", "stopping"} else retry_after_ms
         summary = store.public_summary(operation) if store is not None else None
         return ManagerStateSnapshot(
             state,
@@ -210,6 +220,7 @@ class ManagerStateResolver:
             retry_after,
             self.context,
             instance_id,
+            resources,
         )
 
     @staticmethod
@@ -241,22 +252,30 @@ class ManagerStateResolver:
         identity: dict[str, Any],
         current_fingerprint: str,
         evidence: dict[str, bool | str | None],
-    ) -> str:
+    ) -> tuple[str, int | None, dict[str, Any] | None]:
         try:
-            status, response = self.client_factory(
-                config,
-                adapter,
-                timeout=self.probe_timeout,
-            ).request("GET", "/health")
+            status, response = self.client_factory(config, adapter, timeout=self.probe_timeout).request("GET", "/health")
+        except ManagerUnresponsiveError as exc:
+            retry = exc.diagnostics.get("retryAfterMs")
+            evidence["endpointReachable"] = True
+            if exc.diagnostics.get("endpointState") == "busy" and isinstance(retry, int):
+                evidence["endpointState"] = "busy"
+                evidence["instanceMatched"] = True
+                return "unresponsive", retry, None
+            evidence.update({"endpointState": "unresponsive", "instanceMatched": None})
+            return "unresponsive", None, None
         except ManagerOfflineError:
-            evidence["endpointReachable"] = False
-            evidence["instanceMatched"] = None
-            return "unresponsive"
+            evidence.update({"endpointReachable": False, "instanceMatched": None})
+            return "unresponsive", None, None
         except PMError:
-            evidence["endpointReachable"] = None
-            evidence["instanceMatched"] = None
-            return "corrupt"
+            evidence.update({"endpointReachable": None, "instanceMatched": None})
+            return "corrupt", None, None
         evidence["endpointReachable"] = True
+        mapped = authenticated_health_error_state(status, response, identity["instanceId"])
+        if mapped:
+            state, secure = mapped
+            evidence.update({"endpointState": "error", "instanceMatched": True, "runtimeSecure": secure})
+            return state, None, None
         data = response.get("data")
         instance = data.get("instance") if isinstance(data, dict) else None
         instance_matched = (
@@ -276,9 +295,10 @@ class ManagerStateResolver:
             or health_operation_id != identity["operationId"]
         ):
             evidence["runtimeContractMatched"] = False
-            return "corrupt"
+            return "corrupt", None, None
         evidence["runtimeContractMatched"] = health_fingerprint == current_fingerprint
-        return "ready" if evidence["runtimeContractMatched"] else "stale"
+        resources = data.get("resources") if isinstance(data.get("resources"), dict) else None
+        return ("ready" if evidence["runtimeContractMatched"] else "stale"), None, resources
 
     def resolve(self, *, reconcile_operation_id: str | None = None) -> ManagerStateSnapshot:
         evidence = empty_evidence()
@@ -436,7 +456,7 @@ class ManagerStateResolver:
                 store=store,
                 instance_id=instance_id,
             )
-        health_state = self._health_state(
+        health_state, retry_after, resources = self._health_state(
             config,
             adapter,
             identity,
@@ -451,6 +471,7 @@ class ManagerStateResolver:
                     operation=operation,
                     store=store,
                     instance_id=instance_id,
+                    resources=resources,
                 )
             return self._snapshot(
                 "ready",
@@ -458,6 +479,7 @@ class ManagerStateResolver:
                 operation=operation,
                 store=store,
                 instance_id=instance_id,
+                resources=resources,
             )
         if health_state == "unresponsive" and pending and not expired:
             return self._snapshot(
@@ -473,4 +495,6 @@ class ManagerStateResolver:
             operation=operation,
             store=store,
             instance_id=instance_id,
+            retry_after_ms=retry_after,
+            resources=resources,
         )

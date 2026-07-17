@@ -4,6 +4,40 @@ from __future__ import annotations
 
 from typing import Any
 
+_AUTHENTICATED_HEALTH_ERROR_STATES = {
+    "runtime_insecure": ("runtime_insecure", False),
+    "runtime_permission_denied": ("runtime_permission_denied", None),
+    "environment_unverifiable": ("environment_unverifiable", None),
+    "resource_usage_unverifiable": ("environment_unverifiable", None),
+}
+
+
+def authenticated_health_error_state(
+    status: int,
+    response: dict[str, Any],
+    manager_instance_id: str,
+) -> tuple[str, bool | None] | None:
+    if (
+        status < 400
+        or set(response) != {"ok", "operation", "error", "meta"}
+        or response.get("ok") is not False
+        or response.get("operation") != "health"
+        or response.get("meta") != {"managerInstanceId": manager_instance_id}
+    ):
+        return None
+    error = response.get("error")
+    if (
+        not isinstance(error, dict)
+        or not {"code", "message", "retryable"} <= set(error)
+        or set(error) - {"code", "message", "retryable", "diagnostics", "recommendedAction"}
+        or not isinstance(error.get("code"), str)
+        or not isinstance(error.get("message"), str)
+        or not isinstance(error.get("retryable"), bool)
+    ):
+        return None
+    code = error["code"]
+    return _AUTHENTICATED_HEALTH_ERROR_STATES.get(code)
+
 
 class PMError(RuntimeError):
     """所有可安全返回给调用方的错误基类。"""
@@ -133,10 +167,25 @@ class OperationTimeoutError(PMError):
     retryable = True
 
 
+class ControlTimeoutError(PMError):
+    code = "control_timeout"
+    http_status = 408
+    exit_code = 9
+    retryable = True
+
+
 class ConflictError(PMError):
     code = "state_conflict"
     http_status = 409
     exit_code = 4
+
+
+class ResourceBudgetError(ConflictError):
+    code = "resource_budget_exceeded"
+
+
+class ResourceUsageUnverifiableError(EnvironmentUnverifiableError):
+    code = "resource_usage_unverifiable"
 
 
 class OwnedRunsConfirmationRequiredError(ConflictError):

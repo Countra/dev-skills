@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import uuid
 from contextlib import contextmanager
@@ -10,13 +9,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from .atomic import InterProcessFileLock, atomic_write_bytes, atomic_write_json, read_json_file
+from .atomic import InterProcessFileLock, read_json_file
 from .errors import ConflictError, NotFoundError, OperationConflictError, RuntimeRebuildRequiredError, StateError
+from .logs import RESOURCE_CAPS, write_capped_json
 from .models import ACTIVE_STATES, ManagerConfig, ServiceConfig, StateSchema, process_key
 from .platforms.base import PlatformAdapter
-from .resources import PruneCoordinator, StateRebuilder
+from .protocol import RepositoryCommitter, merge_rebuilt_resource_evidence
+from .resources import PruneCoordinator, ResourceGovernor, StateRebuilder
 from .runtime import now_text, prepare_runtime_lock
-from .sessions import RepositoryCommitter, restore_session_index
+from .sessions import restore_session_index
 
 MAX_STATE_BYTES = 16 * 1024 * 1024
 class StateStore:
@@ -83,9 +84,9 @@ class StateStore:
 
     def commit_repository(
         self, state: dict[str, Any], *, records: list[dict[str, Any]] | None = None,
-        sessions: list[dict[str, Any]] | None = None,
+        sessions: list[dict[str, Any]] | None = None, delete_sessions: list[str] | None = None,
     ) -> None:
-        self._committer.commit(state, records or [], sessions or [])
+        self._committer.commit(state, records or [], sessions or [], delete_sessions or [])
 
     def _commit_record(self, state: dict[str, Any], record: dict[str, Any]) -> None:
         self.commit_repository(state, records=[record])
@@ -112,7 +113,12 @@ class StateStore:
                     except StateError:
                         backup = None
                 rebuilt = self.rebuild()
-                recovered = rebuilt if rebuilt["processes"] or rebuilt["sessions"] or backup is None else backup
+                has_resource_evidence = bool(
+                    backup and (backup["pendingPrunes"] or backup["tombstones"])
+                )
+                recovered = merge_rebuilt_resource_evidence(backup, rebuilt) if has_resource_evidence else (
+                    rebuilt if rebuilt["processes"] or rebuilt["sessions"] or backup is None else backup
+                )
                 self._save(recovered, backup=False)
                 return recovered
 
@@ -124,10 +130,11 @@ class StateStore:
             except StateError:
                 current = None
             if current is not None:
-                data = (json.dumps(current, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
-                atomic_write_bytes(self.adapter.validate_runtime_path(self.paths.processes_backup), data)
+                write_capped_json(self.adapter.validate_runtime_path(
+                    self.paths.processes_backup), current, RESOURCE_CAPS["state"])
                 self.adapter.secure_file(self.paths.processes_backup)
-        atomic_write_json(self.adapter.validate_runtime_path(self.paths.processes), state)
+        write_capped_json(self.adapter.validate_runtime_path(
+            self.paths.processes), state, RESOURCE_CAPS["state"])
         self.adapter.secure_file(self.paths.processes)
 
     def save(self, state: dict[str, Any]) -> None:
@@ -140,9 +147,10 @@ class StateStore:
 
     def reserve(
         self, service: ServiceConfig, *, manager_instance_id: str,
-        capability_hash: str, ownership: dict[str, Any],
-        expected_session_revision: int | None = None,
+        capability_hash: str, ownership: dict[str, Any], expected_session_revision: int | None = None,
     ) -> dict[str, Any]:
+        resources = ResourceGovernor(self)
+        resources.automatic_gc(candidate_capacity=resources.start_capacity(service))
         with self.transaction():
             state = self.load()
             ownership = dict(self.schema.validate_ownership(ownership))
@@ -158,6 +166,7 @@ class StateStore:
                     f"service 已有 active run: {service.name}",
                     diagnostics={"processKey": existing_key, "state": existing.get("status")},
                 )
+            resources.admit_start(state, service)
             run_id = f"run-{uuid.uuid4().hex}"
             key = process_key(service.name, run_id)
             session = None
@@ -171,8 +180,6 @@ class StateStore:
                 if key in session["runKeys"]:
                     raise StateError("session 已包含待创建 run key")
             run_dir, process_file = self.schema.run_paths(service.name, run_id)
-            self.adapter.secure_directory(run_dir.parent)
-            self.adapter.secure_directory(run_dir)
             record = {
                 "schema": "process-manager",
                 "service": service.name,
@@ -224,6 +231,8 @@ class StateStore:
             record = state["processes"].get(key)
             if not isinstance(record, dict):
                 raise StateError(f"processKey 不存在: {key}")
+            if any(item["processKey"] == key for item in state["pendingPrunes"].values()):
+                raise ConflictError("run 已进入 prune transaction，拒绝并发 mutation")
             if expected_revision is not None and record.get("recordRevision") != expected_revision:
                 raise ConflictError(
                     "run record revision 已变化",
@@ -327,12 +336,7 @@ class StateStore:
             )
 
     def commit_finalization(
-        self,
-        key: str,
-        *,
-        terminal_status: str,
-        result: Any,
-        claim_id: str,
+        self, key: str, *, terminal_status: str, result: Any, claim_id: str,
         public_updates: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         if not isinstance(terminal_status, str) or not terminal_status or terminal_status in ACTIVE_STATES:
@@ -345,7 +349,7 @@ class StateStore:
             "cleanupVerified": result.cleanup_verified,
             "finalizedAt": now_text() if completed else None,
         }
-        return self.update(
+        record = self.update(
             key,
             status=terminal_status if completed else "terminating",
             public_updates=updates,
@@ -354,6 +358,8 @@ class StateStore:
             clear_active=completed,
             expected_claim_id=claim_id,
         )
+        ResourceGovernor(self).automatic_gc()
+        return record
 
     def get(self, *, service: str | None = None, key: str | None = None) -> dict[str, Any]:
         with self._lock:
@@ -397,11 +403,7 @@ class StateStore:
         )
 
     def install_intake_fence(
-        self,
-        *,
-        operation_id: str,
-        kind: str,
-        expected_generation: int,
+        self, *, operation_id: str, kind: str, expected_generation: int,
         require_idle: bool = False,
     ) -> dict[str, Any]:
         with self.transaction():
@@ -482,13 +484,8 @@ class StateStore:
                 )
             self.clear_intake_fence(str(operation["operationId"]))
 
-    def prune(
-        self,
-        *,
-        max_inactive: int | None = None,
-        dry_run: bool = True,
-        keep_runs: bool = False,
-    ) -> dict[str, Any]:
+    def prune(self, *, max_inactive: int | None = None, dry_run: bool = True,
+              keep_runs: bool = False) -> dict[str, Any]:
         return PruneCoordinator(self).run(
             max_inactive=max_inactive,
             dry_run=dry_run,

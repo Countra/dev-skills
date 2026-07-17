@@ -11,8 +11,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any
 
-from .atomic import atomic_write_json
 from .errors import ConfigurationError, ValidationError
+from .logs import write_capped_json
 from .models import ManagerConfig, ServiceConfig
 from .patterns import compile_log_pattern
 
@@ -21,8 +21,18 @@ MAX_CONFIG_BYTES = 1024 * 1024
 MAX_ENV_BYTES = 64 * 1024
 DEFAULT_MAX_REQUEST_BYTES = 64 * 1024
 DEFAULT_HISTORY_MAX_INACTIVE = 20
+DEFAULT_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+DEFAULT_HISTORY_MAX_TOMBSTONES = 200
 DEFAULT_LOG_MAX_BYTES = 10 * 1024 * 1024
 DEFAULT_LOG_BACKUPS = 3
+DEFAULT_LIMITS = {
+    "maxActiveRuns": 16,
+    "maxOpenSessions": 32,
+    "maxSessionRecords": 128,
+    "maxPendingPrunes": 32,
+    "maxConcurrentControlRequests": 16,
+    "maxRetainedBytes": 512 * 1024 * 1024,
+}
 SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 SECRET_NAME_RE = re.compile(
@@ -146,8 +156,8 @@ def load_manager_config(path: Path) -> ManagerConfig:
     data = _closed_object(
         _read_json(config_path, "manager config"),
         "manager config",
-        allowed={"workspaceRoot", "stateRoot", "control", "history", "logs"},
-        required={"workspaceRoot", "stateRoot", "control", "history", "logs"},
+        allowed={"workspaceRoot", "stateRoot", "control", "history", "limits", "logs"},
+        required={"workspaceRoot", "stateRoot", "control", "history", "limits", "logs"},
     )
     workspace = _absolute_path(data["workspaceRoot"], "workspaceRoot", directory_only=True)
     state_root = _lexical_absolute_path(data["stateRoot"], "stateRoot")
@@ -167,11 +177,38 @@ def load_manager_config(path: Path) -> ManagerConfig:
     history = _closed_object(
         data["history"],
         "history",
-        allowed={"maxInactive", "deleteRunDirs"},
-        required={"maxInactive", "deleteRunDirs"},
+        allowed={"maxInactive", "maxAgeSeconds", "maxTombstones", "deleteRunDirs"},
+        required={"maxInactive", "maxAgeSeconds", "maxTombstones", "deleteRunDirs"},
     )
     if not isinstance(history["deleteRunDirs"], bool):
         raise ValidationError("history.deleteRunDirs 必须是 boolean")
+    raw_limits = _closed_object(
+        data["limits"],
+        "limits",
+        allowed=set(DEFAULT_LIMITS),
+        required=set(DEFAULT_LIMITS),
+    )
+    limits = {
+        "maxActiveRuns": _integer(raw_limits["maxActiveRuns"], "limits.maxActiveRuns", 1, 10000),
+        "maxOpenSessions": _integer(raw_limits["maxOpenSessions"], "limits.maxOpenSessions", 1, 10000),
+        "maxSessionRecords": _integer(
+            raw_limits["maxSessionRecords"], "limits.maxSessionRecords", 1, 10000
+        ),
+        "maxPendingPrunes": _integer(
+            raw_limits["maxPendingPrunes"], "limits.maxPendingPrunes", 1, 10000
+        ),
+        "maxConcurrentControlRequests": _integer(
+            raw_limits["maxConcurrentControlRequests"],
+            "limits.maxConcurrentControlRequests",
+            1,
+            1024,
+        ),
+        "maxRetainedBytes": _integer(
+            raw_limits["maxRetainedBytes"], "limits.maxRetainedBytes", 1024 * 1024, 1024**4
+        ),
+    }
+    if limits["maxSessionRecords"] < limits["maxOpenSessions"]:
+        raise ValidationError("limits.maxSessionRecords 不能小于 maxOpenSessions")
     logs = _validate_logs(data["logs"], "logs")
     port = _integer(control["port"], "control.port", 0, 65535)
     if port != 0:
@@ -183,7 +220,14 @@ def load_manager_config(path: Path) -> ManagerConfig:
         port=port,
         max_request_bytes=_integer(control["maxRequestBytes"], "control.maxRequestBytes", 1024, MAX_CONFIG_BYTES),
         history_max_inactive=_integer(history["maxInactive"], "history.maxInactive", 0, 10000),
+        history_max_age_seconds=_integer(
+            history["maxAgeSeconds"], "history.maxAgeSeconds", 0, 10 * 365 * 24 * 60 * 60
+        ),
+        history_max_tombstones=_integer(
+            history["maxTombstones"], "history.maxTombstones", 1, 10000
+        ),
         history_delete_run_dirs=history["deleteRunDirs"],
+        limits=limits,
         log_max_bytes=logs["maxBytes"],
         log_backups=logs["backups"],
         config_path=config_path,
@@ -204,10 +248,16 @@ def create_default_manager_config(workspace: Path, path: Path | None = None) -> 
             "port": 0,
             "maxRequestBytes": DEFAULT_MAX_REQUEST_BYTES,
         },
-        "history": {"maxInactive": DEFAULT_HISTORY_MAX_INACTIVE, "deleteRunDirs": True},
+        "history": {
+            "maxInactive": DEFAULT_HISTORY_MAX_INACTIVE,
+            "maxAgeSeconds": DEFAULT_HISTORY_MAX_AGE_SECONDS,
+            "maxTombstones": DEFAULT_HISTORY_MAX_TOMBSTONES,
+            "deleteRunDirs": True,
+        },
+        "limits": dict(DEFAULT_LIMITS),
         "logs": {"maxBytes": DEFAULT_LOG_MAX_BYTES, "backups": DEFAULT_LOG_BACKUPS},
     }
-    atomic_write_json(config_path, value)
+    write_capped_json(config_path, value, MAX_CONFIG_BYTES)
     return load_manager_config(config_path)
 
 

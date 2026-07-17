@@ -177,7 +177,9 @@ class SessionTests(unittest.TestCase):
                     clock.advance(wall=wall_delta, monotonic=monotonic_delta)
                     swept = controller.sweep_once()
                     self.assertEqual(swept["closedSessionIds"], [session["sessionId"]])
-                    self.assertEqual(store.load()["sessions"][session["sessionId"]]["state"], "closed")
+                    state = store.load()
+                    self.assertNotIn(session["sessionId"], state["sessions"])
+                    self.assertIn(f"session:{session['sessionId']}", state["tombstones"])
                     with self.assertRaises(SessionExpiredError):
                         controller.renew(session["sessionId"], ttl_seconds=60)
 
@@ -214,7 +216,7 @@ class SessionTests(unittest.TestCase):
             second.finalize_record = first.finalize_record
             reconciled = second.reconcile_startup()
             self.assertEqual(reconciled["closedSessionIds"], [session["sessionId"]])
-            self.assertEqual(store.load()["sessions"][session["sessionId"]]["state"], "closed")
+            self.assertIn(f"session:{session['sessionId']}", store.load()["tombstones"])
             self.assertEqual(calls, [record["processKey"]])
             self.assertEqual(failures, set())
 
@@ -262,7 +264,7 @@ class SessionTests(unittest.TestCase):
             thread.join(timeout=2)
             self.assertFalse(thread.is_alive())
             self.assertIn(outcomes, (["renewed"], ["expired"]))
-            self.assertEqual(store.load()["sessions"][session["sessionId"]]["state"], "closed")
+            self.assertIn(f"session:{session['sessionId']}", store.load()["tombstones"])
 
     def test_joint_run_session_transaction_replays_after_interruption(self) -> None:
         with workspace_directory() as directory:
@@ -328,6 +330,15 @@ class SessionTests(unittest.TestCase):
                 "session-only",
             )
 
+    def test_rebuild_rejects_session_record_above_closed_cap(self) -> None:
+        with workspace_directory() as directory:
+            _, _, store, _, _, _, _ = self.make_fixture(Path(directory))
+            path = store.schema.session_path("f" * 32)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"x" * (64 * 1024 + 1))
+            with self.assertRaisesRegex(StateError, "读取上限"):
+                store.rebuild()
+
     def test_session_schema_rejects_invalid_time_and_state_combinations(self) -> None:
         with workspace_directory() as directory:
             _, _, store, controller, _, _, _ = self.make_fixture(Path(directory))
@@ -361,10 +372,11 @@ class SessionTests(unittest.TestCase):
             failures.add(run_keys[0])
             clock.advance(wall=61, monotonic=61)
             result = controller.sweep_once()
-            states = {
-                session["holder"]: store.load()["sessions"][session["sessionId"]]["state"]
-                for session in sessions
-            }
+            state = store.load()
+            states = {}
+            for session in sessions:
+                record = state["sessions"].get(session["sessionId"])
+                states[session["holder"]] = record["state"] if record else "closed"
             self.assertEqual(states, {"bad": "cleanup_failed", "good": "closed"})
             self.assertEqual(result["closedSessionIds"], [sessions[1]["sessionId"]])
             self.assertTrue(result["errors"])
