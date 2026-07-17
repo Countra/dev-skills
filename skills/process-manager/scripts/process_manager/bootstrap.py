@@ -7,6 +7,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,11 +23,56 @@ from .platforms.base import PlatformAdapter
 CommandFactory = Callable[[str, str], list[str]]
 
 
+def manager_command(
+    manager_script: Path,
+    config_path: Path,
+    backend: str,
+    reason: str,
+) -> list[str]:
+    return [
+        sys.executable,
+        "-X",
+        "utf8",
+        "-B",
+        str(manager_script),
+        "--config",
+        str(config_path),
+        "--bootstrap-backend",
+        backend,
+        "--bootstrap-reason",
+        reason,
+    ]
+
+
 @dataclass(frozen=True)
 class BootstrapResult:
     backend: str
     selection_reason: str
     process: subprocess.Popen[Any] | None
+
+
+def cleanup_bootstrap_result(
+    bootstrap: "ManagerBootstrap",
+    result: BootstrapResult,
+    *,
+    timeout: float = 5.0,
+) -> bool:
+    """有界回收本次 bootstrap 可证明拥有的进程与 native backend。"""
+    process = result.process
+    try:
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=timeout)
+            except (OSError, subprocess.TimeoutExpired):
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=timeout)
+        if process is not None and process.poll() is None:
+            return False
+        return bootstrap.cleanup(result.backend)
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 class ManagerBootstrap:
@@ -79,6 +125,36 @@ class ManagerBootstrap:
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.1)
+
+    def residue_present(self) -> bool:
+        """只读检查确定性 native bootstrap 是否仍有残留。"""
+        platform = self.adapter.selection.platform
+        if platform == "linux":
+            if not self.which("systemctl") or not os.environ.get("XDG_RUNTIME_DIR"):
+                return False
+            try:
+                result = self._run(
+                    ["systemctl", "--user", "is-active", "--quiet", self.unit_name],
+                    3,
+                )
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise PMError("无法检查 systemd user manager residue") from exc
+            return result.returncode == 0
+        if platform != "macos":
+            return False
+        if self.launchd_plist.exists():
+            return True
+        domain = self._launchd_domain()
+        if domain is None:
+            return False
+        try:
+            result = self._run(
+                ["/bin/launchctl", "print", f"{domain}/{self.launchd_label}"],
+                3,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise PMError("无法检查 launchd manager residue") from exc
+        return result.returncode == 0
 
     def _detached(
         self,

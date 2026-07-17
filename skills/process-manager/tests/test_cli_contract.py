@@ -49,13 +49,39 @@ class CliContractTests(unittest.TestCase):
 
     def test_manager_subcommands_share_one_public_contract(self) -> None:
         script = SCRIPTS_DIR / "pm_manager.py"
-        for command in ("start", "status", "stop"):
+        for command in ("ensure", "start", "status", "stop"):
             with self.subTest(command=command):
                 result = run_script(script, command, "--help")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--config", result.stdout)
+                self.assertIn("--workspace", result.stdout)
                 self.assertIn("--pretty", result.stdout)
                 self.assert_platform_neutral(result.stdout)
+
+    def test_manager_invalid_context_is_json_and_does_not_write_runtime(self) -> None:
+        script = SCRIPTS_DIR / "pm_manager.py"
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config = workspace / ".harness" / "process-manager" / "config.json"
+            cases = (
+                ("status",),
+                ("status", "--workspace", "."),
+                (
+                    "status",
+                    "--workspace",
+                    str(workspace),
+                    "--config",
+                    str(config),
+                ),
+            )
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    result = run_script(script, *arguments)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    value = json.loads(result.stdout)
+                    self.assertFalse(value["ok"])
+                    self.assertEqual(value["error"]["code"], "context_invalid")
+                    self.assertFalse((workspace / ".harness").exists())
 
     def test_missing_config_returns_stable_json_error(self) -> None:
         with workspace_directory() as directory:

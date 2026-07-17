@@ -12,7 +12,11 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from helpers import FakeAdapter, create_config, workspace_directory  # noqa: E402
-from process_manager.bootstrap import BootstrapResult, ManagerBootstrap  # noqa: E402
+from process_manager.bootstrap import (  # noqa: E402
+    BootstrapResult,
+    ManagerBootstrap,
+    cleanup_bootstrap_result,
+)
 from process_manager.platforms.base import PlatformSelection  # noqa: E402
 
 
@@ -161,6 +165,64 @@ class BootstrapTests(unittest.TestCase):
 
         launchd = BootstrapResult("launchd-user", "test", None)
         self.assertEqual(launchd.backend, "launchd-user")
+
+    def test_linux_residue_probe_only_reads_deterministic_unit(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(command, **kwargs):  # noqa: ANN001,ANN201
+            del kwargs
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with workspace_directory() as directory, mock.patch.dict(os.environ, {"XDG_RUNTIME_DIR": directory}):
+            workspace = Path(directory)
+            _, _, bootstrap = self.make_bootstrap(workspace, "linux", runner)
+            self.assertTrue(bootstrap.residue_present())
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][:4], ["systemctl", "--user", "is-active", "--quiet"])
+
+    def test_non_native_bootstrap_has_no_residue_probe(self) -> None:
+        calls: list[list[str]] = []
+
+        def runner(command, **kwargs):  # noqa: ANN001,ANN201
+            del kwargs
+            calls.append(command)
+            return subprocess.CompletedProcess(command, 0, "", "")
+
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, _, bootstrap = self.make_bootstrap(workspace, "windows", runner)
+            self.assertFalse(bootstrap.residue_present())
+        self.assertEqual(calls, [])
+
+    def test_bootstrap_cleanup_escalates_exact_handle_and_verifies_backend(self) -> None:
+        class StubbornProcess:
+            def __init__(self) -> None:
+                self.alive = True
+                self.killed = False
+
+            def poll(self):  # noqa: ANN201
+                return None if self.alive else 0
+
+            def terminate(self) -> None:
+                return
+
+            def wait(self, timeout):  # noqa: ANN001,ANN201
+                if not self.killed:
+                    raise subprocess.TimeoutExpired("fixture", timeout)
+                self.alive = False
+                return 0
+
+            def kill(self) -> None:
+                self.killed = True
+
+        process = StubbornProcess()
+        bootstrap = mock.Mock()
+        bootstrap.cleanup.return_value = True
+        result = BootstrapResult("fixture", "fixture", process)
+        self.assertTrue(cleanup_bootstrap_result(bootstrap, result, timeout=0.01))
+        self.assertTrue(process.killed)
+        bootstrap.cleanup.assert_called_once_with("fixture")
 
 
 if __name__ == "__main__":

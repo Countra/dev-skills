@@ -18,11 +18,13 @@ class PMError(RuntimeError):
         message: str,
         *,
         diagnostics: dict[str, Any] | None = None,
+        recommended_action: str | None = None,
         retryable: bool | None = None,
     ) -> None:
         super().__init__(message)
         self.message = message
         self.diagnostics = diagnostics or {}
+        self.recommended_action = recommended_action
         if retryable is not None:
             self.retryable = retryable
 
@@ -34,6 +36,8 @@ class PMError(RuntimeError):
         }
         if include_diagnostics and self.diagnostics:
             value["diagnostics"] = self.diagnostics
+        if self.recommended_action is not None:
+            value["recommendedAction"] = self.recommended_action
         return value
 
 
@@ -45,10 +49,87 @@ class ValidationError(ConfigurationError):
     code = "validation_error"
 
 
+class ContextInvalidError(ValidationError):
+    code = "context_invalid"
+
+
 class ManagerOfflineError(PMError):
     code = "manager_offline"
     http_status = 503
     exit_code = 3
+    retryable = True
+
+
+class ManagerAbsentError(PMError):
+    code = "manager_absent"
+    http_status = 503
+    exit_code = 3
+
+
+class RuntimeUninitializedError(PMError):
+    code = "runtime_uninitialized"
+    http_status = 409
+    exit_code = 4
+
+
+class ManagerStartingError(PMError):
+    code = "manager_starting"
+    http_status = 503
+    exit_code = 3
+    retryable = True
+
+
+class ManagerStoppingError(ManagerStartingError):
+    code = "manager_stopping"
+
+
+class ManagerStaleError(PMError):
+    code = "manager_stale"
+    http_status = 409
+    exit_code = 4
+
+
+class ManagerUnresponsiveError(PMError):
+    code = "manager_unresponsive"
+    http_status = 503
+    exit_code = 3
+
+
+class RuntimeInsecureError(PMError):
+    code = "runtime_insecure"
+    http_status = 403
+    exit_code = 7
+
+
+class RuntimePermissionDeniedError(PMError):
+    code = "runtime_permission_denied"
+    http_status = 403
+    exit_code = 7
+
+
+class EnvironmentUnverifiableError(PMError):
+    code = "environment_unverifiable"
+    http_status = 503
+    exit_code = 7
+
+
+class RuntimeCorruptError(PMError):
+    code = "runtime_corrupt"
+    http_status = 500
+    exit_code = 6
+
+
+class OperationConflictError(PMError):
+    code = "operation_conflict"
+    http_status = 409
+    exit_code = 4
+    retryable = True
+
+
+class OperationTimeoutError(PMError):
+    code = "operation_timeout"
+    http_status = 408
+    exit_code = 9
     retryable = True
 
 

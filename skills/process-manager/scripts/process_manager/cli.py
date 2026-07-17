@@ -16,6 +16,19 @@ from .protocol import failure, print_json
 REMOTE_EXIT_CODES = {
     "configuration_error": 2,
     "validation_error": 2,
+    "context_invalid": 2,
+    "manager_absent": 3,
+    "runtime_uninitialized": 4,
+    "manager_starting": 3,
+    "manager_stopping": 3,
+    "manager_stale": 4,
+    "manager_unresponsive": 3,
+    "runtime_insecure": 7,
+    "runtime_permission_denied": 7,
+    "environment_unverifiable": 7,
+    "runtime_corrupt": 6,
+    "operation_conflict": 4,
+    "operation_timeout": 9,
     "manager_offline": 3,
     "state_conflict": 4,
     "identity_mismatch": 5,
@@ -30,6 +43,12 @@ REMOTE_EXIT_CODES = {
 
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", default=str(default_config_path()), help="manager config 路径")
+    parser.add_argument("--pretty", action="store_true", help="格式化 JSON 输出")
+
+
+def add_context_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--workspace", help="workspace 绝对路径")
+    parser.add_argument("--config", help="manager config 绝对路径")
     parser.add_argument("--pretty", action="store_true", help="格式化 JSON 输出")
 
 

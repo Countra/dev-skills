@@ -16,16 +16,28 @@ class RuntimePaths:
         return self.state_root / "config.json"
 
     @property
+    def control(self) -> Path:
+        return self.state_root / "control"
+
+    @property
     def token(self) -> Path:
-        return self.state_root / "token"
+        return self.control / "token"
 
     @property
     def manager(self) -> Path:
-        return self.state_root / "manager.json"
+        return self.control / "manager.json"
 
     @property
     def manager_lock(self) -> Path:
-        return self.state_root / "manager.lock"
+        return self.control / "manager.lock"
+
+    @property
+    def operation(self) -> Path:
+        return self.control / "operation.json"
+
+    @property
+    def operation_lock(self) -> Path:
+        return self.control / "operation.lock"
 
     @property
     def processes(self) -> Path:
