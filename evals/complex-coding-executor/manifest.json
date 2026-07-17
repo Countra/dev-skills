@@ -49,6 +49,11 @@
       "scenario": "dependency-none-fast"
     },
     {
+      "id": "future-checker-ignored",
+      "profile": "lite",
+      "scenario": "future-checker-ignored"
+    },
+    {
       "id": "dependency-stale-recheck",
       "profile": "lite",
       "scenario": "dependency-stale-recheck"
@@ -66,6 +71,18 @@
       "profile": "standard",
       "scenario": "tampered-plan",
       "expected_code": "ATTESTATION_HASH_MISMATCH"
+    },
+    {
+      "id": "attestation-task-mismatch",
+      "profile": "lite",
+      "scenario": "attestation-task-mismatch",
+      "expected_code": "ATTESTATION_TASK_MISMATCH"
+    },
+    {
+      "id": "attestation-revision-mismatch",
+      "profile": "lite",
+      "scenario": "attestation-revision-mismatch",
+      "expected_code": "ATTESTATION_REVISION_MISMATCH"
     },
     {
       "id": "illegal-stage-completion",

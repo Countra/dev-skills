@@ -20,6 +20,7 @@ from harness_plan_semantics import (
     validate_dependency_plan,
     validate_gate_semantics,
     validate_online_research,
+    validate_review_handoff,
 )
 
 
@@ -43,12 +44,18 @@ REQUIRED_PLAN_SECTIONS = [
     "文档",
     "文件写入策略",
     "方案质量门禁",
-    "规划自查",
+    "正式方案审查",
     "就绪门禁",
     "方案批准",
     "方案变更门禁",
     "Artifact Index",
     "Executor Handoff",
+]
+
+FORBIDDEN_LEGACY_REVIEW_SECTIONS = [
+    "规划自查",
+    "Plan Self-Review",
+    "Plan Critique",
 ]
 
 FORBIDDEN_MUTABLE_SECTIONS = [
@@ -186,6 +193,15 @@ def validate_plan(
                 f"$plan.{name}",
                 f"批准计划不得包含可变执行章节：{name}",
                 "把运行状态移到 run-state/ledger。",
+            )
+    for name in FORBIDDEN_LEGACY_REVIEW_SECTIONS:
+        if has_heading(plan, name):
+            add_issue(
+                issues,
+                "TASK_PLAN_LEGACY_REVIEW_SECTION",
+                f"$plan.{name}",
+                f"计划仍包含已迁出的正式审查章节：{name}",
+                "删除旧自查/critique 清单，改用 Formal Plan Review handoff。",
             )
 
     summary = section(plan, "规划摘要")
@@ -327,7 +343,6 @@ def validate_plan(
             "规范发现门禁",
             "开发质量门禁",
             "方案质量门禁",
-            "规划自查",
             "就绪门禁",
         ]
         if has_heading(plan, "依赖选型门禁"):
@@ -368,6 +383,7 @@ def validate_plan(
                 validation_context(task_dir, contract, plan),
                 issues,
             )
+        validate_review_handoff(plan, contract, issues)
         validate_dependency_plan(plan, contract, issues)
 
         options = section(plan, "候选方案")

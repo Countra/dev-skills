@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-16
+
+### Breaking: Planner、Reviewer、Executor 审查职责重构
+
+- 新增 `complex-coding-reviewer`，以独立 `plan-review` 和 `code-review` profile 统一输出 target-bound canonical JSON receipt，不提供旧 critique 文本或旧 review payload 兼容层。
+- Planner 保留方案生产、调研、标准发现、依赖选择与 readiness，正式规划审查改由 Reviewer 完成；Executor 保留实现、验证、修复与状态写入，正式阶段和最终审查同样委托 Reviewer。
+- 审查目标支持 plan bundle、file manifest、working tree 和 commit range；回执同时绑定 target/context digest，并将 requirement/risk/path coverage、evidence-bound strengths、带 category/origin 的 findings、verification gaps 和逐 finding lineage 纳入封闭契约。
+- `plan-review` 强化完整性、一致性、范围与可实施性；`code-review` 采用 spec-first 顺序，并按风险 screen 条件化加载六类 playbook，避免高风险静默跳过和对无关目标全量审查。
+- Executor 的阶段门禁只接受 Reviewer 公共 validator 派生的 compact evidence；Planner/Reviewer current checker 只在批准写入或 amendment 激活前运行，后续恢复与 final 信任 attestation 固定的不可变 hashes。
+- 新增 clean、near-miss 与 known-defect 双 profile corpus、deterministic oracle、same-context semantic smoke 和用户显式运行的不可执行 observation packet；未运行的 fresh-context 结果保持 `not_observed`，不外推语义效果。
+- 全分支 Windows、Ubuntu、macOS workflow 统一运行三套 unit/eval、Reviewer oracle/static contract、Skill 静态检查、observation packet 校验和三 Skill 联合回归；候选验证命令不读取 secrets，不访问网络，也不启动 Agent、模型或目标项目代码。
+- 安装脚本继续通过 `skills/*/SKILL.md` 自动发现 Reviewer；本次 current-only breaking contract 不提供旧 receipt/payload、schema 分支或双读双写兼容层。
+
 ## 2026-07-15
 
 ### Feature: Planner/Executor 依赖选型可信度门禁

@@ -385,29 +385,18 @@ Changelog 计划（Changelog plan）:
 
 - `pending`
 
-## 规划自查（Plan Self-Review）
+## 正式方案审查（Formal Plan Review）
 
-自查结论（Review result）:
+- Producer：`complex-coding-planner` 负责生成和修复 plan bundle，不生成正式 verdict
+- Profile：`plan-review`
+- Scope：`managed-plan`
+- Review brief：`artifacts/reviews/plan-review-brief.json`，必须 approval-included 并声明当前 requirements/constraints/claims/risk focus
+- Current receipt：`artifacts/reviews/plan-review-attempt-1.json`
+- Validator：`complex-coding-reviewer/scripts/review_validate.py`
+- Canonical result：只读取上述 JSON receipt；approval checker 重建 target/context 并校验 coverage、gaps 与 lineage，计划正文不复制 verdict 或 finding 状态
+- Retry：修复目标后保留旧文件，把 contract 指向递增 attempt，并通过 `supersedes_review_id` 连接前序 receipt
 
-- `pending`
-
-| 类别（Category） | 发现（Finding） | 处理（Action） | 结果（Result） |
-| --- | --- | --- | --- |
-| 缺陷（Defects） |  |  | pending |
-| 优化（Optimizations） |  |  | pending |
-| 缺失项（Missing items） |  |  | pending |
-| 风险（Risks） |  |  | pending |
-| 一致性（Consistency） |  |  | pending |
-| 开发质量（Development quality） |  |  | pending |
-
-门禁重跑（Gate rerun）:
-
-- `Plan Quality Gate` 是否需要重跑：
-- `Plan Self-Review` 是否需要重跑：
-- `Readiness Gate` 是否需要重跑：
-- 原因：
-
-## 就绪门禁（Readiness Gate）
+## 生产者就绪门禁（Producer Readiness Gate）
 
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
@@ -427,7 +416,7 @@ Changelog 计划（Changelog plan）:
 | 最终交付证据已规划（Final delivery evidence planned） | pending |  |
 | 文档更新已确认（Documentation updates confirmed） | pending |  |
 | 风险已识别（Risks identified） | pending |  |
-| 规划自查已通过（Plan self-review passed） | pending |  |
+| 正式审查 handoff 已准备（Formal review handoff ready） | pending | profile / scope / receipt path / validator |
 | 阻塞问题已关闭（Blocking questions closed） | pending |  |
 
 就绪结论（Readiness result）:
@@ -475,9 +464,10 @@ Changelog 计划（Changelog plan）:
 
 | ID | Kind | Path | Required | Approval included | Trigger |
 | --- | --- | --- | --- | --- | --- |
-| ART-01 | research / standards / architecture / dependency / validation / review / other | artifacts/... | yes/no | yes/no | profile or risk rule |
+| ART-01 | other | artifacts/reviews/plan-review-brief.json | yes | yes | every managed plan |
+| ART-02 | review | artifacts/reviews/plan-review-attempt-1.json | yes | yes | every managed plan |
 
-只列出实际创建的 artifact；每项必须与 `plan-contract.json` 一致。运行日志、review 结果和 commit evidence 由 executor 在批准后创建，不进入本表。
+只列出实际创建的 artifact；每项必须与 `plan-contract.json` 一致。当前 review brief 与 plan-review receipt 必须进入本表；运行日志、code-review 结果和 commit evidence 由 executor 在批准后创建，不进入本表。
 
 ## Executor Handoff
 

@@ -11,6 +11,7 @@ from typing import Any
 
 from harness_attestation import validate_attestation
 from harness_dependency_evaluation import evaluate_dependency_preflight
+from harness_review import ReviewGateError, validate_review_gate
 from harness_state import (
     commit_evidence_gaps,
     replay_events,
@@ -151,6 +152,18 @@ def status_payload(bundle: TaskBundle) -> dict[str, Any]:
         "snapshot_exists": snapshot is not None,
         "snapshot_drift": differences,
         "authorizations": attestation["authorizations"],
+        "reviews": {
+            "stage_review_ids": {
+                stage_id: review["review_id"]
+                for stage_id, review in sorted(replayed.stage_reviews.items())
+            },
+            "carried_stage_ids": sorted(replayed.carried_stage_ids),
+            "final_review_id": (
+                replayed.final_review["review_id"]
+                if replayed.final_review is not None
+                else None
+            ),
+        },
     }
 
 
@@ -171,12 +184,7 @@ def check_preflight(
     dependency_receipt: str | None = None,
 ) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
-    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
-    allow_stale = bool(
-        dependency["stale_approved_decision_ids"]
-        and dependency["runtime_recheck"]
-    )
-    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
+    evaluate_dependency_preflight(bundle, dependency_receipt)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["reapproval_required"]:
@@ -279,12 +287,7 @@ def check_final(
     dependency_receipt: str | None = None,
 ) -> dict[str, Any]:
     replayed, attestation = replay_bundle(bundle)
-    dependency = evaluate_dependency_preflight(bundle, dependency_receipt)
-    allow_stale = bool(
-        dependency["stale_approved_decision_ids"]
-        and dependency["runtime_recheck"]
-    )
-    run_planner_approval_check(bundle, allow_dependency_stale=allow_stale)
+    evaluate_dependency_preflight(bundle, dependency_receipt)
     require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["lifecycle"] != "completed":
@@ -298,12 +301,33 @@ def check_final(
             "final 时仍有 current/remaining stage。",
         )
     expected_stages = {str(item["id"]) for item in bundle.contract["stages"]}
-    if replayed.reviewed_stages != expected_stages:
+    covered_stages = set(replayed.stage_reviews) | replayed.carried_stage_ids
+    if covered_stages != expected_stages:
         raise ExecutionError(
             "RUN_STATE_REVIEW_INCOMPLETE",
-            "并非所有 stage 都有 passed review evidence。",
+            "并非所有当前 revision stage 都有 passed review 或合法 carry evidence。",
+        )
+    if replayed.final_review is None:
+        raise ExecutionError(
+            "RUN_STATE_FINAL_REVIEW_INCOMPLETE",
+            "final checker 缺少 final-integration passed review。",
         )
     events = read_events(bundle.ledger_path)
+    final_commit_recorded = any(
+        event.get("type") == "commit_recorded" and event.get("stage_id") is None
+        for event in events
+    )
+    try:
+        validate_review_gate(
+            bundle,
+            replayed.final_review,
+            stage_id=None,
+            attempt=None,
+            final_commit_recorded=final_commit_recorded,
+            require_lifecycle_baseline=True,
+        )
+    except ReviewGateError as exc:
+        raise ExecutionError(exc.code, exc.message) from exc
     commit_events = [event for event in events if event.get("type") == "commit_recorded"]
     commit_authorized = attestation["authorizations"]["commit"]
     if commit_events and not commit_authorized:

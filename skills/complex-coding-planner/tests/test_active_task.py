@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -20,7 +21,7 @@ from harness_active_task import (  # noqa: E402
 
 class ActiveTaskTest(unittest.TestCase):
     def setUp(self) -> None:
-        temporary = tempfile.TemporaryDirectory()
+        temporary = WritableTemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         self.workspace = Path(temporary.name)
 

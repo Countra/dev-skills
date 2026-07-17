@@ -1,6 +1,6 @@
 # Task Contract
 
-本文件是 `complex-coding-planner` 与 `complex-coding-executor` 的唯一任务契约定义。两端可以拥有各自职责内的校验代码，但字段、状态、事件和错误语义必须以本文件及联合 fixtures 为准。
+本文件是 `complex-coding-planner`、`complex-coding-reviewer` 与 `complex-coding-executor` 的唯一任务契约定义。三方可以拥有各自职责内的校验代码，但字段、状态、事件和错误语义必须以本文件及联合 fixtures 为准。
 
 ## 目录
 
@@ -22,7 +22,7 @@
 - 只定义一套当前契约，不设置契约版本字段或多协议兼容模式。
 - `execution-plan.md` 面向人类审批，`plan-contract.json` 面向确定性校验。
 - 批准意图与执行进度分离，任何可变运行数据都不进入批准哈希集合。
-- planner 是批准意图的 producer；executor 是运行状态和证据的唯一 writer。
+- planner 是批准意图的 producer，reviewer 是正式 review receipt 的唯一 writer，executor 是运行状态和执行证据的唯一 writer。
 - 历史任务不迁移。缺少当前必需文件或字段时返回结构错误，不返回版本错误。
 
 ## 任务制品
@@ -36,11 +36,14 @@ task-dir/
   ledger.jsonl
   pending-decisions.md        # 仅有阻塞决策时创建
   artifacts/
+    reviews/
+      plan-review-brief.json
+      plan-review-attempt-N.json
 ```
 
 必需关系：
 
-- planner approval checker 需要 `execution-plan.md` 与 `plan-contract.json`。
+- planner approval checker 需要 `execution-plan.md`、`plan-contract.json`、approval-included review brief 与当前 plan-review receipt。
 - executor 首次启动需要批准后的 `attestation.json`。
 - executor 启动后维护 `run-state.json` 与 `ledger.jsonl`。
 - `active-task.json` 只定位任务，不复制 lifecycle、stage、remaining 或 next action。
@@ -54,13 +57,15 @@ task-dir/
 | --- | --- | --- | --- |
 | `execution-plan.md` | planner | none | 目标、证据、决策、阶段理由和验收解释 |
 | `plan-contract.json` | planner | none | ID、Stage DAG、验证、artifact 和授权策略 |
-| approved artifacts | planner | none | research、standards、architecture、traceability、critique |
+| approved non-review artifacts | planner | none | research、standards、architecture、dependency、traceability |
+| plan-review brief | planner | none | profile、scope、requirements、constraints、claims 和 risk focus |
+| plan-review receipt | reviewer | none | target/context、coverage、strengths、findings、gaps、lineage 和 verdict |
 | `attestation.json` | approval gate | amendment gate | 批准摘要、授权和不可变哈希集合 |
 | `run-state.json` | executor | executor | 当前 lifecycle、stage、stop、next 和 event 游标 |
 | `ledger.jsonl` | executor | append-only executor | 事件、attempt、验证、review、Git 和证据引用 |
 | `active-task.json` | lifecycle operation | pointer operation | task ID、目录和 run-state 路径 |
 
-批准后如需修改前三类制品，必须进入 amendment，不允许以“状态同步”为由直接改写。
+批准后如需修改前四类制品，必须进入 amendment，不允许以“状态同步”为由直接改写。
 
 ## Plan Contract
 
@@ -86,6 +91,12 @@ task-dir/
 根对象和受控嵌套对象拒绝未知字段。错误诊断必须给出 JSON path 和修复方向。
 
 每个 artifact 包含 `id`、`kind`、task-dir 内相对 `path`、`required` 和 `approval_included`。kind 为 `research`、`standards`、`architecture`、`dependency`、`validation`、`review` 或 `other`。approval 时 required 或 approval-included 文件必须存在且非空；required planning artifact 必须进入 attestation 哈希集合。
+
+每个 managed plan 必须有且只有一个当前 `review` artifact，路径为 `artifacts/reviews/plan-review-attempt-N.json`，并同时设置 `required=true`、`approval_included=true`。历史 attempts 保留在同目录但不进入当前 artifact index；attempt 大于 1 时必须保留紧邻前序文件并用 `supersedes_review_id` 连接。review artifact 不参与它所证明的 plan-bundle digest，receipt 自身单独进入批准哈希集合，避免自引用。
+
+review brief 使用 `kind=other`、`required=true`、`approval_included=true`，并进入 plan target/context；它声明 GOAL/REQ/AC/NFR、STG/VAL 约束、claim refs 与 risk focus，但不携带 verdict。plan-review context 只能引用 `execution-plan.md`、`plan-contract.json` 和 approval-included non-review artifacts。
+
+planner approval 通过 `complex-coding-reviewer/scripts/review_validate.py` 校验当前 receipt，固定期望 `profile=plan-review`、`scope=managed-plan`，并重建 plan-bundle target 与 context。只有 canonical schema、provenance、coverage、strengths、findings、gaps、lineage、supersedes 与双 freshness 全部有效且 verdict 为 `passed` 时才通过；Markdown 文本不承载正式 verdict。
 
 每个 validation 包含 `id`、`kind`、`required`、`covers`、`command` 和 `evidence_path`。`command` 可以是确定性 CLI，也可以是具名工具流程，但不能伪造尚未执行的结果。
 
@@ -152,9 +163,9 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 
 | Profile | 适用条件 | 必需内容 |
 | --- | --- | --- |
-| `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、1-3 stages、确定性验证 |
-| `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、traceability、2-5 stages |
-| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、critique、完整追踪、3-7 stages、恢复与切换证据 |
+| `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、1-3 stages、focused plan-review |
+| `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、traceability、2-5 stages、plan-review |
+| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、完整追踪、3-7 stages、恢复与切换证据、优先更强 provenance 的 plan-review |
 
 目标未稳定或存在高影响未知时先进入 `discovery-first`，只产出发现和阻塞决策；不得伪造 ready-for-approval contract。
 
@@ -193,16 +204,16 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 - plan：`research_drift`、`amendment_requested`、`amendment_approved`。
 - operation：`commit_recorded`、`note`、`heartbeat`。
 
-关键 payload：passed validation 需要 `summary`；failed validation 需要 `reason`；passed review 需要 `summary` 与 `development_quality = passed`；failed review 需要 `finding`；`attempt_failed` 需要 `reason`、`impact`、`next_strategy`；`research_drift` 需要 `reason`、`source`、`impact`；`resumed` 需要 `resolution`；`aborted` 需要 `reason`。
+关键 payload：`validation_recorded` 是 closed object，包含 `validation_id`、`result`、`command`、`claim_source`、`stage_attempt`、`target_digest`、`exit_code`、`summary`、`claim_boundary`；只有 `observed`、exit code 0 且绑定当前 attempt/target 的记录可以 passed，并必须引用 task-local evidence 文件。`review_recorded` 只保存由 Reviewer 公共 validator 精确派生的 compact receipt：`result`、`review_id`、`profile`、`scope`、`target_digest`、`context_digest`、`verdict`、`report_ref`、`open_counts`、`gap_counts`、`coverage_summary`、`lineage_summary`、`strength_count`、`summary`。stage review 使用绑定当前 `stage_id`/`attempt` 的 `stage-delta`，task final review 使用不绑定 stage 的 `final-integration`，完整 canonical receipt 位于 `artifacts/reviews/**` 并必须出现在 `evidence_refs`。`attempt_failed` 需要 `reason`、`impact`、`next_strategy`；`research_drift` 需要 `reason`、`source`、`impact`；`resumed` 需要 `resolution`；`aborted` 需要 `reason`。
 
-`seq` 从 1 连续递增，`event_id` 唯一，stage attempt 单调递增。validation/review 的 result 只能是 `passed` 或 `failed`；失败会撤销该 attempt 已记录的相关通过证据。大日志保存为 artifact，ledger 只保存摘要和 task-dir 内真实文件的相对引用。未授权的 `commit_recorded` 必须在 append 前拒绝；已授权事件必须在 `completed` 前记录 repository 和 7-64 位十六进制 commit hash。`stage` expectation 逐 stage 记录对应 `stage_id`，`final` expectation 在所有 stage 完成后记录无 stage_id 的事件。
+`seq` 从 1 连续递增，`event_id` 唯一，stage attempt 单调递增。validation result 为 `passed`、`failed` 或 `not-run`，claim source 为 `observed`、`reported` 或 `not-run`；reported/not-run 不建立 passed gate。失败或未运行会撤销该 attempt 已记录的相关通过证据。stage 完成时所有已通过 validation 的 target/attempt 必须与 stage receipt 一致。大日志保存为 artifact，ledger 只保存摘要和 task-dir 内真实文件的相对引用。未授权的 `commit_recorded` 必须在 append 前拒绝；已授权事件必须在 `completed` 前记录 repository 和 7-64 位十六进制 commit hash。`stage` expectation 逐 stage 记录对应 `stage_id`，`final` expectation 在所有 stage 完成后记录无 stage_id 的事件。
 
 ledger 以 plan revision 为作用域。amendment 前把当前 immutable set、attestation、ledger 和 run-state 归档到 `artifacts/amendments/revision-N/`；新 revision 使用新的当前 ledger，其首条 `amendment_approved` 事件记录前一 archive、ledger SHA-256 和经重新批准可继承的 completed stages。归档 ledger 永不回写。
 
 ## 校验模式
 
 - planner `draft`：允许未完成研究和开放决策，但报告所有结构问题。
-- planner `approval`：要求引用闭环、无 blocker、profile artifacts 完整、授权策略和 amendment triggers 明确。
+- planner `approval`：要求引用闭环、无 blocker、profile artifacts 完整、授权策略和 amendment triggers 明确，并要求当前 plan-bundle 的 passed plan-review receipt。
 - executor `preflight`：验证 pointer、contract、attestation、批准授权和 ledger/snapshot 一致性。
 - executor `status`：只读输出 snapshot 与 replay 摘要。
 - executor `transition`：验证阶段完成证据和下一 stage 可进入。

@@ -63,11 +63,39 @@
       "expected_code": "TASK_PLAN_RESEARCH_SOURCE_MISSING"
     },
     {
-      "id": "review-gate-incomplete",
-      "profile": "full",
-      "mutation": "review-gate-incomplete",
+      "id": "review-receipt-missing",
+      "profile": "lite",
+      "mutation": "review-receipt-missing",
       "expected_valid": false,
-      "expected_code": "TASK_ARTIFACT_REVIEW_INCOMPLETE"
+      "expected_code": "TASK_ARTIFACT_REVIEW_MISSING"
+    },
+    {
+      "id": "review-wrong-profile",
+      "profile": "standard",
+      "mutation": "review-wrong-profile",
+      "expected_valid": false,
+      "expected_code": "TASK_ARTIFACT_REVIEW_INVALID"
+    },
+    {
+      "id": "review-open-major",
+      "profile": "full",
+      "mutation": "review-open-major",
+      "expected_valid": false,
+      "expected_code": "TASK_ARTIFACT_REVIEW_NOT_PASSED"
+    },
+    {
+      "id": "review-stale-target",
+      "profile": "standard",
+      "mutation": "review-stale-target",
+      "expected_valid": false,
+      "expected_code": "TASK_ARTIFACT_REVIEW_INVALID"
+    },
+    {
+      "id": "legacy-review-text",
+      "profile": "lite",
+      "mutation": "legacy-review-text",
+      "expected_valid": false,
+      "expected_code": "TASK_ARTIFACT_REVIEW_INVALID"
     },
     {
       "id": "empty-semantic-gate",

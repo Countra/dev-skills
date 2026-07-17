@@ -10,10 +10,10 @@
 - revision archive、不可覆盖 attestation、已完成 stage carry 与 amendment 公共 CLI。
 - run-to-completion 阶段边界不能误停，非法 transition 必须 fail closed。
 - lite / standard / full bundle 都能被同一 consumer 完整消费。
-- 每阶段 review、验证、修复和记录。
+- 每阶段 canonical `code-review/stage-delta` target/receipt、验证、修复和 compact ledger 记录，以及独立的 `final-integration` receipt。
 - Research Drift Gate：执行中发现新外部事实时补证据，必要时进入 Plan Amendment Gate。
 - Dependency Execution Gate：none 快路径、批准 identity/version/manifest 精确消费、陈旧证据 runtime recheck、未批准替换、版本策略失败和 advisory/hard-gate 漂移。
-- Development Quality Check：执行期引用 standards index，复核代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据。
+- Review Handoff：Executor 把 standards index 用于实现和验证，正式 verdict 委托 Reviewer 公共 CLI；覆盖 stale、wrong scope、stage/final 隔离和 final commit 后重审。
 - 错误恢复必须记录 attempt 和新策略，长子主题需要 topic handoff artifact。
 - process-manager 长期进程规则。
 - Git 串行和 `index.lock` 恢复。

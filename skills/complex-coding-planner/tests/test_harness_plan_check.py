@@ -2,14 +2,25 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
+from helpers import WritableTemporaryDirectory
+
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
+REVIEWER_SCRIPTS_DIR = (
+    Path(__file__).resolve().parents[2]
+    / "complex-coding-reviewer"
+    / "scripts"
+)
 sys.path.insert(0, str(SCRIPTS_DIR))
+sys.path.insert(0, str(REVIEWER_SCRIPTS_DIR))
 
+from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
+from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
+from complex_coding_reviewer.errors import ReviewError  # noqa: E402
+from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
 from harness_plan_check import validate_task  # noqa: E402
 
 
@@ -17,6 +28,151 @@ RESEARCH_GATE_BODY = """- Research result: `not-applicable`
 - Decision: 本地事实足以支持 GOAL-01，当前无需在线调研。
 - Evidence: REQ-01 与 VAL-01 已形成结构化引用。
 - Impact: STG-01 只执行批准范围并保留验证证据。"""
+
+
+def write_json(path: Path, value: object) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+PLAN_REVIEW_BRIEF_PATH = "artifacts/reviews/plan-review-brief.json"
+
+
+def _plan_review_brief(task_dir: Path) -> dict[str, object]:
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    requirement_refs = [contract["goal"]["id"]]
+    for field in ("requirements", "acceptance_criteria", "nonfunctional_requirements"):
+        requirement_refs.extend(item["id"] for item in contract[field])
+    constraint_refs = [item["id"] for item in contract["stages"]]
+    constraint_refs.extend(item["id"] for item in contract["validations"])
+    return {
+        "profile": "plan-review",
+        "scope": {
+            "kind": "managed-plan",
+            "task_id": contract["task_id"],
+            "plan_revision": contract["plan_revision"],
+        },
+        "summary": "验证当前 managed plan bundle 满足批准与执行要求。",
+        "requirement_refs": sorted(requirement_refs),
+        "constraint_refs": sorted(constraint_refs),
+        "claim_refs": [],
+        "requested_risk_focus": [],
+        "created_at": "2026-07-16T00:00:00+00:00",
+    }
+
+
+def valid_review_receipt(
+    task_dir: Path,
+    *,
+    review_id: str = "REV-PLAN-001",
+    supersedes_review_id: str | None = None,
+) -> dict[str, object]:
+    brief = _plan_review_brief(task_dir)
+    write_json(task_dir / PLAN_REVIEW_BRIEF_PATH, brief)
+    target = build_plan_bundle_target(task_dir)
+    identity = target["identity"]
+    assert isinstance(identity, dict)
+    context_entries = [(PLAN_REVIEW_BRIEF_PATH, "brief")]
+    context_entries.extend(
+        (str(item["path"]), "requirement")
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != PLAN_REVIEW_BRIEF_PATH
+    )
+    context = build_context_target(
+        task_dir,
+        root_kind="task-dir",
+        label=f"{review_id.lower()}-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
+    evidence_ref = PLAN_REVIEW_BRIEF_PATH
+    return {
+        "review_id": review_id,
+        "profile": "plan-review",
+        "scope": {
+            "kind": "managed-plan",
+            "task_id": identity["task_id"],
+            "plan_revision": identity["plan_revision"],
+        },
+        "target": target,
+        "context": context,
+        "reviewer": {
+            "mode": "same-context",
+            "identity": "planner-integration-test",
+            "independence_claim": False,
+            "capability_limits": ["未运行目标代码。"],
+        },
+        "standards": [
+            {
+                "id": "STD-01",
+                "title": "Repository rules",
+                "source": "AGENTS.md",
+                "applicability": "适用于当前 plan bundle。",
+            }
+        ],
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "fixture 已覆盖完整 plan target。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": requirement_ref,
+                    "status": "satisfied",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "当前 plan bundle 提供了可审计证据。",
+                }
+                for requirement_ref in brief["requirement_refs"]
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [evidence_ref],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
+        "lenses": [
+            {
+                "id": lens,
+                "status": "reviewed",
+                "evidence_refs": [evidence_ref],
+                "summary": f"{lens} 已基于当前 plan bundle 完成审查。",
+            }
+            for lens in PLAN_LENSES
+        ],
+        "strengths": [],
+        "findings": [],
+        "verification_gaps": [],
+        "verdict": "passed",
+        "open_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "advisory": 0,
+            "total": 0,
+        },
+        "summary": "当前 plan bundle 已完成正式方案审查。",
+        "limitations": ["same-context 不构成独立审查证明。"],
+        "supersedes_review_id": supersedes_review_id,
+        "reviewed_at": "2026-07-16T00:00:00+00:00",
+    }
 
 
 def valid_contract() -> dict[str, object]:
@@ -31,7 +187,22 @@ def valid_contract() -> dict[str, object]:
             {"id": "AC-01", "requirement_ids": ["REQ-01"], "summary": "Given 输入 When 执行 Then 成功"}
         ],
         "nonfunctional_requirements": [{"id": "NFR-01", "summary": "保持可维护性"}],
-        "artifacts": [],
+        "artifacts": [
+            {
+                "id": "ART-01",
+                "kind": "review",
+                "path": "artifacts/reviews/plan-review-attempt-1.json",
+                "required": True,
+                "approval_included": True,
+            },
+            {
+                "id": "ART-09",
+                "kind": "other",
+                "path": PLAN_REVIEW_BRIEF_PATH,
+                "required": True,
+                "approval_included": True,
+            },
+        ],
         "stages": [
             {
                 "id": "STG-01",
@@ -100,7 +271,7 @@ def valid_plan(extra: str = "") -> str:
         "文档",
         "文件写入策略",
         "方案质量门禁",
-        "规划自查",
+        "正式方案审查",
         "就绪门禁",
         "方案批准",
         "方案变更门禁",
@@ -132,17 +303,18 @@ def valid_plan(extra: str = "") -> str:
             "- Evidence: REQ-01、AC-01、STG-01、VAL-01。\n"
             "- Impact: 批准后可以确定性执行。"
         ),
-        "规划自查": (
-            "- Review result: `passed`\n"
-            "- Decision: 未发现矛盾、越界或开放 blocker。\n"
-            "- Evidence: STG-01 范围与 VAL-01 追踪。\n"
-            "- Impact: 保持最小修改和失败闭环。"
+        "正式方案审查": (
+            "- Profile: `plan-review`\n"
+            "- Scope: `managed-plan`\n"
+            "- Current receipt: `artifacts/reviews/plan-review-attempt-1.json`\n"
+            "- Validator: `complex-coding-reviewer/scripts/review_validate.py`\n"
+            "- Canonical result: JSON receipt only."
         ),
         "就绪门禁": (
-            "- Readiness result: `ready_for_approval`\n"
-            "- Decision: 工具、范围和授权请求已明确。\n"
+            "- Readiness result: `ready_for_review`\n"
+            "- Decision: 工具、范围和授权请求已稳定，可以交给 Reviewer。\n"
             "- Evidence: STG-01、VAL-01 与 approval policy。\n"
-            "- Impact: 只请求批准，不提前实施。"
+            "- Impact: 只启动 formal plan-review，不提前请求实施。"
         ),
     }
     for heading in headings:
@@ -165,6 +337,11 @@ def valid_plan(extra: str = "") -> str:
                 "### STG-01：实现并验证\n"
                 "REQ-01 AC-01 NFR-01 VAL-01 src/ unrelated/"
             )
+        elif heading == "Artifact Index":
+            body = (
+                "ART-01 artifacts/reviews/plan-review-attempt-1.json "
+                f"ART-09 {PLAN_REVIEW_BRIEF_PATH}"
+            )
         sections.append(f"## {heading}\n\n{body}")
     sections.append(extra)
     return "\n\n".join(sections) + "\n"
@@ -172,7 +349,7 @@ def valid_plan(extra: str = "") -> str:
 
 class PlannerBundleTest(unittest.TestCase):
     def make_task(self, contract: dict[str, object] | None = None, plan: str | None = None) -> Path:
-        temp = tempfile.TemporaryDirectory()
+        temp = WritableTemporaryDirectory()
         self.addCleanup(temp.cleanup)
         task_dir = Path(temp.name)
         (task_dir / "plan-contract.json").write_text(
@@ -180,13 +357,190 @@ class PlannerBundleTest(unittest.TestCase):
             encoding="utf-8",
         )
         (task_dir / "execution-plan.md").write_text(plan or valid_plan(), encoding="utf-8")
+        self.write_current_review(task_dir)
         return task_dir
+
+    def write_current_review(
+        self,
+        task_dir: Path,
+        *,
+        review_id: str = "REV-PLAN-001",
+        supersedes_review_id: str | None = None,
+    ) -> Path | None:
+        contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+        reviews = [
+            item
+            for item in contract.get("artifacts", [])
+            if isinstance(item, dict) and item.get("kind") == "review"
+        ]
+        if len(reviews) != 1 or not isinstance(reviews[0].get("path"), str):
+            return None
+        path = task_dir / reviews[0]["path"]
+        try:
+            receipt = valid_review_receipt(
+                task_dir,
+                review_id=review_id,
+                supersedes_review_id=supersedes_review_id,
+            )
+        except (KeyError, ReviewError):
+            return None
+        write_json(path, receipt)
+        return path
 
     def error_codes(self, task_dir: Path, mode: str = "approval") -> set[str]:
         return {issue.code for issue in validate_task(task_dir, mode) if issue.level == "error"}
 
     def test_valid_bundle_passes_approval(self) -> None:
         self.assertEqual(set(), self.error_codes(self.make_task()))
+
+    def test_plan_review_context_must_be_approval_included(self) -> None:
+        task_dir = self.make_task()
+        extra = task_dir / "unapproved-note.md"
+        extra.write_text("unapproved context\n", encoding="utf-8")
+        path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        context = receipt["context"]
+        entries = [
+            (item["path"], item["role"])
+            for item in context["manifest"]
+        ]
+        entries.append(("unapproved-note.md", "other"))
+        receipt["context"] = build_context_target(
+            task_dir,
+            root_kind="task-dir",
+            label=context["identity"]["label"],
+            entries=entries,
+        )
+        write_json(path, receipt)
+        self.assertIn(
+            "TASK_ARTIFACT_REVIEW_CONTEXT_UNATTESTED",
+            self.error_codes(task_dir),
+        )
+
+    def test_missing_plan_review_receipt_is_rejected(self) -> None:
+        task_dir = self.make_task()
+        (task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json").unlink()
+        self.assertIn("TASK_ARTIFACT_REVIEW_MISSING", self.error_codes(task_dir))
+
+    def test_draft_allows_missing_plan_review_receipt(self) -> None:
+        task_dir = self.make_task()
+        (task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json").unlink()
+        self.assertNotIn(
+            "TASK_ARTIFACT_REVIEW_MISSING",
+            self.error_codes(task_dir, mode="draft"),
+        )
+
+    def test_draft_rejects_noncanonical_plan_review_path(self) -> None:
+        contract = valid_contract()
+        contract["artifacts"][0]["path"] = "artifacts/reviews/current.json"
+        plan = valid_plan().replace(
+            "artifacts/reviews/plan-review-attempt-1.json",
+            "artifacts/reviews/current.json",
+        )
+        self.assertIn(
+            "TASK_CONTRACT_REVIEW_PATH_INVALID",
+            self.error_codes(self.make_task(contract, plan), mode="draft"),
+        )
+
+    def test_wrong_review_profile_is_rejected(self) -> None:
+        task_dir = self.make_task()
+        path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt["profile"] = "code-review"
+        write_json(path, receipt)
+        self.assertIn("TASK_ARTIFACT_REVIEW_INVALID", self.error_codes(task_dir))
+
+    def test_wrong_review_scope_is_rejected(self) -> None:
+        task_dir = self.make_task()
+        path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt["scope"] = {"kind": "standalone"}
+        write_json(path, receipt)
+        self.assertIn("TASK_ARTIFACT_REVIEW_INVALID", self.error_codes(task_dir))
+
+    def test_open_major_review_cannot_pass_approval(self) -> None:
+        task_dir = self.make_task()
+        path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        receipt = json.loads(path.read_text(encoding="utf-8"))
+        receipt["findings"] = [
+            {
+                "id": "FIND-001",
+                "category": "correctness",
+                "origin": {"review_id": None, "finding_id": None},
+                "severity": "major",
+                "status": "open",
+                "title": "验证无法证伪验收",
+                "claim": "VAL-01 只检查退出码，未观察 AC-01 的结果。",
+                "impact": "错误实现仍可能通过计划门禁。",
+                "recommendation": "增加可观察结果断言。",
+                "evidence": [
+                    {
+                        "path": "execution-plan.md",
+                        "line": 1,
+                        "symbol": None,
+                        "artifact_ref": None,
+                        "standard_ref": None,
+                        "detail": "当前验证章节缺少结果断言。",
+                        "claim_source": "read",
+                    }
+                ],
+                "confidence": "high",
+                "disposition_reason": None,
+            }
+        ]
+        receipt["verdict"] = "changes_required"
+        requirement_check = receipt["coverage"]["requirement_checks"][0]
+        requirement_check.update(
+            {
+                "status": "violated",
+                "finding_ids": ["FIND-001"],
+                "summary": "当前验证不足以证明要求。",
+            }
+        )
+        receipt["open_counts"] = {
+            "blocking": 0,
+            "major": 1,
+            "minor": 0,
+            "advisory": 0,
+            "total": 1,
+        }
+        write_json(path, receipt)
+        self.assertIn("TASK_ARTIFACT_REVIEW_NOT_PASSED", self.error_codes(task_dir))
+
+    def test_stale_plan_review_receipt_is_rejected(self) -> None:
+        task_dir = self.make_task()
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8") + "\nAdditional approved intent.\n",
+            encoding="utf-8",
+        )
+        issues = validate_task(task_dir, "approval")
+        invalid = [issue for issue in issues if issue.code == "TASK_ARTIFACT_REVIEW_INVALID"]
+        self.assertTrue(invalid)
+        self.assertIn("REVIEW_TARGET_STALE", invalid[0].message)
+
+    def test_next_review_attempt_supersedes_immediate_predecessor(self) -> None:
+        task_dir = self.make_task()
+        contract_path = task_dir / "plan-contract.json"
+        contract = json.loads(contract_path.read_text(encoding="utf-8"))
+        contract["artifacts"][0]["path"] = (
+            "artifacts/reviews/plan-review-attempt-2.json"
+        )
+        write_json(contract_path, contract)
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8").replace(
+                "plan-review-attempt-1.json",
+                "plan-review-attempt-2.json",
+            ),
+            encoding="utf-8",
+        )
+        self.write_current_review(
+            task_dir,
+            review_id="REV-PLAN-002",
+            supersedes_review_id="REV-PLAN-001",
+        )
+        self.assertEqual(set(), self.error_codes(task_dir))
 
     def test_unknown_field_is_rejected(self) -> None:
         contract = valid_contract()

@@ -1,0 +1,244 @@
+{
+  "schema_version": 1,
+  "suite": "complex-coding-reviewer-semantic-corpus",
+  "required_tags": [
+    "missing",
+    "extra",
+    "misunderstood",
+    "risk-trigger",
+    "stale-context",
+    "lineage"
+  ],
+  "cases": [
+    {
+      "id": "plan-clean",
+      "profile": "plan-review",
+      "category": "clean",
+      "target_path": "plan-clean.md",
+      "tags": ["spec-compliance"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["PLAN-CLEAN-FABRICATED"],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "plan-wording-near-miss",
+      "profile": "plan-review",
+      "category": "near-miss",
+      "target_path": "plan-wording-near-miss.md",
+      "tags": ["preference-control"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["PLAN-PREFERENCE-AS-MAJOR"],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "plan-missing-validation",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-missing-validation.md",
+      "tags": ["missing"],
+      "expected_findings": [
+        {
+          "id": "PLAN-VAL-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "plan-extra-scope",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-extra-scope.md",
+      "tags": ["extra"],
+      "expected_findings": [
+        {
+          "id": "PLAN-SCOPE-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "plan-misunderstood-rollback",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-misunderstood-rollback.md",
+      "tags": ["misunderstood"],
+      "expected_findings": [
+        {
+          "id": "PLAN-ROLLBACK-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "plan-risk-privacy-gap",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-risk-privacy-gap.md",
+      "tags": ["risk-trigger"],
+      "expected_findings": [
+        {
+          "id": "PLAN-PRIVACY-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": ["PLAN-ALL-RISKS-REQUIRED"],
+      "expected_gap_ids": ["PLAN-GAP-LOGGER-EVIDENCE"]
+    },
+    {
+      "id": "plan-stale-context",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-stale-context.md",
+      "tags": ["stale-context"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["PLAN-OLD-API-AS-FACT"],
+      "expected_gap_ids": ["PLAN-GAP-STALE-CONTEXT"]
+    },
+    {
+      "id": "plan-lineage-omission",
+      "profile": "plan-review",
+      "category": "known-defect",
+      "target_path": "plan-lineage-omission.md",
+      "tags": ["lineage"],
+      "expected_findings": [
+        {
+          "id": "PLAN-LINEAGE-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-clean",
+      "profile": "code-review",
+      "category": "clean",
+      "target_path": "code-clean.md",
+      "tags": ["spec-compliance"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["CODE-CLEAN-FABRICATED"],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-style-near-miss",
+      "profile": "code-review",
+      "category": "near-miss",
+      "target_path": "code-style-near-miss.md",
+      "tags": ["preference-control"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["STYLE-REWRITE-AS-MAJOR"],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-missing-requirement",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-missing-requirement.md",
+      "tags": ["missing"],
+      "expected_findings": [
+        {
+          "id": "CODE-REQ-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-extra-behavior",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-extra-behavior.md",
+      "tags": ["extra"],
+      "expected_findings": [
+        {
+          "id": "CODE-EXTRA-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-misunderstood-ordering",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-misunderstood-ordering.md",
+      "tags": ["misunderstood"],
+      "expected_findings": [
+        {
+          "id": "CODE-ORDER-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-risk-path-traversal",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-risk-path-traversal.md",
+      "tags": ["risk-trigger"],
+      "expected_findings": [
+        {
+          "id": "CODE-PATH-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": ["CODE-ALL-RISKS-REQUIRED"],
+      "expected_gap_ids": []
+    },
+    {
+      "id": "code-stale-context",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-stale-context.md",
+      "tags": ["stale-context"],
+      "expected_findings": [],
+      "forbidden_finding_ids": ["CODE-OLD-API-AS-FACT"],
+      "expected_gap_ids": ["CODE-GAP-STALE-CONTEXT"]
+    },
+    {
+      "id": "code-lineage-omission",
+      "profile": "code-review",
+      "category": "known-defect",
+      "target_path": "code-lineage-omission.md",
+      "tags": ["lineage"],
+      "expected_findings": [
+        {
+          "id": "CODE-LINEAGE-01",
+          "severity": "major",
+          "locator_required": true,
+          "evidence_required": true
+        }
+      ],
+      "forbidden_finding_ids": [],
+      "expected_gap_ids": []
+    }
+  ]
+}

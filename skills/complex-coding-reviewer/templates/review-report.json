@@ -1,0 +1,113 @@
+{
+  "review_id": "REV-REPLACE-ME",
+  "profile": "plan-review",
+  "scope": {
+    "kind": "managed-plan",
+    "task_id": "REPLACE-ME",
+    "plan_revision": 1
+  },
+  "target": {
+    "kind": "plan-bundle",
+    "identity": {
+      "task_id": "REPLACE-ME",
+      "plan_revision": 1
+    },
+    "digest_algorithm": "sha256",
+    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "manifest": []
+  },
+  "context": {
+    "kind": "review-context",
+    "identity": {
+      "root": "task-dir",
+      "label": "REPLACE-ME"
+    },
+    "digest_algorithm": "sha256",
+    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "manifest": []
+  },
+  "reviewer": {
+    "mode": "same-context",
+    "identity": "REPLACE-ME",
+    "independence_claim": false,
+    "capability_limits": []
+  },
+  "standards": [],
+  "coverage": {
+    "target_paths": [],
+    "requirement_checks": [],
+    "risk_checks": [],
+    "context_expansions": []
+  },
+  "lenses": [
+    {
+      "id": "PLAN-INTENT",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-TRACEABILITY",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-EVIDENCE",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-OPTIONS",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-ARCHITECTURE",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-EXECUTION",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-VALIDATION",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-GOVERNANCE",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    },
+    {
+      "id": "PLAN-SIMPLICITY",
+      "status": "reviewed",
+      "evidence_refs": ["REPLACE-ME"],
+      "summary": "REPLACE-ME"
+    }
+  ],
+  "strengths": [],
+  "findings": [],
+  "verification_gaps": [],
+  "verdict": "passed",
+  "open_counts": {
+    "blocking": 0,
+    "major": 0,
+    "minor": 0,
+    "advisory": 0,
+    "total": 0
+  },
+  "summary": "REPLACE-ME",
+  "limitations": [],
+  "supersedes_review_id": null,
+  "reviewed_at": "1970-01-01T00:00:00+00:00"
+}

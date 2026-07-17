@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from harness_plan_check import validate_task  # noqa: E402
-from test_harness_plan_check import valid_contract, valid_plan  # noqa: E402
+from test_harness_plan_check import (  # noqa: E402
+    build_plan_bundle_target,
+    valid_contract,
+    valid_plan,
+    valid_review_receipt,
+    write_json,
+)
 
 
 TODAY = "2026-07-15"
@@ -87,15 +94,15 @@ def dependency_bundle(
     selection_class: str = "ecosystem-mainstream",
 ) -> tuple[dict[str, object], str, dict[str, object]]:
     contract = valid_contract()
-    contract["artifacts"] = [
+    contract["artifacts"].append(
         {
-            "id": "ART-01",
+            "id": "ART-02",
             "kind": "dependency",
             "path": "artifacts/dependencies/dependency-selection.json",
             "required": True,
             "approval_included": True,
         }
-    ]
+    )
     contract["stages"][0]["allowed_changes"] = ["src/", "go.mod", "go.sum"]
     decision = {
         "id": "DEP-01",
@@ -111,14 +118,14 @@ def dependency_bundle(
         "version_policy": "pin exact v1.2.3",
         "manifest_paths": ["go.mod", "go.sum"],
         "freshness_max_age_days": 60,
-        "evidence_artifact_id": "ART-01",
+        "evidence_artifact_id": "ART-02",
         "validation_ids": ["VAL-01"],
     }
     contract["dependency_selection"] = {
         "mode": mode,
         "necessity_result": necessity,
         "decision_ids": ["DEP-01"],
-        "evidence_artifact_ids": ["ART-01"],
+        "evidence_artifact_ids": ["ART-02"],
         "decisions": [decision],
     }
     plan = valid_plan().replace(
@@ -133,10 +140,13 @@ def dependency_bundle(
                 f"- DEP-01 selects {package} v1.2.3 as {selection_class}.",
                 "- Version policy: pin exact v1.2.3.",
                 "- Manifest paths: go.mod and go.sum.",
-                "- Evidence and validation: ART-01 and VAL-01.",
+                "- Evidence and validation: ART-02 and VAL-01.",
             ]
         ),
-    ).replace("## Artifact Index\n\ncomplete", "## Artifact Index\n\nART-01")
+    ).replace(
+        "ART-01 artifacts/reviews/plan-review-attempt-1.json",
+        "ART-01 artifacts/reviews/plan-review-attempt-1.json ART-02",
+    )
     receipt = {
         "observed_at": TODAY,
         "decisions": [
@@ -166,7 +176,7 @@ class DependencyContractTest(unittest.TestCase):
         plan: str,
         receipt: dict[str, object],
     ) -> Path:
-        temporary = tempfile.TemporaryDirectory()
+        temporary = WritableTemporaryDirectory()
         self.addCleanup(temporary.cleanup)
         task_dir = Path(temporary.name)
         (task_dir / "plan-contract.json").write_text(
@@ -179,6 +189,13 @@ class DependencyContractTest(unittest.TestCase):
         artifact.write_text(
             json.dumps(receipt, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
+        )
+        review_path = (
+            task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        )
+        write_json(
+            review_path,
+            valid_review_receipt(task_dir),
         )
         return task_dir
 

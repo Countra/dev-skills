@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
 from unittest import mock
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -20,6 +21,7 @@ from harness_amendment import (  # noqa: E402
     validate_archive,
 )
 from harness_attest_plan import (  # noqa: E402
+    activate_mode,
     ensure_attestation_write_allowed,
     write_mode,
 )
@@ -59,9 +61,42 @@ def contract(revision: int, include_second_stage: bool = False) -> dict[str, obj
     }
 
 
+def stage_review_payload() -> dict[str, object]:
+    return {
+        "result": "passed",
+        "review_id": "REV-CODE-AMENDMENT-001",
+        "profile": "code-review",
+        "scope": {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+        "target_digest": "a" * 64,
+        "context_digest": "b" * 64,
+        "verdict": "passed",
+        "report_ref": "artifacts/reviews/stage-01.json",
+        "open_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "advisory": 0,
+            "total": 0,
+        },
+        "gap_counts": {"blocking": 0, "major": 0, "minor": 0, "total": 0},
+        "coverage_summary": {
+            "target_paths": 1,
+            "requirements": 1,
+            "risks": 6,
+            "context_expansions": 0,
+        },
+        "lineage_summary": {
+            "predecessor_review_id": None,
+            "accounted_finding_count": 0,
+        },
+        "strength_count": 0,
+        "summary": "review passed",
+    }
+
+
 class AmendmentTest(unittest.TestCase):
     def make_bundle(self):
-        temp = tempfile.TemporaryDirectory()
+        temp = WritableTemporaryDirectory()
         self.addCleanup(temp.cleanup)
         workspace = Path(temp.name)
         task_dir = workspace / ".harness" / "tasks" / "task"
@@ -85,6 +120,14 @@ class AmendmentTest(unittest.TestCase):
         write_attestation(bundle.attestation_path, payload)
 
     def complete_first_stage(self, bundle) -> None:
+        review = stage_review_payload()
+        report = bundle.task_dir / str(review["report_ref"])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text("{}\n", encoding="utf-8")
+        validation_ref = "artifacts/validation/val-01.txt"
+        validation = bundle.task_dir / validation_ref
+        validation.parent.mkdir(parents=True, exist_ok=True)
+        validation.write_text("validation passed\n", encoding="utf-8")
         events = [
             ("execution_started", {}),
             ("stage_started", {"stage_id": "STG-01", "attempt": 1}),
@@ -92,33 +135,43 @@ class AmendmentTest(unittest.TestCase):
                 "validation_recorded",
                 {
                     "stage_id": "STG-01",
+                    "attempt": 1,
                     "payload": {
                         "validation_id": "VAL-01",
                         "result": "passed",
+                        "command": "python -m unittest",
+                        "claim_source": "observed",
+                        "stage_attempt": 1,
+                        "target_digest": "a" * 64,
+                        "exit_code": 0,
                         "summary": "validation passed",
+                        "claim_boundary": "只证明当前 target 的测试结果。",
                     },
+                    "evidence_refs": [validation_ref],
                 },
             ),
             (
                 "review_recorded",
                 {
                     "stage_id": "STG-01",
-                    "payload": {
-                        "result": "passed",
-                        "summary": "review passed",
-                        "development_quality": "passed",
-                    },
+                    "attempt": 1,
+                    "payload": review,
+                    "evidence_refs": [str(review["report_ref"])],
                 },
             ),
             ("stage_completed", {"stage_id": "STG-01"}),
         ]
-        for index, (event_type, kwargs) in enumerate(events, start=1):
-            append_event_and_update(
-                bundle,
-                event_type,
-                occurred_at=f"2026-07-10T00:00:{index:02d}+00:00",
-                **kwargs,
-            )
+        with mock.patch(
+            "harness_event_writer.validate_review_gate",
+            return_value=review,
+        ):
+            for index, (event_type, kwargs) in enumerate(events, start=1):
+                append_event_and_update(
+                    bundle,
+                    event_type,
+                    occurred_at=f"2026-07-10T00:00:{index:02d}+00:00",
+                    **kwargs,
+                )
 
     def request_amendment(self, bundle) -> None:
         append_event_and_update(
@@ -218,6 +271,54 @@ class AmendmentTest(unittest.TestCase):
             ):
                 write_mode(bundle, args)
         self.assertFalse(bundle.attestation_path.exists())
+
+    def test_approval_checker_failure_does_not_write_attestation(self) -> None:
+        _, _, bundle = self.make_bundle()
+        bundle.attestation_path.unlink()
+        args = Namespace(
+            approved_by="user",
+            approval_summary="approve implementation",
+            commit_authorized=False,
+            external_write_authorized=False,
+            elevated_tool_authorized=False,
+            approved_at="2026-07-10T00:00:00+00:00",
+        )
+        with mock.patch(
+            "harness_attest_plan.run_planner_approval_check",
+            side_effect=RuntimeError("approval failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "approval failed"):
+                write_mode(bundle, args)
+        self.assertFalse(bundle.attestation_path.exists())
+
+    def test_activation_checker_failure_keeps_runtime_unchanged(self) -> None:
+        workspace, task_dir, bundle = self.make_bundle()
+        self.complete_first_stage(bundle)
+        self.request_amendment(bundle)
+        archive_current_revision(bundle)
+        archive_root = revision_archive_dir(bundle, 1)
+        (task_dir / "execution-plan.md").write_text("# revision 2\n", encoding="utf-8")
+        (task_dir / "plan-contract.json").write_text(
+            json.dumps(contract(2, include_second_stage=True), ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        new_bundle = resolve_task_bundle(workspace, ".harness/tasks/task")
+        self.approve(new_bundle, "revision 2")
+        ledger_before = new_bundle.ledger_path.read_bytes()
+        state_before = new_bundle.run_state_path.read_bytes()
+        args = Namespace(
+            archive_dir=str(archive_root),
+            carry_stage=["STG-01"],
+            occurred_at="2026-07-10T00:01:00+00:00",
+        )
+        with mock.patch(
+            "harness_attest_plan.run_planner_approval_check",
+            side_effect=RuntimeError("approval failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "approval failed"):
+                activate_mode(new_bundle, args)
+        self.assertEqual(ledger_before, new_bundle.ledger_path.read_bytes())
+        self.assertEqual(state_before, new_bundle.run_state_path.read_bytes())
 
     def test_changed_stage_semantics_cannot_be_carried(self) -> None:
         workspace, task_dir, bundle = self.make_bundle()

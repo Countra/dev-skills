@@ -5,11 +5,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
+import stat
 import subprocess
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+REVIEWER_SCRIPTS = REPO_ROOT / "skills" / "complex-coding-reviewer" / "scripts"
+sys.path.insert(0, str(REVIEWER_SCRIPTS))
+
+from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
+from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
+from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
+
+
+def remove_eval_tree(path: Path) -> None:
+    if not path.exists():
+        return
+
+    def remove_readonly(function, target, _error):
+        os.chmod(target, stat.S_IWRITE)
+        function(target)
+
+    shutil.rmtree(path, onerror=remove_readonly)
 
 
 PLAN_SECTIONS = [
@@ -33,7 +56,7 @@ PLAN_SECTIONS = [
     "文档",
     "文件写入策略",
     "方案质量门禁",
-    "规划自查",
+    "正式方案审查",
     "就绪门禁",
     "方案批准",
     "方案变更门禁",
@@ -64,37 +87,35 @@ STATIC_GATE_BODIES = {
         "- Evidence: REQ-01, AC-01, STG-01 and VAL-01.\n"
         "- Impact: The approved bundle is deterministic."
     ),
-    "规划自查": (
-        "- Review result: `passed`\n"
-        "- Decision: No contradiction, scope leak or blocker remains.\n"
-        "- Evidence: STG-01 and VAL-01 traceability.\n"
-        "- Impact: Failures remain reviewable and recoverable."
+    "正式方案审查": (
+        "- Profile: `plan-review`\n"
+        "- Scope: `managed-plan`\n"
+        "- Current receipt: `artifacts/reviews/plan-review-attempt-1.json`\n"
+        "- Validator: `complex-coding-reviewer/scripts/review_validate.py`\n"
+        "- Canonical result: JSON receipt only."
     ),
     "就绪门禁": (
-        "- Readiness result: `ready_for_approval`\n"
-        "- Decision: Scope, tools and authorization request are explicit.\n"
+        "- Readiness result: `ready_for_review`\n"
+        "- Decision: Scope, tools and authorization request are stable for review.\n"
         "- Evidence: STG-01, VAL-01 and approval policy.\n"
-        "- Impact: Request approval without implementation."
+        "- Impact: Start formal plan-review without implementation."
     ),
 }
 
 
 def artifact_specs(profile: str) -> list[dict[str, Any]]:
-    if profile == "lite":
-        return []
-    kinds = ["architecture"] if profile == "standard" else [
-        "research",
-        "standards",
-        "architecture",
-        "validation",
-        "review",
-    ]
+    kinds = [] if profile == "lite" else ["architecture"]
+    if profile == "full":
+        kinds = ["research", "standards", "architecture", "validation"]
+    kinds.append("other")
+    kinds.append("review")
     paths = {
         "research": "artifacts/research/findings.md",
         "standards": "artifacts/standards/index.md",
         "architecture": "artifacts/architecture/change-map.md",
         "validation": "artifacts/validation/traceability.md",
-        "review": "artifacts/reviews/plan-critique.md",
+        "other": "artifacts/reviews/plan-review-brief.json",
+        "review": "artifacts/reviews/plan-review-attempt-1.json",
     }
     return [
         {
@@ -256,6 +277,168 @@ def write_json(path: Path, value: dict[str, Any]) -> None:
     )
 
 
+def review_receipt(task_dir: Path) -> dict[str, Any]:
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    target = build_plan_bundle_target(task_dir)
+    identity = target["identity"]
+    brief_path = "artifacts/reviews/plan-review-brief.json"
+    requirement_refs = sorted(
+        [
+            contract["goal"]["id"],
+            *(item["id"] for item in contract["requirements"]),
+            *(item["id"] for item in contract["acceptance_criteria"]),
+            *(item["id"] for item in contract["nonfunctional_requirements"]),
+        ]
+    )
+    constraint_refs = sorted(
+        [
+            *(item["id"] for item in contract["stages"]),
+            *(item["id"] for item in contract["validations"]),
+        ]
+    )
+    context_entries = [(brief_path, "brief")]
+    context_entries.extend(
+        (str(item["path"]), "requirement")
+        for item in target["manifest"]
+        if item["state"] == "present" and item["path"] != brief_path
+    )
+    context = build_context_target(
+        task_dir,
+        root_kind="task-dir",
+        label="rev-plan-001-context",
+        entries=context_entries,
+    )
+    target_paths = [str(item["path"]) for item in target["manifest"]]
+    return {
+        "review_id": "REV-PLAN-001",
+        "profile": "plan-review",
+        "scope": {
+            "kind": "managed-plan",
+            "task_id": identity["task_id"],
+            "plan_revision": identity["plan_revision"],
+        },
+        "target": target,
+        "context": context,
+        "reviewer": {
+            "mode": "same-context",
+            "identity": "planner-deterministic-eval",
+            "independence_claim": False,
+            "capability_limits": ["未运行 Agent 或目标代码。"],
+        },
+        "standards": [
+            {
+                "id": "STD-01",
+                "title": "Repository rules",
+                "source": "AGENTS.md",
+                "applicability": "适用于当前 plan bundle。",
+            }
+        ],
+        "coverage": {
+            "target_paths": [
+                {
+                    "path": path,
+                    "status": "reviewed",
+                    "reason": "fixture 已覆盖完整 plan target。",
+                    "gap_ids": [],
+                }
+                for path in target_paths
+            ],
+            "requirement_checks": [
+                {
+                    "id": requirement_ref,
+                    "status": "satisfied",
+                    "evidence_refs": [brief_path],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "fixture plan bundle 提供了直接证据。",
+                }
+                for requirement_ref in requirement_refs
+            ],
+            "risk_checks": [
+                {
+                    "id": risk_id,
+                    "status": "not-triggered",
+                    "trigger": "fixture 未包含该风险触发面。",
+                    "evidence_refs": [brief_path],
+                    "finding_ids": [],
+                    "gap_ids": [],
+                    "summary": "已检查触发条件，当前不适用。",
+                }
+                for risk_id in RISK_IDS
+            ],
+            "context_expansions": [],
+        },
+        "lenses": [
+            {
+                "id": lens,
+                "status": "reviewed",
+                "evidence_refs": [brief_path],
+                "summary": f"{lens} 已基于 fixture 证据完成审查。",
+            }
+            for lens in PLAN_LENSES
+        ],
+        "strengths": [],
+        "findings": [],
+        "verification_gaps": [],
+        "verdict": "passed",
+        "open_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "advisory": 0,
+            "total": 0,
+        },
+        "summary": "fixture plan bundle 已完成正式方案审查。",
+        "limitations": ["这是确定性契约 fixture，不代表 fresh-context 语义观察。"],
+        "supersedes_review_id": None,
+        "reviewed_at": "2026-07-16T00:00:00+00:00",
+    }
+
+
+def add_open_major(receipt: dict[str, Any]) -> None:
+    receipt["findings"] = [
+        {
+            "id": "FIND-001",
+            "category": "correctness",
+            "origin": {"review_id": None, "finding_id": None},
+            "severity": "major",
+            "status": "open",
+            "title": "验证无法证伪验收",
+            "claim": "当前验证只观察命令退出码。",
+            "impact": "错误行为仍可能通过计划门禁。",
+            "recommendation": "增加面向 AC-01 的结果断言。",
+            "evidence": [
+                {
+                    "path": "execution-plan.md",
+                    "line": 1,
+                    "symbol": None,
+                    "artifact_ref": None,
+                    "standard_ref": None,
+                    "detail": "验证章节缺少行为结果断言。",
+                    "claim_source": "read",
+                }
+            ],
+            "confidence": "high",
+            "disposition_reason": None,
+        }
+    ]
+    receipt["verdict"] = "changes_required"
+    receipt["coverage"]["requirement_checks"][0].update(
+        {
+            "status": "violated",
+            "finding_ids": ["FIND-001"],
+            "summary": "当前验证不足以证明要求。",
+        }
+    )
+    receipt["open_counts"] = {
+        "blocking": 0,
+        "major": 1,
+        "minor": 0,
+        "advisory": 0,
+        "total": 1,
+    }
+
+
 def write_artifacts(
     task_dir: Path,
     contract: dict[str, Any],
@@ -263,8 +446,41 @@ def write_artifacts(
     include_online_source: bool,
 ) -> None:
     for artifact in contract["artifacts"]:
+        if artifact["kind"] == "review":
+            continue
         path = task_dir / artifact["path"]
         path.parent.mkdir(parents=True, exist_ok=True)
+        if artifact["path"] == "artifacts/reviews/plan-review-brief.json":
+            write_json(
+                path,
+                {
+                    "profile": "plan-review",
+                    "scope": {
+                        "kind": "managed-plan",
+                        "task_id": contract["task_id"],
+                        "plan_revision": contract["plan_revision"],
+                    },
+                    "summary": "验证当前 fixture plan bundle。",
+                    "requirement_refs": sorted(
+                        [
+                            contract["goal"]["id"],
+                            *(item["id"] for item in contract["requirements"]),
+                            *(item["id"] for item in contract["acceptance_criteria"]),
+                            *(item["id"] for item in contract["nonfunctional_requirements"]),
+                        ]
+                    ),
+                    "constraint_refs": sorted(
+                        [
+                            *(item["id"] for item in contract["stages"]),
+                            *(item["id"] for item in contract["validations"]),
+                        ]
+                    ),
+                    "claim_refs": [],
+                    "requested_risk_focus": [],
+                    "created_at": "2026-07-16T00:00:00+00:00",
+                },
+            )
+            continue
         body = (
             f"# {artifact['kind'].title()} Evidence\n\n"
             f"Artifact ID: {artifact['id']}\n\n"
@@ -278,9 +494,37 @@ def write_artifacts(
                 f"Artifact receipt: {artifact['id']} artifacts/research/findings.md\n"
                 "Applicability and impact: applies to the planned API boundary.\n"
             )
-        if artifact["kind"] == "review":
-            body += "\nOpen blocking findings: none\nReady for approval: yes\n"
         path.write_text(body, encoding="utf-8")
+
+
+def write_current_review(
+    task_dir: Path,
+    contract: dict[str, Any],
+    mutation: str,
+) -> None:
+    if mutation in {"missing-contract", "review-receipt-missing"}:
+        return
+    review = next(item for item in contract["artifacts"] if item["kind"] == "review")
+    path = task_dir / review["path"]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if mutation == "legacy-review-text":
+        path.write_text(
+            "# Legacy review text\n\nThis is not a JSON receipt.\n",
+            encoding="utf-8",
+        )
+        return
+    receipt = review_receipt(task_dir)
+    if mutation == "review-wrong-profile":
+        receipt["profile"] = "code-review"
+    elif mutation == "review-open-major":
+        add_open_major(receipt)
+    write_json(path, receipt)
+    if mutation == "review-stale-target":
+        plan_path = task_dir / "execution-plan.md"
+        plan_path.write_text(
+            plan_path.read_text(encoding="utf-8") + "\nChanged after review.\n",
+            encoding="utf-8",
+        )
 
 
 def apply_mutation(
@@ -306,14 +550,6 @@ def apply_mutation(
     elif mutation == "open-decision":
         (task_dir / "pending-decisions.md").write_text(
             "# Pending Decisions\n\n状态: open\n",
-            encoding="utf-8",
-        )
-    elif mutation == "review-gate-incomplete":
-        review = next(
-            item for item in contract["artifacts"] if item["kind"] == "review"
-        )
-        (task_dir / review["path"]).write_text(
-            "# Plan Critique\n\nOpen blocking findings: pending\n",
             encoding="utf-8",
         )
     elif mutation == "empty-semantic-gate":
@@ -346,7 +582,14 @@ def apply_mutation(
             ),
             encoding="utf-8",
         )
-    elif mutation != "online-source-missing":
+    elif mutation not in {
+        "online-source-missing",
+        "review-receipt-missing",
+        "review-wrong-profile",
+        "review-open-major",
+        "review-stale-target",
+        "legacy-review-text",
+    }:
         raise ValueError(f"未知 mutation：{mutation}")
     if mutation in {"broken-reference", "cyclic-stage"}:
         write_json(task_dir / "plan-contract.json", contract)
@@ -367,6 +610,7 @@ def build_case(task_root: Path, case: dict[str, Any]) -> Path:
         include_online_source=case["mutation"] != "online-source-missing",
     )
     apply_mutation(task_dir, contract, case["mutation"])
+    write_current_review(task_dir, contract, case["mutation"])
     return task_dir
 
 
@@ -437,7 +681,9 @@ def evaluate_case(
         "actual_codes": codes,
         "checker_exit_code": returncode,
         "plan_lines": plan_lines,
-        "artifact_count": len(list((task_dir / "artifacts").rglob("*.md")))
+        "artifact_count": sum(
+            path.is_file() for path in (task_dir / "artifacts").rglob("*")
+        )
         if (task_dir / "artifacts").exists()
         else 0,
         "passed": validity_matches and exit_matches and code_matches,
@@ -494,14 +740,21 @@ def main() -> int:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    if args.work_dir:
-        args.work_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=args.work_dir) as temporary:
-        task_root = Path(temporary)
+    work_dir = (
+        args.work_dir
+        if args.work_dir is not None
+        else args.repo_root / ".harness" / "test-tmp" / "planner-evals"
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
+    task_root = work_dir.resolve() / f"run-{uuid.uuid4().hex}"
+    task_root.mkdir()
+    try:
         results = [
             evaluate_case(args.repo_root.resolve(), task_root, suite, case)
             for suite, case in load_cases(args.manifest.resolve())
         ]
+    finally:
+        remove_eval_tree(task_root)
     report = build_report(results)
     rendered = json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True)
     print(rendered)

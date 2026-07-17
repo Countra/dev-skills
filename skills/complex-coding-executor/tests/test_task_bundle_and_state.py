@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
+
+from helpers import WritableTemporaryDirectory
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -36,9 +37,66 @@ def contract() -> dict[str, object]:
     }
 
 
+def review_payload(
+    scope: dict[str, object],
+    *,
+    verdict: str = "passed",
+) -> dict[str, object]:
+    counts = {
+        "blocking": 0,
+        "major": 0 if verdict == "passed" else 1,
+        "minor": 0,
+        "advisory": 0,
+        "total": 0 if verdict == "passed" else 1,
+    }
+    return {
+        "result": "passed" if verdict == "passed" else "failed",
+        "review_id": "REV-CODE-001",
+        "profile": "code-review",
+        "scope": scope,
+        "target_digest": "a" * 64,
+        "context_digest": "b" * 64,
+        "verdict": verdict,
+        "report_ref": "artifacts/reviews/review-001.json",
+        "open_counts": counts,
+        "gap_counts": {
+            "blocking": 0,
+            "major": 0,
+            "minor": 0,
+            "total": 0,
+        },
+        "coverage_summary": {
+            "target_paths": 1,
+            "requirements": 1,
+            "risks": 6,
+            "context_expansions": 0,
+        },
+        "lineage_summary": {
+            "predecessor_review_id": None,
+            "accounted_finding_count": 0,
+        },
+        "strength_count": 0,
+        "summary": "review contract validated",
+    }
+
+
+def validation_payload(*, result: str = "passed") -> dict[str, object]:
+    return {
+        "validation_id": "VAL-01",
+        "result": result,
+        "command": "python -m unittest",
+        "claim_source": "observed",
+        "stage_attempt": 1,
+        "target_digest": "a" * 64,
+        "exit_code": 0 if result == "passed" else 1,
+        "summary": "unit test passed" if result == "passed" else "regression",
+        "claim_boundary": "只证明当前 target 上的单元测试命令结果。",
+    }
+
+
 class TaskBundleTest(unittest.TestCase):
     def make_workspace(self, pointer_extra: dict[str, object] | None = None) -> tuple[Path, Path]:
-        temp = tempfile.TemporaryDirectory()
+        temp = WritableTemporaryDirectory()
         self.addCleanup(temp.cleanup)
         workspace = Path(temp.name)
         task_dir = workspace / ".harness" / "tasks" / "task"
@@ -131,35 +189,37 @@ class StateReducerTest(unittest.TestCase):
                 3,
                 "validation_recorded",
                 stage_id="STG-01",
-                payload={
-                    "validation_id": "VAL-01",
-                    "result": "passed",
-                    "summary": "unit test passed",
-                },
+                attempt=1,
+                payload=validation_payload(),
             ),
             self.event(
                 4,
                 "review_recorded",
                 stage_id="STG-01",
-                payload={
-                    "result": "passed",
-                    "summary": "review passed",
-                    "development_quality": "passed",
-                },
+                attempt=1,
+                payload=review_payload(
+                    {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1}
+                ),
             ),
             self.event(5, "stage_completed", stage_id="STG-01"),
-            self.event(6, "completed"),
+            self.event(
+                6,
+                "review_recorded",
+                payload=review_payload({"kind": "final-integration"}),
+            ),
+            self.event(7, "completed"),
         ]
 
     def test_replay_reaches_completed(self) -> None:
         result = replay_events(contract(), self.completed_events())
         self.assertEqual("completed", result.state["lifecycle"])
         self.assertEqual(["STG-01"], result.state["completed_stage_ids"])
-        self.assertEqual(6, result.state["last_event_seq"])
+        self.assertEqual(7, result.state["last_event_seq"])
+        self.assertEqual("REV-CODE-001", result.final_review["review_id"])
 
     def test_terminal_state_rejects_later_events(self) -> None:
         events = self.completed_events()
-        events.append(self.event(7, "heartbeat"))
+        events.append(self.event(8, "heartbeat"))
         with self.assertRaisesRegex(StateError, "RUN_STATE_TERMINAL"):
             replay_events(contract(), events)
 
@@ -189,11 +249,8 @@ class StateReducerTest(unittest.TestCase):
                     5,
                     "validation_recorded",
                     stage_id="STG-01",
-                    payload={
-                        "validation_id": "VAL-01",
-                        "result": "failed",
-                        "reason": "regression",
-                    },
+                    attempt=1,
+                    payload=validation_payload(result="failed"),
                 ),
                 self.event(6, "stage_completed", stage_id="STG-01"),
             ]
@@ -209,7 +266,15 @@ class StateReducerTest(unittest.TestCase):
                     5,
                     "review_recorded",
                     stage_id="STG-01",
-                    payload={"result": "failed", "finding": "blocking issue"},
+                    attempt=1,
+                    payload=review_payload(
+                        {
+                            "kind": "stage-delta",
+                            "stage_id": "STG-01",
+                            "attempt": 1,
+                        },
+                        verdict="changes_required",
+                    ),
                 ),
                 self.event(6, "stage_completed", stage_id="STG-01"),
             ]
@@ -220,17 +285,64 @@ class StateReducerTest(unittest.TestCase):
     def test_passed_validation_requires_summary(self) -> None:
         events = self.completed_events()
         events[2]["payload"].pop("summary")
-        with self.assertRaisesRegex(StateError, "RUN_STATE_EVENT_EVIDENCE_INVALID"):
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_PAYLOAD_INVALID"):
             replay_events(contract(), events)
 
-    def test_passed_review_requires_development_quality(self) -> None:
+    def test_reported_validation_cannot_pass(self) -> None:
         events = self.completed_events()
-        events[3]["payload"].pop("development_quality")
+        events[2]["payload"]["claim_source"] = "reported"
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_PROVENANCE_INVALID"):
+            replay_events(contract(), events)
+
+    def test_stage_completion_rejects_validation_for_another_target(self) -> None:
+        events = self.completed_events()
+        events[2]["payload"]["target_digest"] = "c" * 64
+        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_TARGET_MISMATCH"):
+            replay_events(contract(), events)
+
+    def test_legacy_review_payload_field_is_rejected(self) -> None:
+        events = self.completed_events()
+        events[3]["payload"]["development_quality"] = "passed"
         with self.assertRaisesRegex(
             StateError,
-            "RUN_STATE_DEVELOPMENT_QUALITY_INCOMPLETE",
+            "RUN_STATE_REVIEW_PAYLOAD_INVALID",
         ):
             replay_events(contract(), events)
+
+    def test_stage_review_scope_must_match_current_attempt(self) -> None:
+        events = self.completed_events()
+        events[3]["payload"]["scope"]["attempt"] = 2
+        with self.assertRaisesRegex(StateError, "RUN_STATE_REVIEW_SCOPE_MISMATCH"):
+            replay_events(contract(), events)
+
+    def test_completed_requires_final_integration_review(self) -> None:
+        events = self.completed_events()
+        del events[5]
+        for seq, event in enumerate(events, start=1):
+            event["seq"] = seq
+            event["event_id"] = f"EVT-{seq:06d}"
+        with self.assertRaisesRegex(StateError, "RUN_STATE_FINAL_REVIEW_INCOMPLETE"):
+            replay_events(contract(), events)
+
+    def test_final_commit_invalidates_pre_commit_review(self) -> None:
+        final_contract = contract()
+        final_contract["stages"][0]["commit_expectation"] = "final"
+        events = self.completed_events()[:6]
+        events.extend(
+            [
+                self.event(
+                    7,
+                    "commit_recorded",
+                    payload={
+                        "commit": "a" * 40,
+                        "repository": "unit-test",
+                    },
+                ),
+                self.event(8, "completed"),
+            ]
+        )
+        with self.assertRaisesRegex(StateError, "RUN_STATE_FINAL_REVIEW_INCOMPLETE"):
+            replay_events(final_contract, events)
 
     def test_attempt_failure_requires_reason_impact_and_next_strategy(self) -> None:
         events = [
@@ -260,7 +372,7 @@ class StateReducerTest(unittest.TestCase):
 
     def test_snapshot_atomic_write_and_drift(self) -> None:
         result = replay_events(contract(), self.completed_events())
-        with tempfile.TemporaryDirectory() as temp:
+        with WritableTemporaryDirectory() as temp:
             path = Path(temp) / "run-state.json"
             write_state_atomic(path, result.state)
             snapshot = load_state(path)
@@ -270,7 +382,7 @@ class StateReducerTest(unittest.TestCase):
             self.assertIn("last_event_seq", state_differences(snapshot, result.state))
 
     def test_read_events_rejects_invalid_json(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
+        with WritableTemporaryDirectory() as temp:
             path = Path(temp) / "ledger.jsonl"
             path.write_text("not-json\n", encoding="utf-8")
             with self.assertRaisesRegex(StateError, "LEDGER_INVALID_JSON"):

@@ -102,7 +102,9 @@ def validate_policy_and_profile(
         allow_empty=False,
     )
 
-    required_kinds = {"architecture"} if profile == "standard" else set()
+    required_kinds = {"review"}
+    if profile == "standard":
+        required_kinds.add("architecture")
     if profile == "full":
         required_kinds = {
             "research",
@@ -117,7 +119,7 @@ def validate_policy_and_profile(
             "TASK_CONTRACT_PROFILE_UNDERSCOPED",
             "$.plan_profile",
             "包含 high-risk stage 的 managed task 必须使用 full profile。",
-            "升级为 full 并补齐独立 artifacts 与 critique。",
+            "升级为 full 并补齐独立 artifacts 与 plan-review receipt。",
         )
     for kind in sorted(required_kinds - artifact_kinds):
         add_issue(
