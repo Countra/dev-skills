@@ -1,274 +1,45 @@
-"""manager 只读状态解析与可恢复收敛操作。"""
+"""manager operation 的可恢复收敛状态机。"""
 
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
 from .atomic import InterProcessFileLock
-from .bootstrap import (
-    BootstrapResult,
-    ManagerBootstrap,
-    cleanup_bootstrap_result,
-    manager_command,
-)
-from .client import ManagerClient
+from .bootstrap import ManagerBootstrap
+from .client import ManagerClient, request_manager_shutdown
 from .errors import (
-    EnvironmentUnverifiableError,
-    ManagerStaleError,
+    ConflictError,
+    IdentityError,
     ManagerUnresponsiveError,
     OperationConflictError,
-    OperationTimeoutError,
-    PMError,
     RuntimeCorruptError,
-    RuntimeInsecureError,
-    RuntimePermissionDeniedError,
     RuntimeUninitializedError,
-    SupervisorError,
+)
+from .manager_start import ManagerStartCoordinator
+from .manager_state import (
+    AdapterFactory,
+    BootstrapFactory,
+    ClientFactory,
+    ManagerStateResolver,
+    observed_manager_instance_id, operation_store,
+    require_owned_run_confirmation,
+    state_error,
 )
 from .platforms import select_platform_adapter
 from .platforms.base import PlatformAdapter
-from .runtime import OperationStore, initialize_runtime, read_manager_identity_record, read_token, validate_operation_timeout
+from .run_finalization import RunFinalizationCoordinator
+from .runtime import OperationStore, read_manager_identity_record, validate_operation_timeout
 from .runtime_context import RuntimeContext
+from .runtime_fingerprint import compute_runtime_fingerprint
+from .state import StateStore
 
-
-MANAGER_STATES = frozenset(
-    "ready absent starting stopping stale unresponsive runtime_insecure "
-    "runtime_permission_denied environment_unverifiable corrupt".split()
-)
 DEFAULT_START_TIMEOUT_SECONDS = 12.0
-
-def _empty_evidence() -> dict[str, bool | None]:
-    return {
-        "runtimeReadable": False,
-        "runtimeSecure": None,
-        "identityPresent": False,
-        "identityValid": None,
-        "processAlive": None,
-        "endpointReachable": None,
-        "instanceMatched": None,
-        "bootstrapResidue": False,
-    }
-
-@dataclass(frozen=True)
-class ManagerStateSnapshot:
-    state: str
-    initialized: bool
-    operation: dict[str, Any] | None
-    evidence: dict[str, bool | None]
-    recommended_action: str
-    retry_after_ms: int | None
-    context: RuntimeContext
-    manager_instance_id: str | None = None
-
-    @property
-    def manager_ready(self) -> bool:
-        return self.state == "ready"
-
-    def public_dict(self) -> dict[str, Any]:
-        return {
-            "state": self.state,
-            "managerReady": self.manager_ready,
-            "initialized": self.initialized,
-            "operation": self.operation,
-            "evidence": dict(self.evidence),
-            "recommendedAction": self.recommended_action,
-            "retryAfterMs": self.retry_after_ms,
-            "workspaceDigest": self.context.workspace_digest,
-            "configDigest": self.context.config_digest,
-            "managerInstanceId": self.manager_instance_id,
-        }
-
-
-AdapterFactory = Callable[[Path, Path], PlatformAdapter]
-ClientFactory = Callable[..., ManagerClient]
-BootstrapFactory = Callable[[Any, PlatformAdapter], ManagerBootstrap]
-
-
-def _operation_store(context: RuntimeContext, adapter: PlatformAdapter) -> OperationStore:
-    config = context.config
-    digest = context.config_digest
-    if config is None or digest is None:
-        raise RuntimeUninitializedError("runtime 尚未初始化", recommended_action="init")
-    return OperationStore(
-        config,
-        adapter,
-        workspace_digest=context.workspace_digest,
-        expected_config_digest=digest,
-    )
-
-
-def _runtime_failure_state(
-    exc: BaseException,
-    evidence: dict[str, bool | None],
-    *,
-    default: str,
-) -> str:
-    if isinstance(exc, RuntimeInsecureError):
-        evidence["runtimeSecure"] = False
-        return "runtime_insecure"
-    if isinstance(exc, (PermissionError, RuntimePermissionDeniedError)):
-        evidence["runtimeSecure"] = None
-        return "runtime_permission_denied"
-    if isinstance(exc, (EnvironmentUnverifiableError, SupervisorError, OSError)):
-        evidence["runtimeSecure"] = None
-        return "environment_unverifiable"
-    return default
-
-
-class ManagerStateResolver:
-    def __init__(
-        self,
-        context: RuntimeContext,
-        *,
-        adapter_factory: AdapterFactory = select_platform_adapter,
-        client_factory: ClientFactory = ManagerClient,
-        bootstrap_factory: BootstrapFactory = ManagerBootstrap,
-        probe_timeout: float = 0.5,
-    ) -> None:
-        self.context = context
-        self.adapter_factory = adapter_factory
-        self.client_factory = client_factory
-        self.bootstrap_factory = bootstrap_factory
-        self.probe_timeout = probe_timeout
-
-    def _snapshot(
-        self,
-        state: str,
-        evidence: dict[str, bool | None],
-        *,
-        operation: dict[str, Any] | None = None,
-        store: OperationStore | None = None,
-        instance_id: str | None = None,
-    ) -> ManagerStateSnapshot:
-        if state not in MANAGER_STATES:
-            raise AssertionError(f"未知 manager state: {state}")
-        actions = {
-            "ready": "none",
-            "absent": "ensure" if self.context.initialized else "init",
-            "starting": "wait",
-            "stopping": "wait",
-            "stale": "restart",
-            "unresponsive": "restart",
-            "runtime_insecure": "doctor",
-            "runtime_permission_denied": "doctor",
-            "environment_unverifiable": "doctor",
-            "corrupt": "doctor",
-        }
-        retry_after = 250 if state in {"starting", "stopping"} else None
-        summary = store.public_summary(operation) if store is not None else None
-        return ManagerStateSnapshot(
-            state,
-            self.context.initialized,
-            summary,
-            evidence,
-            actions[state],
-            retry_after,
-            self.context,
-            instance_id,
-        )
-
-    def _inspect_bootstrap_residue(
-        self,
-        config: Any,
-        adapter: PlatformAdapter,
-        evidence: dict[str, bool | None],
-    ) -> str | None:
-        try:
-            evidence["bootstrapResidue"] = self.bootstrap_factory(config, adapter).residue_present()
-        except (OSError, PMError) as exc:
-            return _runtime_failure_state(exc, evidence, default="environment_unverifiable")
-        return None
-
-    def resolve(self, *, reconcile_operation_id: str | None = None) -> ManagerStateSnapshot:
-        evidence = _empty_evidence()
-        if not self.context.initialized:
-            return self._snapshot("absent", evidence)
-        config = self.context.config
-        assert config is not None
-        if config.state_root.is_symlink() or not config.state_root.is_dir():
-            return self._snapshot("corrupt", evidence)
-        try:
-            adapter = self.adapter_factory(config.workspace_root, config.state_root)
-            adapter.verify_file(config.config_path)
-        except (OSError, PMError) as exc:
-            return self._snapshot(_runtime_failure_state(exc, evidence, default="corrupt"), evidence)
-        evidence["runtimeReadable"] = True
-        evidence["runtimeSecure"] = True
-        store = _operation_store(self.context, adapter)
-        try:
-            operation = store.read()
-        except (OSError, PMError) as exc:
-            return self._snapshot(_runtime_failure_state(exc, evidence, default="corrupt"), evidence)
-        pending = operation is not None and operation["state"] == "pending"
-        expired = bool(pending and store.expired(operation))
-        pending_state = "stopping" if pending and operation["kind"] == "stop" else "starting"
-        identity_path = config.paths.manager
-        evidence["identityPresent"] = identity_path.exists()
-        if pending and not expired and operation["operationId"] != reconcile_operation_id:
-            return self._snapshot(pending_state, evidence, operation=operation, store=store)
-        if not identity_path.exists():
-            residue_error = self._inspect_bootstrap_residue(config, adapter, evidence)
-            if residue_error is not None:
-                return self._snapshot(residue_error, evidence, operation=operation, store=store)
-            if pending:
-                return self._snapshot("stale" if expired else pending_state, evidence, operation=operation, store=store)
-            if evidence["bootstrapResidue"]:
-                return self._snapshot("stale", evidence, operation=operation, store=store)
-            return self._snapshot("absent", evidence, operation=operation, store=store)
-        if not config.paths.token.exists():
-            return self._snapshot("corrupt", evidence, operation=operation, store=store)
-        try:
-            read_token(config, adapter)
-            identity = read_manager_identity_record(config, adapter)
-        except (OSError, PMError) as exc:
-            state = _runtime_failure_state(exc, evidence, default="corrupt")
-            return self._snapshot(state, evidence, operation=operation, store=store)
-        evidence["identityValid"] = True
-        instance_id = str(identity["instanceId"])
-        try:
-            process_alive = adapter.identity_matches(identity["identity"])
-        except (OSError, PMError) as exc:
-            return self._snapshot(
-                _runtime_failure_state(exc, evidence, default="environment_unverifiable"),
-                evidence,
-                operation=operation,
-                store=store,
-                instance_id=instance_id,
-            )
-        evidence["processAlive"] = process_alive
-        if not process_alive:
-            residue_error = self._inspect_bootstrap_residue(config, adapter, evidence)
-            if residue_error is not None:
-                return self._snapshot(
-                    residue_error,
-                    evidence,
-                    operation=operation,
-                    store=store,
-                    instance_id=instance_id,
-                )
-            return self._snapshot("stale", evidence, operation=operation, store=store, instance_id=instance_id)
-        try:
-            _, response = self.client_factory(config, adapter, timeout=self.probe_timeout).request("GET", "/health")
-            data = response.get("data")
-            healthy = (
-                response.get("ok") is True
-                and isinstance(data, dict)
-                and data.get("managerReady") is True
-            )
-        except PMError:
-            healthy = False
-        evidence["endpointReachable"] = healthy
-        evidence["instanceMatched"] = healthy
-        if healthy:
-            return self._snapshot("ready", evidence, operation=operation, store=store, instance_id=instance_id)
-        if pending and not expired:
-            return self._snapshot(pending_state, evidence, operation=operation, store=store, instance_id=instance_id)
-        return self._snapshot("unresponsive", evidence, operation=operation, store=store, instance_id=instance_id)
-
-
+STOP_REQUEST_CHECKPOINTS = {"stop": "stop-requested", "restart": "restart-requested"}
+STOP_PHASE_CHECKPOINTS = frozenset("stop-requested restart-requested intake-closed runs-terminating owners-empty manager-stopped bootstrap-cleaned".split())
+RESTART_START_CHECKPOINTS = frozenset("runtime-verified bootstrap-launched identity-published endpoint-ready".split())
 class ManagerConverger:
     def __init__(
         self,
@@ -278,6 +49,7 @@ class ManagerConverger:
         client_factory: ClientFactory = ManagerClient,
         bootstrap_factory: BootstrapFactory = ManagerBootstrap,
         manager_script: Path | None = None,
+        fingerprint_factory: Callable[[], str] = compute_runtime_fingerprint,
         sleeper: Callable[[float], None] = time.sleep,
     ) -> None:
         self.context = context
@@ -285,6 +57,7 @@ class ManagerConverger:
         self.client_factory = client_factory
         self.bootstrap_factory = bootstrap_factory
         self.manager_script = manager_script or Path(__file__).resolve().parents[1] / "manager_server.py"
+        self.fingerprint_factory = fingerprint_factory
         self.sleeper = sleeper
 
     def _resolver(self) -> ManagerStateResolver:
@@ -293,208 +66,430 @@ class ManagerConverger:
             adapter_factory=self.adapter_factory,
             client_factory=self.client_factory,
             bootstrap_factory=self.bootstrap_factory,
+            fingerprint_factory=self.fingerprint_factory,
         )
 
     @staticmethod
-    def _rotate(path: Path, max_bytes: int, backups: int) -> None:
-        if not path.exists() or path.stat().st_size < max_bytes:
-            return
-        if backups > 0:
-            path.with_name(f"{path.name}.{backups}").unlink(missing_ok=True)
-            for index in range(backups - 1, 0, -1):
-                source = path.with_name(f"{path.name}.{index}")
-                if source.exists():
-                    source.replace(path.with_name(f"{path.name}.{index + 1}"))
-            path.replace(path.with_name(f"{path.name}.1"))
-        else:
-            path.unlink()
+    def _remaining(deadline: float) -> float:
+        return max(0.0, deadline - time.monotonic())
 
-    def _state_error(self, state: ManagerStateSnapshot) -> PMError:
-        if state.state == "stale":
-            return ManagerStaleError("manager runtime 已过期", recommended_action="restart")
-        if state.state == "unresponsive":
-            return ManagerUnresponsiveError("manager 进程存活但控制面不可达", recommended_action="restart")
-        if state.state == "runtime_insecure":
-            return RuntimeInsecureError("manager runtime 权限不安全", recommended_action="doctor")
-        if state.state == "runtime_permission_denied":
-            return RuntimePermissionDeniedError("manager runtime 访问被拒绝", recommended_action="doctor")
-        if state.state == "environment_unverifiable":
-            return EnvironmentUnverifiableError("当前环境无法验证 manager runtime", recommended_action="doctor")
-        return RuntimeCorruptError("manager runtime 状态损坏", recommended_action="doctor")
+    def _runtime(self) -> tuple[Any, PlatformAdapter, OperationStore]:
+        config = self.context.config
+        if not self.context.initialized or config is None:
+            raise RuntimeUninitializedError("runtime 尚未初始化", recommended_action="init")
+        adapter = self.adapter_factory(config.workspace_root, config.state_root)
+        return config, adapter, operation_store(self.context, adapter)
 
-    def _wait_for_existing_operation(
+    def _start_coordinator(
         self,
+        config: Any,
+        adapter: PlatformAdapter,
         store: OperationStore,
-        operation: dict[str, Any],
-        *,
-        timeout: float,
-    ) -> tuple[ManagerStateSnapshot, str | None]:
-        deadline = time.monotonic() + timeout
-        operation_id = str(operation["operationId"])
-        last_state = self._resolver().resolve()
-        while True:
-            if operation["kind"] == "ensure":
-                last_state = self._resolver().resolve(reconcile_operation_id=operation_id)
-                if last_state.state == "ready":
-                    store.complete_ensure(operation, last_state.manager_instance_id)
-                    return last_state, operation_id
-            else:
-                last_state = self._resolver().resolve()
-            if last_state.state not in {"starting", "stopping"}:
-                return last_state, None
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise OperationTimeoutError(
-                    "等待既有 manager operation 超时",
-                    diagnostics={
-                        "lastState": last_state.state,
-                        "operation": store.public_summary(operation),
-                    },
-                    recommended_action="status",
-                )
-            self.sleeper(min(0.1, remaining))
+    ) -> ManagerStartCoordinator:
+        return ManagerStartCoordinator(
+            config,
+            adapter,
+            store,
+            bootstrap_factory=self.bootstrap_factory,
+            manager_script=self.manager_script,
+            resolver=self._resolver().resolve,
+            state_error=state_error,
+            fingerprint_factory=self.fingerprint_factory,
+            sleeper=self.sleeper,
+        )
+
+    @staticmethod
+    def _operation_conflict(store: OperationStore, operation: dict[str, Any]) -> OperationConflictError:
+        return OperationConflictError(
+            "存在其它 pending manager operation",
+            diagnostics={"operation": store.public_summary(operation)},
+            recommended_action="status",
+        )
 
     def ensure(self, *, timeout: float = DEFAULT_START_TIMEOUT_SECONDS) -> dict[str, Any]:
         timeout = validate_operation_timeout(timeout)
-        initial = self._resolver().resolve()
-        if initial.state == "ready":
-            return {"state": "ready", "changed": False, "manager": initial.public_dict()}
-        if not self.context.initialized or self.context.config is None:
+        deadline = time.monotonic() + timeout
+        if not self.context.initialized:
             raise RuntimeUninitializedError("runtime 尚未初始化", recommended_action="init")
-        config = self.context.config
-        adapter = self.adapter_factory(config.workspace_root, config.state_root)
+        config, adapter, store = self._runtime()
         adapter.secure_directory(config.paths.control)
-        try:
-            with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
-                adapter.secure_file(config.paths.operation_lock)
-                store = _operation_store(self.context, adapter)
-                current = self._resolver().resolve()
-                if current.state == "ready":
-                    return {"state": "ready", "changed": False, "manager": current.public_dict()}
-                if current.state in {"starting", "stopping"}:
-                    operation = store.read()
-                    if operation is None or operation["state"] != "pending":
-                        raise RuntimeCorruptError(
-                            "过渡状态缺少 pending operation",
-                            recommended_action="doctor",
-                        )
-                    current, operation_id = self._wait_for_existing_operation(
-                        store,
-                        operation,
-                        timeout=timeout,
-                    )
-                    if current.state == "ready":
-                        manager = current.public_dict()
-                        manager["operation"] = store.public_summary(store.read())
-                        return {
-                            "state": "ready",
-                            "changed": False,
-                            "operationId": operation_id,
-                            "manager": manager,
-                        }
+        store.prepare_lock()
+        with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
+            state = StateStore(config, adapter)
+            state.clear_terminal_intake_fence(store)
+            current = self._resolver().resolve()
+            operation = store.read()
+            launch_authorized = False
+            if current.state == "ready":
+                operation_id = None
+                if operation is not None and operation["state"] == "pending":
+                    if operation["kind"] != "ensure":
+                        raise self._operation_conflict(store, operation)
+                    operation = store.complete_ensure(operation, str(current.manager_instance_id))
+                    operation_id = operation["operationId"]
+                return {
+                    "state": "ready",
+                    "changed": False,
+                    "operationId": operation_id,
+                    "manager": current.public_dict(),
+                }
+            if operation is not None and operation["state"] == "pending":
+                if operation["kind"] != "ensure":
+                    raise self._operation_conflict(store, operation)
+                operation, launch_authorized = self._start_coordinator(config, adapter, store).recover(
+                    operation,
+                    timeout=timeout,
+                    deadline=deadline,
+                )
+            else:
                 if current.state != "absent":
-                    raise self._state_error(current)
-                operation_deadline = time.monotonic() + timeout
-                operation = store.create("ensure", timeout=timeout)
+                    raise state_error(current)
+                operation = store.create(
+                    "ensure",
+                    timeout=timeout,
+                    expected_runtime_fingerprint=self.fingerprint_factory(),
+                    expected_work_generation=None,
+                )
                 store.write(operation)
-                launched: BootstrapResult | None = None
-                bootstrap: ManagerBootstrap | None = None
-                try:
-                    initialize_runtime(config, adapter)
-                    operation = store.update(operation, checkpoint="runtime-verified")
-                    stdout_path = config.paths.logs / "manager-stdout.log"
-                    stderr_path = config.paths.logs / "manager-stderr.log"
-                    self._rotate(stdout_path, config.log_max_bytes, config.log_backups)
-                    self._rotate(stderr_path, config.log_max_bytes, config.log_backups)
+                launch_authorized = True
+            operation, current = self._start_coordinator(config, adapter, store).run(
+                operation,
+                deadline=deadline,
+                launch_authorized=launch_authorized,
+            )
+            completed = store.complete_ensure(operation, str(current.manager_instance_id))
+            manager = current.public_dict()
+            manager["operation"] = store.public_summary(completed)
+            return {
+                **completed["outcome"],
+                "operationId": completed["operationId"],
+                "manager": manager,
+            }
 
-                    def command_factory(backend: str, reason: str) -> list[str]:
-                        return manager_command(self.manager_script, config.config_path, backend, reason)
-
-                    bootstrap = self.bootstrap_factory(config, adapter)
-                    with stdout_path.open("ab") as stdout, stderr_path.open("ab") as stderr:
-                        launched = bootstrap.start(
-                            command_factory,
-                            stdout_path=stdout_path,
-                            stderr_path=stderr_path,
-                            stdout=stdout,
-                            stderr=stderr,
+    def _destructive_operation(
+        self,
+        kind: str,
+        store: OperationStore,
+        state: StateStore,
+        *,
+        timeout: float,
+        confirmed: bool, expected_instance_id: str | None = None,
+    ) -> tuple[dict[str, Any], list[str]]:
+        request_checkpoint = STOP_REQUEST_CHECKPOINTS[kind]
+        with state.transaction():
+            operation = store.read()
+            if operation is not None and operation["state"] == "pending":
+                if operation["kind"] != kind:
+                    raise self._operation_conflict(store, operation)
+                if operation["checkpoint"] != request_checkpoint:
+                    summary = state.work_summary()
+                    fence = summary["intakeFence"]
+                    if (
+                        operation["checkpoint"] == "bootstrap-cleaned"
+                        and fence is None
+                        and not summary["activeRunKeys"]
+                    ):
+                        return operation, []
+                    if not isinstance(fence, dict) or fence.get("operationId") != operation["operationId"]:
+                        raise RuntimeCorruptError("pending destructive operation 缺少匹配 intake fence")
+                    if store.expired(operation):
+                        operation = store.update(
+                            operation,
+                            deadlineAt=(datetime.now(timezone.utc) + timedelta(seconds=timeout)).isoformat(),
                         )
-                    adapter.secure_file(stdout_path)
-                    adapter.secure_file(stderr_path)
-                    operation = store.update(operation, checkpoint="bootstrap-launched")
-                    identity_seen = False
-                    last_state = current
-                    while time.monotonic() < operation_deadline:
-                        if launched.process is not None and launched.process.poll() is not None:
-                            raise ManagerUnresponsiveError(
-                                "manager bootstrap 提前退出",
-                                recommended_action="doctor",
-                            )
-                        last_state = self._resolver().resolve(
-                            reconcile_operation_id=str(operation["operationId"])
-                        )
-                        if last_state.manager_instance_id and not identity_seen:
-                            identity_seen = True
-                            operation = store.update(
-                                operation,
-                                checkpoint="identity-published",
-                                expectedInstanceId=last_state.manager_instance_id,
-                            )
-                        if last_state.state == "ready":
-                            completed = store.complete_ensure(
-                                operation,
-                                last_state.manager_instance_id,
-                            )
-                            manager = last_state.public_dict()
-                            manager["operation"] = store.public_summary(completed)
-                            return {
-                                **completed["outcome"],
-                                "operationId": operation["operationId"],
-                                "manager": manager,
-                            }
-                        if last_state.state not in {"starting"}:
-                            raise self._state_error(last_state)
-                        self.sleeper(min(0.1, max(0.0, operation_deadline - time.monotonic())))
-                    raise OperationTimeoutError(
-                        "manager bootstrap 未在期限内就绪",
-                        diagnostics={"lastState": last_state.state},
+                    return operation, list(summary["activeRunKeys"])
+            summary = state.work_summary()
+            affected = require_owned_run_confirmation(kind, state, confirmed=confirmed)
+            generation = int(summary["workGeneration"])
+            if operation is not None and operation["state"] == "pending":
+                if operation["expectedWorkGeneration"] != generation:
+                    store.update(
+                        operation,
+                        state="failed",
+                        error={"code": "precondition_changed", "message": "work generation 已变化"},
+                    )
+                    raise OperationConflictError(
+                        "destructive operation 前置状态已变化",
+                        diagnostics={
+                            "expectedWorkGeneration": operation["expectedWorkGeneration"],
+                            "actualWorkGeneration": generation,
+                        },
                         recommended_action="status",
                     )
-                except BaseException as exc:
-                    cleanup_verified = (
-                        launched is None
-                        or bootstrap is not None
-                        and cleanup_bootstrap_result(bootstrap, launched)
+                if store.expired(operation):
+                    operation = store.update(
+                        operation,
+                        deadlineAt=(datetime.now(timezone.utc) + timedelta(seconds=timeout)).isoformat(),
                     )
-                    error = (
-                        {"code": exc.code, "message": exc.message}
-                        if isinstance(exc, PMError)
-                        else {"code": "internal_error", "message": type(exc).__name__}
-                    )
-                    error["cleanupVerified"] = cleanup_verified
-                    try:
-                        store.update(operation, state="failed", error=error)
-                    except (OSError, PMError) as receipt_error:
-                        if hasattr(exc, "add_note"):
-                            exc.add_note(f"failed receipt 写入失败: {type(receipt_error).__name__}")
-                    if not isinstance(exc, Exception):
-                        raise
-                    if not cleanup_verified:
-                        raise ManagerUnresponsiveError(
-                            "manager bootstrap 失败且清理未验证",
-                            diagnostics={"causeCode": error["code"]},
-                            recommended_action="doctor",
-                        ) from exc
-                    if isinstance(exc, PMError):
-                        raise
-                    raise ManagerUnresponsiveError(
-                        "manager bootstrap 失败",
-                        recommended_action="doctor",
-                    ) from exc
-        except OperationConflictError as exc:
+            else:
+                operation = {**store.create(
+                    kind,
+                    timeout=timeout,
+                    expected_runtime_fingerprint=self.fingerprint_factory() if kind == "restart" else None,
+                    expected_work_generation=generation,
+                ), "expectedInstanceId": expected_instance_id}
+                store.write(operation)
+            try:
+                state.install_intake_fence(
+                    operation_id=str(operation["operationId"]),
+                    kind=kind,
+                    expected_generation=generation,
+                )
+            except ConflictError as exc:
+                store.update(
+                    operation,
+                    state="failed",
+                    error={"code": "precondition_changed", "message": "work generation 已变化"},
+                )
+                raise OperationConflictError(
+                    "destructive operation 前置状态已变化",
+                    diagnostics=exc.diagnostics,
+                    recommended_action="status",
+                ) from exc
+            return store.update(operation, checkpoint="intake-closed"), affected
+
+    def _stop_exact_manager(
+        self,
+        operation: dict[str, Any],
+        store: OperationStore,
+        config: Any,
+        adapter: PlatformAdapter,
+        deadline: float,
+    ) -> dict[str, Any]:
+        manager_path = adapter.validate_runtime_path(config.paths.manager)
+        if not manager_path.exists():
+            return operation
+        identity = read_manager_identity_record(config, adapter)
+        expected_instance = operation.get("expectedInstanceId")
+        if expected_instance is not None and identity["instanceId"] != expected_instance:
+            raise IdentityError("manager identity 在 operation 内发生变化")
+        if expected_instance is None:
+            operation = store.update(operation, expectedInstanceId=identity["instanceId"])
+        current = self._resolver().resolve(reconcile_operation_id=str(operation["operationId"]))
+        exact_state = current.state
+        if current.state == "stopping":
+            if (
+                current.evidence["processAlive"] is True
+                and current.evidence["endpointReachable"] is True
+                and current.evidence["instanceMatched"] is True
+                and current.evidence["runtimeContractMatched"] is True
+            ):
+                exact_state = "ready"
+            elif (
+                current.evidence["processAlive"] is True
+                and current.evidence["endpointReachable"] is False
+            ):
+                exact_state = "unresponsive"
+        if exact_state not in {"ready", "stale", "unresponsive"}:
+            raise state_error(current)
+        request_shutdown = None
+        if exact_state == "ready":
+            remaining = self._remaining(deadline)
+            if remaining <= 0:
+                raise ManagerUnresponsiveError("manager stop deadline 已耗尽")
+            request_shutdown = lambda: request_manager_shutdown(
+                self.client_factory(config, adapter, timeout=remaining), str(operation["operationId"]), remaining)
+        self.bootstrap_factory(config, adapter).stop_manager(
+            identity,
+            request_shutdown=request_shutdown,
+            allow_terminate=exact_state in {"stale", "unresponsive"},
+            timeout=self._remaining(deadline),
+        )
+        return operation
+
+    def _stop_phase(
+        self,
+        kind: str,
+        operation: dict[str, Any],
+        store: OperationStore,
+        state: StateStore,
+        config: Any,
+        adapter: PlatformAdapter,
+        *,
+        deadline: float,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        checkpoint = str(operation["checkpoint"])
+        if checkpoint not in STOP_PHASE_CHECKPOINTS:
+            raise RuntimeCorruptError("manager stop phase checkpoint 无效")
+        if checkpoint == "intake-closed":
+            operation = store.update(operation, checkpoint="runs-terminating")
+            checkpoint = "runs-terminating"
+        if checkpoint == "runs-terminating":
+            operation = self._stop_exact_manager(operation, store, config, adapter, deadline)
+            reconciliation = RunFinalizationCoordinator(
+                state,
+                adapter,
+                f"control-{operation['operationId']}",
+            ).reconcile_manager_loss(termination_operation_id=str(operation["operationId"]), deadline=deadline)
+            if reconciliation["pending"]:
+                raise ManagerUnresponsiveError(
+                    "manager owned run 清理尚未完成",
+                    diagnostics={"pendingRunKeys": reconciliation["pending"]},
+                    recommended_action="status",
+                )
+            operation = store.update(operation, checkpoint="owners-empty")
+            checkpoint = "owners-empty"
+        if checkpoint == "owners-empty":
+            if adapter.validate_runtime_path(config.paths.manager).exists():
+                raise ManagerUnresponsiveError("manager identity 仍存在", recommended_action="doctor")
+            operation = store.update(operation, checkpoint="manager-stopped")
+            checkpoint = "manager-stopped"
+        if checkpoint == "manager-stopped":
+            if not self.bootstrap_factory(config, adapter).cleanup_residue():
+                raise ManagerUnresponsiveError("manager bootstrap residue 清理未验证", recommended_action="doctor")
+            operation = store.update(operation, checkpoint="bootstrap-cleaned")
+            checkpoint = "bootstrap-cleaned"
+        if checkpoint != "bootstrap-cleaned":
+            raise RuntimeCorruptError("manager stop phase 未收敛")
+        operation_id = str(operation["operationId"])
+        return operation, {
+            "oldManagerInstanceId": operation.get("expectedInstanceId"),
+            "stoppedRunKeys": state.stopped_run_keys(operation_id),
+            "cleanup": {
+                "ownersEmpty": True,
+                "managerStopped": True,
+                "bootstrapCleaned": True,
+            },
+        }
+
+    def stop(
+        self,
+        *,
+        timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
+        confirm_stop_owned_runs: bool = False,
+    ) -> dict[str, Any]:
+        timeout = validate_operation_timeout(timeout)
+        if not self.context.initialized:
+            return {
+                "state": "absent",
+                "changed": False,
+                "oldManagerInstanceId": None,
+                "stoppedRunKeys": [],
+                "cleanup": {"ownersEmpty": True, "managerStopped": True, "bootstrapCleaned": True},
+            }
+        deadline = time.monotonic() + timeout
+        config, adapter, store = self._runtime()
+        adapter.secure_directory(config.paths.control)
+        store.prepare_lock()
+        with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
+            state = StateStore(config, adapter)
+            state.clear_terminal_intake_fence(store)
             current = self._resolver().resolve()
-            raise OperationConflictError(
-                exc.message,
-                diagnostics={"manager": current.public_dict()},
-                recommended_action="status",
-            ) from exc
+            existing = store.read()
+            affected = state.work_summary()["activeRunKeys"]
+            if current.state == "absent" and not affected and not (
+                existing is not None and existing["state"] == "pending"
+            ):
+                return {
+                    "state": "absent",
+                    "changed": False,
+                    "oldManagerInstanceId": None,
+                    "stoppedRunKeys": [],
+                    "cleanup": {"ownersEmpty": True, "managerStopped": True, "bootstrapCleaned": True},
+                }
+            operation, _ = self._destructive_operation(
+                "stop",
+                store,
+                state,
+                timeout=timeout, confirmed=confirm_stop_owned_runs,
+                expected_instance_id=current.manager_instance_id,
+            )
+            operation, summary = self._stop_phase(
+                "stop",
+                operation,
+                store,
+                state,
+                config,
+                adapter,
+                deadline=deadline,
+            )
+            outcome = {"state": "absent", "changed": True, **summary}
+            completed = store.update(operation, state="succeeded", outcome=outcome)
+            state.clear_terminal_intake_fence(store)
+            return {**outcome, "operationId": completed["operationId"]}
+
+    def restart(
+        self,
+        *,
+        timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
+        confirm_stop_owned_runs: bool = False,
+    ) -> dict[str, Any]:
+        timeout = validate_operation_timeout(timeout)
+        deadline = time.monotonic() + timeout
+        config, adapter, store = self._runtime()
+        adapter.secure_directory(config.paths.control)
+        store.prepare_lock()
+        with InterProcessFileLock(config.paths.operation_lock, timeout=timeout + 1):
+            state = StateStore(config, adapter)
+            state.clear_terminal_intake_fence(store)
+            operation, _ = self._destructive_operation(
+                "restart",
+                store,
+                state,
+                timeout=timeout, confirmed=confirm_stop_owned_runs,
+                expected_instance_id=observed_manager_instance_id(config, adapter),
+            )
+            launch_authorized = False
+            if operation["checkpoint"] in RESTART_START_CHECKPOINTS or operation["checkpoint"] == "bootstrap-cleaned":
+                def release_terminal_fence() -> int:
+                    state.clear_terminal_intake_fence(store)
+                    return int(state.work_summary()["workGeneration"])
+
+                operation, launch_authorized = self._start_coordinator(config, adapter, store).recover(
+                    operation,
+                    timeout=timeout,
+                    deadline=deadline,
+                    release_terminal_fence=release_terminal_fence,
+                )
+                if operation["checkpoint"] == "restart-requested":
+                    operation, _ = self._destructive_operation(
+                        "restart",
+                        store,
+                        state,
+                        timeout=timeout,
+                        confirmed=confirm_stop_owned_runs,
+                    )
+            if operation["checkpoint"] in RESTART_START_CHECKPOINTS:
+                summary = {
+                    "oldManagerInstanceId": operation.get("expectedInstanceId"),
+                    "stoppedRunKeys": state.stopped_run_keys(str(operation["operationId"])),
+                    "cleanup": {
+                        "ownersEmpty": True,
+                        "managerStopped": True,
+                        "bootstrapCleaned": True,
+                    },
+                }
+            else:
+                operation, summary = self._stop_phase(
+                    "restart",
+                    operation,
+                    store,
+                    state,
+                    config,
+                    adapter,
+                    deadline=deadline,
+                )
+                launch_authorized = True
+            operation, current = self._start_coordinator(config, adapter, store).run(
+                operation,
+                deadline=deadline,
+                launch_authorized=launch_authorized,
+            )
+            new_instance = current.manager_instance_id
+            old_instance = summary["oldManagerInstanceId"]
+            if new_instance is None or old_instance is not None and new_instance == old_instance:
+                raise IdentityError("restart 未形成新的 manager instance")
+            replacement_instance = operation.get("replacementInstanceId")
+            if replacement_instance is not None and replacement_instance != new_instance:
+                raise IdentityError("restart replacement instance 与 receipt 不匹配")
+            operation = store.update(operation, checkpoint="endpoint-ready", replacementInstanceId=new_instance)
+            outcome = {
+                "state": "ready",
+                "changed": True,
+                **summary,
+                "newManagerInstanceId": new_instance,
+                "servicesRestored": False,
+            }
+            completed = store.update(operation, state="succeeded", outcome=outcome)
+            state.clear_terminal_intake_fence(store)
+            return {**outcome, "operationId": completed["operationId"], "manager": current.public_dict()}

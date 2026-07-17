@@ -11,13 +11,47 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .errors import IdentityError, SupervisorError
+from .atomic import read_json_file
+from .errors import ConfigurationError, IdentityError, SupervisorError
 from .models import ServiceConfig
 from .platforms.base import PlatformAdapter, RunOwner
 
 
 HOST_HANDSHAKE_SECONDS = 10
 MAX_HOST_MESSAGE_BYTES = 64 * 1024
+MAX_HOST_INPUT_BYTES = 256 * 1024
+
+
+def read_managed_host_state(run: Any, adapter: PlatformAdapter) -> dict[str, Any] | None:
+    """读取并验证内存 run 对应的 host-state。"""
+
+    adapter.validate_runtime_path(run.host_state)
+    if not run.host_state.exists():
+        return None
+    adapter.verify_file(run.host_state)
+    value = read_json_file(run.host_state, max_bytes=MAX_HOST_MESSAGE_BYTES)
+    if not isinstance(value, dict) or value.get("capabilityHash") != run.capability_hash:
+        raise IdentityError("host-state capability identity 不匹配")
+    return value
+
+
+def owned_run(
+    runs: dict[str, Any],
+    lock: Any,
+    record: dict[str, Any],
+    instance_id: str,
+) -> Any:
+    """按 manager instance 与 capability 取得内存 owner。"""
+
+    key = str(record["processKey"])
+    with lock:
+        run = runs.get(key)
+    internal = record.get("internal", {})
+    if run is None or internal.get("managerInstanceId") != instance_id:
+        raise IdentityError("run owner 不属于当前 manager")
+    if internal.get("capabilityHash") != run.capability_hash:
+        raise IdentityError("run capability 不匹配")
+    return run
 
 
 def service_host_command(host_state: Path) -> tuple[list[str], dict[str, str]]:
@@ -84,17 +118,58 @@ def read_host_message(host: subprocess.Popen[str], timeout: float = HOST_HANDSHA
     return message
 
 
-def write_host_spec(host: subprocess.Popen[str], spec: dict[str, Any]) -> None:
+def _write_host_message(host: subprocess.Popen[str], value: dict[str, Any], label: str) -> None:
     if host.stdin is None:
         raise SupervisorError("service-host control stdin 不可用")
-    data = json.dumps(spec, ensure_ascii=False, separators=(",", ":")) + "\n"
-    if len(data.encode("utf-8")) > 256 * 1024:
-        raise SupervisorError("service-host launch spec 超过上限")
+    data = json.dumps(value, ensure_ascii=False, separators=(",", ":")) + "\n"
+    if len(data.encode("utf-8")) > MAX_HOST_INPUT_BYTES:
+        raise SupervisorError(f"service-host {label} 超过上限")
     try:
         host.stdin.write(data)
         host.stdin.flush()
     except (BrokenPipeError, OSError, ValueError) as exc:
-        raise SupervisorError("service-host launch spec 发送失败") from exc
+        raise SupervisorError(f"service-host {label} 发送失败") from exc
+
+
+def write_host_spec(host: subprocess.Popen[str], spec: dict[str, Any]) -> None:
+    _write_host_message(host, spec, "launch spec")
+
+
+def read_target_identity_message(
+    source: Any,
+    spec: dict[str, Any],
+    target: dict[str, int],
+    host_pid: int,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    line = source.readline(MAX_HOST_INPUT_BYTES + 1)
+    if not line:
+        raise ConfigurationError("manager channel 在 target identity 提交前关闭")
+    if len(line.encode("utf-8")) > MAX_HOST_INPUT_BYTES:
+        raise ConfigurationError("target identity message 超过 256 KiB")
+    try:
+        value = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ConfigurationError("target identity message JSON 无效") from exc
+    if not isinstance(value, dict) or set(value) != {
+        "command",
+        "capabilityHash",
+        "targetIdentity",
+        "ownerIdentity",
+    }:
+        raise ConfigurationError("target identity message schema 无效")
+    target_identity = value["targetIdentity"]
+    owner_identity = value["ownerIdentity"]
+    if (
+        value["command"] != "target_identity"
+        or value["capabilityHash"] != spec["capabilityHash"]
+        or not isinstance(target_identity, dict)
+        or target_identity.get("pid") != target["pid"]
+        or not isinstance(owner_identity, dict)
+        or owner_identity.get("capabilityHash") != spec["capabilityHash"]
+        or owner_identity.get("hostPid") != host_pid
+    ):
+        raise ConfigurationError("target identity message 与当前 owner 不匹配")
+    return dict(target_identity), dict(owner_identity)
 
 
 def build_host_spec(
@@ -159,15 +234,37 @@ def validate_target_handshake(
     host: subprocess.Popen[str],
     capability_hash: str,
 ) -> dict[str, Any]:
-    started = read_host_message(host)
-    if started.get("event") != "target_started" or started.get("capabilityHash") != capability_hash:
-        raise IdentityError("service-host target handshake 不匹配")
-    target = started.get("target")
+    spawned = read_host_message(host)
+    if spawned.get("event") != "target_spawned" or spawned.get("capabilityHash") != capability_hash:
+        raise IdentityError("service-host target spawn handshake 不匹配")
+    target = spawned.get("target")
     if not isinstance(target, dict):
         raise IdentityError("service-host target identity 缺失")
     owner.bind_target(target)
+    target_identity = adapter.process_identity(int(target["pid"]))
+    owner_identity = owner.internal_identity()
+    _write_host_message(
+        host,
+        {
+            "command": "target_identity",
+            "capabilityHash": capability_hash,
+            "targetIdentity": target_identity,
+            "ownerIdentity": owner_identity,
+        },
+        "target identity",
+    )
+    started = read_host_message(host)
+    if (
+        started.get("event") != "target_started"
+        or started.get("capabilityHash") != capability_hash
+        or started.get("target") != target
+        or started.get("targetIdentity") != target_identity
+        or started.get("ownerIdentity") != owner_identity
+    ):
+        raise IdentityError("service-host target identity commit 不匹配")
     return {
         "target": target,
         "hostIdentity": adapter.process_identity(host.pid),
-        "targetIdentity": adapter.process_identity(int(target["pid"])),
+        "targetIdentity": target_identity,
+        "ownerIdentity": owner_identity,
     }

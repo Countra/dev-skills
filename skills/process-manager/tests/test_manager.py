@@ -17,7 +17,8 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from helpers import FakeAdapter, create_config, service_value, workspace_directory, write_json  # noqa: E402
 from process_manager.errors import ConflictError, IdentityError, NotFoundError, SupervisorError  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
-from process_manager.state import StateStore  # noqa: E402
+from process_manager.run_finalization import OwnerFinalization  # noqa: E402
+from process_manager.state import ACTIVE_STATES, StateStore  # noqa: E402
 
 
 class FakeHost:
@@ -62,9 +63,23 @@ class FakeControlOutput:
             return (
                 json.dumps(
                     {
+                        "event": "target_spawned",
+                        "capabilityHash": self.host.capability_hash,
+                        "target": {"pid": 4343, "pgid": 4343},
+                    }
+                )
+                + "\n"
+            )
+        if self.index == 3:
+            identity = json.loads(self.host.stdin.getvalue().splitlines()[-1])
+            return (
+                json.dumps(
+                    {
                         "event": "target_started",
                         "capabilityHash": self.host.capability_hash,
                         "target": {"pid": 4343, "pgid": 4343},
+                        "targetIdentity": identity["targetIdentity"],
+                        "ownerIdentity": identity["ownerIdentity"],
                     }
                 )
                 + "\n"
@@ -90,7 +105,13 @@ class ManagerTests(unittest.TestCase):
         adapter.host_factory = host_factory
         state = StateStore(config, adapter)
         state.load()
-        manager = ProcessManager(config, adapter, state, "manager-instance")
+        manager = ProcessManager(
+            config,
+            adapter,
+            state,
+            "manager-instance",
+            operation_id="00000000000000000000000000000000",
+        )
         return config, adapter, state, manager, hosts
 
     def test_start_status_stop_hide_internal_owner_and_secret(self) -> None:
@@ -118,7 +139,7 @@ class ManagerTests(unittest.TestCase):
             self.assertNotIn("secret-value", persisted)
             self.assertNotIn("runCapability", persisted)
 
-    def test_stop_rejects_run_not_owned_by_current_manager(self) -> None:
+    def test_stop_reconciles_run_from_prior_manager_identity(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
             _, _, state, manager, _ = self.make_manager(workspace)
@@ -130,14 +151,9 @@ class ManagerTests(unittest.TestCase):
                 status="running",
                 internal_updates={"managerInstanceId": "another-manager"},
             )
-            with self.assertRaises(IdentityError):
-                manager.stop(process_key=started["processKey"])
-            state.update(
-                started["processKey"],
-                status="running",
-                internal_updates={"managerInstanceId": "manager-instance"},
-            )
-            manager.stop(process_key=started["processKey"])
+            stopped = manager.stop(process_key=started["processKey"])
+            self.assertTrue(stopped["cleanupVerified"])
+            self.assertEqual(stopped["state"], "stopped")
             manager.shutdown()
 
     def test_health_contract_is_platform_neutral(self) -> None:
@@ -146,7 +162,14 @@ class ManagerTests(unittest.TestCase):
             value = manager.health()
             self.assertEqual(
                 set(value),
-                {"managerReady", "supervisorReady", "instance", "endpointHealthy"},
+            {
+                "managerReady",
+                "supervisorReady",
+                "instance",
+                "operationId",
+                "runtimeFingerprint",
+                "endpointHealthy",
+            },
             )
 
     def test_missing_process_uses_not_found_error(self) -> None:
@@ -159,7 +182,7 @@ class ManagerTests(unittest.TestCase):
     def test_start_cleanup_failure_does_not_mask_primary_error(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
-            _, adapter, state, manager, _ = self.make_manager(workspace)
+            _, adapter, state, manager, hosts = self.make_manager(workspace)
             service_path = workspace / "service.json"
             write_json(service_path, service_value(workspace))
             with (
@@ -172,8 +195,11 @@ class ManagerTests(unittest.TestCase):
                 with self.assertRaisesRegex(IdentityError, "primary identity failure"):
                     manager.start(service_path)
             record = next(iter(state.list_records()["processes"].values()))
-            self.assertEqual(record["status"], "start_failed")
+            self.assertEqual(record["status"], "terminating")
             self.assertEqual(record["public"]["cleanupVerified"], False)
+            self.assertEqual(record["public"]["cleanupError"], "start_cleanup_failed")
+            adapter.last_owner.empty = True
+            hosts[0].finish(1)
 
     def test_refresh_marks_remaining_owner_as_contract_violation(self) -> None:
         with workspace_directory() as directory:
@@ -191,10 +217,14 @@ class ManagerTests(unittest.TestCase):
                     "exitCode": 0,
                 },
             )
-            with mock.patch.object(manager, "_wait_empty", side_effect=(False, True)) as wait_empty:
+            with mock.patch.object(
+                manager._finalization.owner_finalizer,  # noqa: SLF001
+                "_wait_live",
+                side_effect=(False, True),
+            ) as wait_empty:
                 refreshed = manager.status(process_key=started["processKey"])
             self.assertEqual(refreshed["state"], "contract_violation")
-            self.assertEqual(refreshed["completion"]["forceRequired"], True)
+            self.assertEqual(refreshed["stopResult"]["forceRequired"], True)
             self.assertEqual(refreshed["cleanupVerified"], True)
             self.assertTrue(adapter.last_owner.empty)
             self.assertEqual(wait_empty.call_count, 2)
@@ -216,10 +246,14 @@ class ManagerTests(unittest.TestCase):
                     "exitCode": 23,
                 },
             )
-            with mock.patch.object(manager, "_wait_empty", return_value=True) as wait_empty:
+            with mock.patch.object(
+                manager._finalization.owner_finalizer,  # noqa: SLF001
+                "_wait_live",
+                return_value=True,
+            ) as wait_empty:
                 refreshed = manager.status(process_key=started["processKey"])
             self.assertEqual(refreshed["state"], "exited")
-            self.assertEqual(refreshed["completion"]["forceRequired"], False)
+            self.assertEqual(refreshed["stopResult"]["forceRequired"], False)
             self.assertFalse(adapter.last_owner.forced)
             wait_empty.assert_called_once()
             manager.shutdown()
@@ -273,13 +307,164 @@ class ManagerTests(unittest.TestCase):
             )
             hosts[0].finish(7)
             deadline = time.monotonic() + 2
-            while state.get(key=started["processKey"])["status"] == "running" and time.monotonic() < deadline:
+            while (
+                state.get(key=started["processKey"])["status"] in ACTIVE_STATES
+                and time.monotonic() < deadline
+            ):
                 time.sleep(0.01)
             completed = state.get(key=started["processKey"])
             self.assertEqual(completed["status"], "exited")
             self.assertEqual(completed["public"]["exitCode"], 7)
             self.assertNotIn("demo", state.list_records()["active"])
             manager.shutdown()
+
+    def test_manager_shutdown_cleans_persisted_run_missing_from_memory(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, _, state, manager, _ = self.make_manager(workspace)
+            service_path = workspace / "service.json"
+            write_json(service_path, service_value(workspace))
+            started = manager.start(service_path)
+            with manager._lock:  # noqa: SLF001
+                manager._runs.pop(started["processKey"])  # noqa: SLF001
+            shutdown = manager.shutdown()
+            self.assertEqual(shutdown["stoppedRunKeys"], [started["processKey"]])
+            self.assertTrue(shutdown["cleanupVerified"])
+            persisted = state.get(key=started["processKey"])
+            self.assertEqual(persisted["status"], "stopped")
+            self.assertTrue(persisted["public"]["ownerEmpty"])
+
+    def test_persisted_finalization_is_serialized_per_run(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, _, _, manager, _ = self.make_manager(workspace)
+            service_path = workspace / "service.json"
+            write_json(service_path, service_value(workspace))
+            started = manager.start(service_path)
+            with manager._lock:  # noqa: SLF001
+                manager._runs.pop(started["processKey"])  # noqa: SLF001
+            entered = threading.Event()
+            release = threading.Event()
+            calls = 0
+
+            def finalize_persisted(*args, **kwargs):  # noqa: ANN002,ANN003,ANN201
+                nonlocal calls
+                del args, kwargs
+                calls += 1
+                entered.set()
+                release.wait(2)
+                return OwnerFinalization(True, True, True, False, False, {}, None)
+
+            results: list[dict[str, object]] = []
+            errors: list[BaseException] = []
+
+            def stop() -> None:
+                try:
+                    results.append(manager.stop(process_key=started["processKey"]))
+                except BaseException as exc:  # noqa: BLE001
+                    errors.append(exc)
+
+            with mock.patch.object(
+                manager._finalization.owner_finalizer,  # noqa: SLF001
+                "finalize_persisted",
+                side_effect=finalize_persisted,
+            ):
+                first = threading.Thread(target=stop)
+                second = threading.Thread(target=stop)
+                first.start()
+                self.assertTrue(entered.wait(1))
+                second.start()
+                time.sleep(0.05)
+                self.assertEqual(calls, 1)
+                release.set()
+                first.join(timeout=2)
+                second.join(timeout=2)
+            self.assertEqual(errors, [])
+            self.assertEqual(len(results), 2)
+            self.assertEqual(calls, 1)
+
+    def test_new_manager_reconciles_old_persisted_owner_before_accepting_start(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config, adapter, state, manager, _ = self.make_manager(workspace)
+            service_path = workspace / "service.json"
+            write_json(service_path, service_value(workspace))
+            started = manager.start(service_path)
+            with manager._lock:  # noqa: SLF001
+                manager._runs.pop(started["processKey"])  # noqa: SLF001
+            replacement = ProcessManager(
+                config,
+                adapter,
+                state,
+                "replacement-manager",
+                operation_id="11111111111111111111111111111111",
+            )
+            persisted = state.get(key=started["processKey"])
+            self.assertEqual(persisted["status"], "manager_lost")
+            self.assertTrue(persisted["public"]["cleanupVerified"])
+            self.assertEqual(
+                replacement.reconciled_records["finalized"],
+                [started["processKey"]],
+            )
+            replacement.shutdown()
+
+    def test_shutdown_waits_for_an_already_admitted_start(self) -> None:
+        with workspace_directory() as directory:
+            _, _, _, manager, _ = self.make_manager(Path(directory))
+            entered = threading.Event()
+            release = threading.Event()
+            start_result: list[dict[str, object]] = []
+            shutdown_result: list[dict[str, object]] = []
+
+            def blocked_start(service_path: Path) -> dict[str, object]:
+                del service_path
+                entered.set()
+                release.wait(2)
+                return {"state": "running"}
+
+            with mock.patch.object(manager, "_start", side_effect=blocked_start):
+                start_thread = threading.Thread(
+                    target=lambda: start_result.append(manager.start(Path("service.json")))
+                )
+                start_thread.start()
+                self.assertTrue(entered.wait(1))
+                manager.accept_shutdown(operation_id="0" * 32, timeout_seconds=2)
+                shutdown_thread = threading.Thread(target=lambda: shutdown_result.append(manager.shutdown()))
+                shutdown_thread.start()
+                time.sleep(0.05)
+                self.assertTrue(shutdown_thread.is_alive())
+                release.set()
+                start_thread.join(timeout=2)
+                shutdown_thread.join(timeout=2)
+
+            self.assertFalse(start_thread.is_alive())
+            self.assertFalse(shutdown_thread.is_alive())
+            self.assertEqual(start_result, [{"state": "running"}])
+            self.assertTrue(shutdown_result[0]["cleanupVerified"])
+
+    def test_shutdown_rejects_a_live_completion_watcher(self) -> None:
+        class StubbornWatcher:
+            name = "pm-watch-stubborn"
+
+            @staticmethod
+            def join(timeout=None) -> None:  # noqa: ANN001
+                del timeout
+
+            @staticmethod
+            def is_alive() -> bool:
+                return True
+
+        with workspace_directory() as directory:
+            _, _, _, manager, _ = self.make_manager(Path(directory))
+            with manager._lock:  # noqa: SLF001
+                manager._watchers["fixture"] = StubbornWatcher()  # type: ignore[assignment]  # noqa: SLF001
+            manager.accept_shutdown(operation_id="0" * 32, timeout_seconds=1)
+            with self.assertRaises(SupervisorError) as raised:
+                manager.shutdown()
+            self.assertEqual(
+                raised.exception.diagnostics["liveWatchers"],
+                ["pm-watch-stubborn"],
+            )
 
 
 if __name__ == "__main__":

@@ -16,14 +16,16 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from process_manager.config import create_default_manager_config  # noqa: E402
-from process_manager.errors import PMError, SupervisorError  # noqa: E402
+from process_manager.config import create_default_manager_config, load_manager_config  # noqa: E402
+from process_manager.errors import PMError, RuntimePermissionDeniedError, SupervisorError  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
 from process_manager.platforms import select_platform_adapter  # noqa: E402
-from process_manager.runtime import initialize_runtime  # noqa: E402
+from process_manager.runtime import initialize_runtime, read_manager_identity_record  # noqa: E402
 from process_manager.state import StateStore  # noqa: E402
 from smoke_support import (  # noqa: E402
     collect_keys,
+    _facade_diagnostic,
+    _run_facade,
     contract_fingerprint,
     manager_bootstrap_smoke,
     read_identities,
@@ -95,7 +97,126 @@ def enable_windows_permission_harness(adapter) -> None:  # noqa: ANN001
 
     adapter.secure_directory = types.MethodType(secure_directory, adapter)
     adapter.secure_file = types.MethodType(secure_file, adapter)
+    adapter.verify_directory = types.MethodType(secure_directory, adapter)
     adapter.verify_file = types.MethodType(secure_file, adapter)
+
+
+def execute_manager_recovery(workspace_parent: Path) -> dict[str, Any]:
+    workspace = workspace_parent.resolve() / f"manager-recovery-{uuid.uuid4().hex}"
+    workspace.mkdir(parents=True)
+    config_path = workspace / ".harness" / "process-manager" / "config.json"
+    fixture = Path(__file__).resolve().parent / "fixtures" / "process_tree_service.py"
+    identity_path = workspace / "recovery-service-identity.json"
+    failures: list[str] = []
+    checks: dict[str, Any] = {}
+    unrelated = subprocess.Popen(
+        [sys.executable, "-X", "utf8", "-B", str(fixture), "--child"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    adapter = None
+    old_identities: list[dict[str, Any]] = []
+    try:
+        init_code, initialized = _run_facade(
+            [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
+        )
+        checks["init"] = {"exitCode": init_code, **_facade_diagnostic(initialized)}
+        if init_code != 0:
+            failures.append("manager recovery init 失败")
+            return {"ok": False, "workspace": str(workspace), "checks": checks, "failures": failures}
+        config = load_manager_config(config_path)
+        adapter = select_platform_adapter(config.workspace_root, config.state_root)
+        ensure_code, ensured = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "ensure", "--config", str(config_path), "--pretty"],
+            timeout=60,
+        )
+        checks["ensure"] = {"exitCode": ensure_code, **_facade_diagnostic(ensured)}
+        service_path = write_service(
+            workspace,
+            "manager-recovery",
+            service_value(workspace, fixture, "manager-recovery", identity_path),
+        )
+        start_code, started = _run_facade(
+            [str(SCRIPT_DIR / "pm_start.py"), "--config", str(config_path), "--service", str(service_path)],
+            timeout=30,
+        )
+        process_data = started.get("data", {}) if isinstance(started.get("data"), dict) else {}
+        process_key = process_data.get("processKey")
+        checks["start"] = {
+            "exitCode": start_code,
+            "processKey": process_key,
+            **_facade_diagnostic(started),
+        }
+        if ensure_code != 0 or start_code != 0 or not isinstance(process_key, str):
+            failures.append("manager recovery service 未启动")
+            return {"ok": False, "workspace": str(workspace), "checks": checks, "failures": failures}
+        old_identities = read_identities(identity_path, adapter)
+        manager_identity = read_manager_identity_record(config, adapter)
+        exact_terminated = adapter.terminate_manager(manager_identity["identity"], timeout=10)
+        checks["managerCrash"] = {
+            "exactIdentityTerminated": exact_terminated,
+            "identityReceiptRetained": config.paths.manager.exists(),
+        }
+        restart_code, restarted = _run_facade(
+            [
+                str(SCRIPT_DIR / "pm_manager.py"),
+                "restart",
+                "--config",
+                str(config_path),
+                "--confirm-stop-owned-runs",
+                "--timeout-seconds",
+                "30",
+                "--pretty",
+            ],
+            timeout=90,
+        )
+        restart_data = restarted.get("data", {}) if isinstance(restarted.get("data"), dict) else {}
+        owner_empty = wait_for_identities_to_exit(adapter, old_identities, 10)
+        checks["restart"] = {
+            "exitCode": restart_code,
+            **_facade_diagnostic(restarted),
+            "servicesRestored": restart_data.get("servicesRestored"),
+            "stoppedRunKeys": restart_data.get("stoppedRunKeys"),
+            "ownerEmpty": owner_empty,
+        }
+        status_code, status = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config_path), "--pretty"]
+        )
+        status_data = status.get("data", {}) if isinstance(status.get("data"), dict) else {}
+        checks["status"] = {"exitCode": status_code, "state": status_data.get("state")}
+        checks["unrelatedProcess"] = {"survived": unrelated.poll() is None}
+        if not exact_terminated:
+            failures.append("exact manager identity 未终止")
+        if restart_code != 0 or restart_data.get("servicesRestored") is not False:
+            failures.append("manager restart 未闭环或错误恢复 service")
+        if process_key not in restart_data.get("stoppedRunKeys", []):
+            failures.append("manager restart 未报告已收口 run")
+        if not owner_empty:
+            failures.append("manager crash/restart 后旧 owner 未空")
+        if status_code != 0 or status_data.get("state") != "ready":
+            failures.append("replacement manager 未 ready")
+        if unrelated.poll() is not None:
+            failures.append("manager recovery 波及无关进程")
+    finally:
+        if config_path.exists():
+            stop_code, stopped = _run_facade(
+                [str(SCRIPT_DIR / "pm_manager.py"), "stop", "--config", str(config_path), "--pretty"],
+                timeout=60,
+            )
+            checks["finalManagerStop"] = {
+                "exitCode": stop_code,
+                **_facade_diagnostic(stopped),
+            }
+            if stop_code != 0:
+                failures.append("manager recovery final stop 未闭环")
+        terminate_fixture(unrelated)
+    return {
+        "ok": not failures,
+        "workspace": str(workspace),
+        "checks": checks,
+        "failures": failures,
+    }
 
 
 def execute(workspace_parent: Path, *, require_native_permissions: bool = False) -> dict[str, Any]:
@@ -113,8 +234,8 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     runtime_security: dict[str, Any] = {"mode": "enforced", "failClosedObserved": False}
     try:
         initialize_runtime(config, adapter)
-    except SupervisorError as exc:
-        if adapter.selection.platform != "windows" or "ACL" not in str(exc):
+    except RuntimePermissionDeniedError as exc:
+        if adapter.selection.platform != "windows":
             raise
         if require_native_permissions:
             runtime_security = {
@@ -140,7 +261,13 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
         initialize_runtime(config, adapter)
     state = StateStore(config, adapter)
     state.load()
-    manager = ProcessManager(config, adapter, state, f"smoke-{uuid.uuid4().hex}")
+    manager = ProcessManager(
+        config,
+        adapter,
+        state,
+        f"smoke-{uuid.uuid4().hex}",
+        operation_id=uuid.uuid4().hex,
+    )
     unrelated = subprocess.Popen(
         [sys.executable, "-X", "utf8", "-B", str(fixture), "--child"],
         stdin=subprocess.DEVNULL,
@@ -393,10 +520,15 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--scenario", choices=("full", "manager-recovery"), default="full")
     parser.add_argument("--require-native-permissions", action="store_true")
     args = parser.parse_args()
     args.workspace.mkdir(parents=True, exist_ok=True)
-    result = execute(args.workspace, require_native_permissions=args.require_native_permissions)
+    result = (
+        execute_manager_recovery(args.workspace)
+        if args.scenario == "manager-recovery"
+        else execute(args.workspace, require_native_permissions=args.require_native_permissions)
+    )
     write_json(args.output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

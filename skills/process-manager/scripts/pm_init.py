@@ -21,8 +21,12 @@ def main(argv: list[str] | None = None) -> int:
 
     def execute() -> int:
         context = resolve_runtime_context(workspace=args.workspace, config=args.config)
-        config = context.config or create_default_manager_config(context.workspace_root, context.config_path)
-        adapter = select_platform_adapter(config.workspace_root, config.state_root)
+        adapter = select_platform_adapter(context.workspace_root, context.state_root)
+        if context.config is None:
+            adapter.secure_directory(context.state_root)
+            config = create_default_manager_config(context.workspace_root, context.config_path)
+        else:
+            config = context.config
         initialize_runtime(config, adapter)
         StateStore(config, adapter).load()
         print_json(success("init", config.public_dict()), pretty=args.pretty)

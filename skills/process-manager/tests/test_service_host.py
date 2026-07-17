@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import os
 import sys
 import threading
@@ -10,6 +12,7 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from process_manager.launch import read_target_identity_message  # noqa: E402
 from process_manager.service_host import (  # noqa: E402
     TargetController,
     WindowsConsole,
@@ -124,6 +127,26 @@ class WindowsConsoleTests(unittest.TestCase):
 
 
 class TargetControllerTests(unittest.TestCase):
+    def test_target_identity_message_binds_capability_host_and_pid(self) -> None:
+        message = {
+            "command": "target_identity",
+            "capabilityHash": "fixture-hash",
+            "targetIdentity": {"pid": 4321, "start": "exact"},
+            "ownerIdentity": {
+                "capabilityHash": "fixture-hash",
+                "hostPid": os.getpid(),
+                "targetProcessGroup": 4321,
+            },
+        }
+        target_identity, owner_identity = read_target_identity_message(
+            io.StringIO(json.dumps(message) + "\n"),
+            {"capabilityHash": "fixture-hash"},
+            {"pid": 4321, "pgid": 4321},
+            os.getpid(),
+        )
+        self.assertEqual(target_identity, message["targetIdentity"])
+        self.assertEqual(owner_identity, message["ownerIdentity"])
+
     def test_log_pumps_share_one_drain_deadline(self) -> None:
         clock = [0.0]
         first = mock.Mock()

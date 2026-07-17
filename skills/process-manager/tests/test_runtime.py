@@ -30,10 +30,12 @@ class RuntimeTests(unittest.TestCase):
             identity = build_manager_identity(
                 config,
                 adapter,
+                operation_id="00000000000000000000000000000000",
                 instance_id="manager-instance",
                 port=32123,
                 bootstrap_backend="detached",
                 bootstrap_selection_reason="test fixture",
+                runtime_fingerprint="a" * 64,
             )
             write_manager_identity(config, adapter, identity)
             loaded = read_manager_identity(config, adapter)
@@ -61,10 +63,12 @@ class RuntimeTests(unittest.TestCase):
             identity = build_manager_identity(
                 config,
                 adapter,
+                operation_id="00000000000000000000000000000000",
                 instance_id="manager-instance",
                 port=32123,
                 bootstrap_backend="detached",
                 bootstrap_selection_reason="test fixture",
+                runtime_fingerprint="a" * 64,
             )
             identity["unexpected"] = "rejected"
             write_manager_identity(config, adapter, identity)

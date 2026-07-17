@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -48,11 +49,12 @@ OPERATION_SUCCESS_CHECKPOINTS = {
     "restart": "endpoint-ready",
 }
 OPERATION_KEYS = frozenset(
-    "schema operationId kind state checkpoint workspaceDigest configDigest expectedInstanceId "
-    "startedAt updatedAt deadlineAt outcome error".split()
+    "schema operationId kind state checkpoint workspaceDigest configDigest expectedInstanceId replacementInstanceId "
+    "expectedRuntimeFingerprint expectedWorkGeneration startedAt updatedAt deadlineAt outcome error".split()
 )
 MANAGER_IDENTITY_KEYS = {
     "schema",
+    "operationId",
     "instanceId",
     "pid",
     "platform",
@@ -66,7 +68,28 @@ MANAGER_IDENTITY_KEYS = {
     "port",
     "startedAt",
     "configSha256",
+    "runtimeFingerprint",
 }
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def prepare_runtime_lock(path: Path, adapter: PlatformAdapter) -> None:
+    """以排他创建和平台校验准备可安全打开的 runtime lock。"""
+
+    adapter.secure_directory(path.parent)
+    path = adapter.validate_runtime_path(path)
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0)
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags, 0o600)
+        os.write(descriptor, b"\0")
+        os.fsync(descriptor)
+    except FileExistsError:
+        pass
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    adapter.secure_file(path)
 
 
 def now_text() -> str:
@@ -122,12 +145,16 @@ class OperationStore:
 
     def read(self) -> dict[str, Any] | None:
         path = self.config.paths.operation
+        self.adapter.validate_runtime_path(path)
         if not path.exists():
             return None
         self.adapter.verify_file(path)
         value = read_json_file(path, max_bytes=MAX_OPERATION_BYTES)
         self._validate(value)
         return value
+
+    def prepare_lock(self) -> None:
+        prepare_runtime_lock(self.config.paths.operation_lock, self.adapter)
 
     def _validate(self, value: Any) -> None:
         if not isinstance(value, dict) or set(value) != OPERATION_KEYS:
@@ -163,6 +190,23 @@ class OperationStore:
         expected = value.get("expectedInstanceId")
         if expected is not None and (not isinstance(expected, str) or not expected):
             raise RuntimeCorruptError("manager operation expectedInstanceId 无效")
+        replacement = value.get("replacementInstanceId")
+        if replacement is not None and (not isinstance(replacement, str) or not replacement):
+            raise RuntimeCorruptError("manager operation replacementInstanceId 无效")
+        if kind != "restart" and replacement is not None:
+            raise RuntimeCorruptError("非 restart operation 不得包含 replacementInstanceId")
+        fingerprint = value.get("expectedRuntimeFingerprint")
+        generation = value.get("expectedWorkGeneration")
+        if kind in {"ensure", "restart"}:
+            if not isinstance(fingerprint, str) or SHA256_RE.fullmatch(fingerprint) is None:
+                raise RuntimeCorruptError("manager operation expectedRuntimeFingerprint 无效")
+        elif fingerprint is not None:
+            raise RuntimeCorruptError("stop operation 不得包含 runtime fingerprint")
+        if kind in {"stop", "restart"}:
+            if isinstance(generation, bool) or not isinstance(generation, int) or generation < 0:
+                raise RuntimeCorruptError("destructive operation expectedWorkGeneration 无效")
+        elif generation is not None:
+            raise RuntimeCorruptError("ensure operation 不得包含 work generation")
         if value.get("outcome") is not None and not isinstance(value["outcome"], dict):
             raise RuntimeCorruptError("manager operation outcome 无效")
         if value.get("error") is not None and not isinstance(value["error"], dict):
@@ -185,7 +229,14 @@ class OperationStore:
         if updated < started or deadline <= started:
             raise RuntimeCorruptError("manager operation 时间顺序无效")
 
-    def create(self, kind: str, *, timeout: float) -> dict[str, Any]:
+    def create(
+        self,
+        kind: str,
+        *,
+        timeout: float,
+        expected_runtime_fingerprint: str | None,
+        expected_work_generation: int | None,
+    ) -> dict[str, Any]:
         if kind not in OPERATION_KINDS:
             raise ValueError(f"未知 manager operation: {kind}")
         timeout = validate_operation_timeout(timeout)
@@ -200,6 +251,9 @@ class OperationStore:
             "workspaceDigest": self.workspace_digest,
             "configDigest": self.expected_config_digest,
             "expectedInstanceId": None,
+            "replacementInstanceId": None,
+            "expectedRuntimeFingerprint": expected_runtime_fingerprint,
+            "expectedWorkGeneration": expected_work_generation,
             "startedAt": now.isoformat(),
             "updatedAt": now.isoformat(),
             "deadlineAt": (now + timedelta(seconds=timeout)).isoformat(),
@@ -213,6 +267,42 @@ class OperationStore:
         self.adapter.secure_file(self.config.paths.operation)
 
     def update(self, operation: dict[str, Any], **changes: Any) -> dict[str, Any]:
+        if operation["state"] != "pending":
+            raise RuntimeCorruptError("terminal manager operation 不可继续修改")
+        next_checkpoint = changes.get("checkpoint", operation["checkpoint"])
+        checkpoints = tuple(OPERATION_CHECKPOINTS[operation["kind"]])
+        if next_checkpoint != operation["checkpoint"]:
+            ordered = {
+                "ensure": (
+                    "start-requested",
+                    "runtime-verified",
+                    "bootstrap-launched",
+                    "identity-published",
+                    "endpoint-ready",
+                ),
+                "stop": (
+                    "stop-requested",
+                    "intake-closed",
+                    "runs-terminating",
+                    "owners-empty",
+                    "manager-stopped",
+                    "bootstrap-cleaned",
+                ),
+                "restart": (
+                    "restart-requested",
+                    "intake-closed",
+                    "runs-terminating",
+                    "owners-empty",
+                    "manager-stopped",
+                    "bootstrap-cleaned",
+                    "runtime-verified",
+                    "bootstrap-launched",
+                    "identity-published",
+                    "endpoint-ready",
+                ),
+            }[operation["kind"]]
+            if next_checkpoint not in checkpoints or ordered.index(next_checkpoint) < ordered.index(operation["checkpoint"]):
+                raise RuntimeCorruptError("manager operation checkpoint 不得倒退")
         value = {**operation, **changes, "updatedAt": now_text()}
         self.write(value)
         return value
@@ -254,15 +344,17 @@ class OperationStore:
 
 def initialize_runtime(config: ManagerConfig, adapter: PlatformAdapter) -> None:
     paths = config.paths
-    if (paths.state_root / "manager.pid").exists():
+    legacy_pid = adapter.validate_runtime_path(paths.state_root / "manager.pid")
+    if legacy_pid.exists():
         raise RuntimeRebuildRequiredError("检测到旧 manager.pid；请使用新的隔离 stateRoot 或显式重建 runtime")
     adapter.secure_directory(paths.state_root)
     for directory in (paths.control, paths.services, paths.runs, paths.logs, paths.tmp):
         adapter.secure_directory(directory)
     adapter.secure_file(config.config_path)
-    if not paths.token.exists():
-        atomic_write_bytes(paths.token, (secrets.token_urlsafe(TOKEN_BYTES) + "\n").encode("ascii"))
-    adapter.secure_file(paths.token)
+    token_path = adapter.validate_runtime_path(paths.token)
+    if not token_path.exists():
+        atomic_write_bytes(token_path, (secrets.token_urlsafe(TOKEN_BYTES) + "\n").encode("ascii"))
+    adapter.secure_file(token_path)
 
 
 def read_token(config: ManagerConfig, adapter: PlatformAdapter) -> str:
@@ -283,13 +375,24 @@ def build_manager_identity(
     config: ManagerConfig,
     adapter: PlatformAdapter,
     *,
+    operation_id: str,
     instance_id: str,
     port: int,
     bootstrap_backend: str,
     bootstrap_selection_reason: str,
+    runtime_fingerprint: str,
 ) -> dict[str, Any]:
+    try:
+        canonical_operation_id = uuid.UUID(operation_id).hex
+    except (ValueError, AttributeError) as exc:
+        raise IdentityError("manager parent operationId 无效") from exc
+    if operation_id != canonical_operation_id:
+        raise IdentityError("manager parent operationId 不是 canonical UUID")
+    if SHA256_RE.fullmatch(runtime_fingerprint) is None:
+        raise IdentityError("manager runtime fingerprint 无效")
     return {
         "schema": "process-manager",
+        "operationId": operation_id,
         "instanceId": instance_id,
         "pid": os.getpid(),
         "platform": adapter.selection.platform,
@@ -303,16 +406,18 @@ def build_manager_identity(
         "port": port,
         "startedAt": now_text(),
         "configSha256": config_digest(config),
+        "runtimeFingerprint": runtime_fingerprint,
     }
 
 
 def write_manager_identity(config: ManagerConfig, adapter: PlatformAdapter, identity: dict[str, Any]) -> None:
-    atomic_write_json(config.paths.manager, identity)
-    adapter.secure_file(config.paths.manager)
+    path = adapter.validate_runtime_path(config.paths.manager)
+    atomic_write_json(path, identity)
+    adapter.secure_file(path)
 
 
 def read_manager_identity_record(config: ManagerConfig, adapter: PlatformAdapter) -> dict[str, Any]:
-    path = config.paths.manager
+    path = adapter.validate_runtime_path(config.paths.manager)
     if not path.exists():
         raise ManagerOfflineError("manager identity 不存在")
     adapter.verify_file(path)
@@ -322,6 +427,7 @@ def read_manager_identity_record(config: ManagerConfig, adapter: PlatformAdapter
     if set(value) != MANAGER_IDENTITY_KEYS:
         raise IdentityError("manager identity 字段集合无效")
     string_fields = (
+        "operationId",
         "instanceId",
         "platform",
         "bootstrapBackend",
@@ -331,13 +437,22 @@ def read_manager_identity_record(config: ManagerConfig, adapter: PlatformAdapter
         "selectionReason",
         "startedAt",
         "configSha256",
+        "runtimeFingerprint",
     )
     if any(not isinstance(value.get(name), str) or not value[name] for name in string_fields):
         raise IdentityError("manager identity 字符串字段无效")
+    try:
+        canonical_operation_id = uuid.UUID(value["operationId"]).hex
+    except (ValueError, AttributeError) as exc:
+        raise IdentityError("manager identity operationId 无效") from exc
+    if value["operationId"] != canonical_operation_id:
+        raise IdentityError("manager identity operationId 不是 canonical UUID")
     if value.get("platform") != adapter.selection.platform:
         raise IdentityError("manager identity 平台与当前运行环境不匹配")
     if value.get("host") != config.host or value.get("configSha256") != config_digest(config):
         raise IdentityError("manager identity 与当前 config 不匹配")
+    if SHA256_RE.fullmatch(value["runtimeFingerprint"]) is None:
+        raise IdentityError("manager identity runtime fingerprint 无效")
     port = value.get("port")
     if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
         raise IdentityError("manager identity control port 无效")
@@ -360,16 +475,18 @@ def read_manager_identity(config: ManagerConfig, adapter: PlatformAdapter) -> di
     return value
 
 
-def remove_manager_identity(config: ManagerConfig, instance_id: str) -> None:
-    path = config.paths.manager
+def remove_manager_identity(config: ManagerConfig, adapter: PlatformAdapter, instance_id: str) -> None:
+    path = adapter.validate_runtime_path(config.paths.manager)
     if not path.exists():
         return
     try:
+        adapter.verify_file(path)
         current = read_json_file(path, max_bytes=MAX_IDENTITY_BYTES)
     except StateError:
         return
     if isinstance(current, dict) and current.get("instanceId") == instance_id:
         try:
+            adapter.verify_file(path)
             path.unlink()
         except FileNotFoundError:
             return

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -20,7 +21,8 @@ MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class ControlServer(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
+    block_on_close = True
 
     def server_bind(self) -> None:
         TCPServer.server_bind(self)
@@ -39,6 +41,55 @@ class ControlServer(ThreadingHTTPServer):
         self.manager = manager
         self.token = token
         self.max_request_bytes = max_request_bytes
+        self._shutdown_lock = threading.Lock()
+        self._shutdown_requests: set[int] = set()
+        self._shutdown_thread: threading.Thread | None = None
+        self.shutdown_result: dict[str, Any] | None = None
+        self.shutdown_error: BaseException | None = None
+
+    def defer_shutdown(self, request: Any) -> None:
+        """把 shutdown handoff 绑定到已确认的当前请求。"""
+
+        with self._shutdown_lock:
+            self._shutdown_requests.add(id(request))
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            with self._shutdown_lock:
+                handoff = id(request) in self._shutdown_requests
+                self._shutdown_requests.discard(id(request))
+            if handoff:
+                self.begin_shutdown()
+
+    def begin_shutdown(self) -> None:
+        """响应 flush 后只启动一个清理协调器。"""
+
+        with self._shutdown_lock:
+            if self._shutdown_thread is not None:
+                return
+
+            def coordinate() -> None:
+                try:
+                    self.shutdown_result = self.manager.shutdown()
+                except BaseException as exc:  # noqa: BLE001
+                    self.shutdown_error = exc
+                finally:
+                    self.shutdown()
+
+            self._shutdown_thread = threading.Thread(
+                target=coordinate,
+                name="pm-shutdown-coordinator",
+                daemon=False,
+            )
+            self._shutdown_thread.start()
+
+    def wait_for_shutdown(self, timeout: float | None = None) -> None:
+        with self._shutdown_lock:
+            thread = self._shutdown_thread
+        if thread is not None:
+            thread.join(timeout=timeout)
 
 
 class ControlHandler(BaseHTTPRequestHandler):
@@ -77,6 +128,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+        self.wfile.flush()
 
     def _deny_unless_authorized(self) -> bool:
         if self._authorized():
@@ -177,6 +229,12 @@ class ControlHandler(BaseHTTPRequestHandler):
     def _boolean(value: Any, label: str) -> bool:
         if not isinstance(value, bool):
             raise RequestError(f"{label} 必须是 boolean")
+        return value
+
+    @staticmethod
+    def _operation_id(value: Any) -> str:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{32}", value) is None:
+            raise RequestError("operationId 必须是 canonical UUID hex")
         return value
 
     def _handle(self, operation: str, action: Callable[[], Any]) -> bool:
@@ -303,9 +361,19 @@ class ControlHandler(BaseHTTPRequestHandler):
                     keep_runs=keep_runs,
                 )
             if path == "/shutdown":
-                self._closed_body(body, allowed=set())
-                return self.control.manager.shutdown()
+                self._closed_body(
+                    body,
+                    allowed={"operationId", "timeoutSeconds"},
+                    required={"operationId", "timeoutSeconds"},
+                )
+                operation_id = self._operation_id(body.get("operationId"))
+                timeout = self._number(body.get("timeoutSeconds"), "timeoutSeconds", 0.001, 3600)
+                assert timeout is not None
+                return self.control.manager.accept_shutdown(
+                    operation_id=operation_id,
+                    timeout_seconds=timeout,
+                )
             raise NotFoundError("control endpoint 不存在")
 
         if self._handle(operation, action) and path == "/shutdown":
-            threading.Thread(target=self.control.shutdown, daemon=True).start()
+            self.control.defer_shutdown(self.request)

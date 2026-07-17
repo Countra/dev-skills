@@ -28,12 +28,16 @@ from process_manager.runtime import (  # noqa: E402
 class FakeManager:
     def __init__(self) -> None:
         self.instance_id = "control-instance"
+        self.operation_id = "00000000000000000000000000000000"
+        self.runtime_fingerprint = "a" * 64
 
     def health(self):  # noqa: ANN201
         return {
             "managerReady": True,
             "supervisorReady": True,
             "instance": {"id": self.instance_id},
+            "operationId": self.operation_id,
+            "runtimeFingerprint": self.runtime_fingerprint,
             "endpointHealthy": True,
         }
 
@@ -66,6 +70,10 @@ class FakeManager:
 
     def shutdown(self):  # noqa: ANN201
         return {"cleanupVerified": True}
+
+    def accept_shutdown(self, *, operation_id=None, timeout_seconds=30):  # noqa: ANN001,ANN201
+        del timeout_seconds
+        return {"shutdownAccepted": True, "operationId": operation_id}
 
 
 class StaticResponse:
@@ -104,30 +112,85 @@ class ControlApiTests(unittest.TestCase):
     def test_shutdown_schedules_server_stop_after_response(self) -> None:
         events: list[str] = []
         manager = FakeManager()
+        manager.accept_shutdown = (  # type: ignore[method-assign]
+            lambda *, operation_id=None, timeout_seconds=None: events.append("accepted")
+            or {"shutdownAccepted": True, "operationId": operation_id}
+        )
         manager.shutdown = lambda: events.append("manager") or {"cleanupVerified": True}  # type: ignore[method-assign]
         server = types.SimpleNamespace(manager=manager, shutdown=lambda: events.append("server"))
+
+        def begin_shutdown() -> None:
+            try:
+                manager.shutdown()
+            finally:
+                server.shutdown()
+
+        server.begin_shutdown = begin_shutdown
+        server.defer_shutdown = lambda request: events.append("deferred")
         handler = object.__new__(ControlHandler)
         handler.server = server
+        handler.request = object()
         handler.path = "/shutdown"
         handler._deny_unless_authorized = lambda: False  # type: ignore[method-assign]
-        handler._read_body = lambda: {}  # type: ignore[method-assign]
+        handler._read_body = lambda: {  # type: ignore[method-assign]
+            "operationId": "0" * 32,
+            "timeoutSeconds": 2.0,
+        }
         handler._send = lambda status, value: events.append("response")  # type: ignore[method-assign]
 
-        class ImmediateThread:
-            def __init__(self, *, target, daemon):  # noqa: ANN001
-                del daemon
-                self.target = target
+        handler.do_POST()
+        self.assertEqual(events, ["accepted", "response", "deferred"])
+        server.begin_shutdown()
+        self.assertEqual(events, ["accepted", "response", "deferred", "manager", "server"])
 
-            def start(self) -> None:
-                self.target()
+    def test_control_server_hands_off_only_after_request_thread_release(self) -> None:
+        events: list[str] = []
+        server = ControlServer(("127.0.0.1", 0), FakeManager(), "token", 128)
+        request = object()
+        server.defer_shutdown(request)
+        try:
+            with (
+                mock.patch(
+                    "socketserver.ThreadingMixIn.process_request_thread",
+                    side_effect=lambda *_: events.append("released"),
+                ),
+                mock.patch.object(server, "begin_shutdown", side_effect=lambda: events.append("coordinator")),
+            ):
+                server.process_request_thread(request, ("127.0.0.1", 10000))
+        finally:
+            server.server_close()
+        self.assertEqual(events, ["released", "coordinator"])
 
-        with mock.patch("process_manager.control_api.threading.Thread", ImmediateThread):
-            handler.do_POST()
-        self.assertEqual(events, ["manager", "response", "server"])
+    def test_control_server_hands_off_when_request_release_raises(self) -> None:
+        events: list[str] = []
+        server = ControlServer(("127.0.0.1", 0), FakeManager(), "token", 128)
+        request = object()
+        server.defer_shutdown(request)
+        try:
+            with (
+                mock.patch(
+                    "socketserver.ThreadingMixIn.process_request_thread",
+                    side_effect=RuntimeError("release failed"),
+                ),
+                mock.patch.object(server, "begin_shutdown", side_effect=lambda: events.append("coordinator")),
+                self.assertRaisesRegex(RuntimeError, "release failed"),
+            ):
+                server.process_request_thread(request, ("127.0.0.1", 10000))
+        finally:
+            server.server_close()
+        self.assertEqual(events, ["coordinator"])
 
-    def test_shutdown_error_does_not_stop_control_server(self) -> None:
+    def test_shutdown_rejects_null_operation_id(self) -> None:
+        with self.assertRaisesRegex(RequestError, "canonical UUID"):
+            ControlHandler._operation_id(None)  # noqa: SLF001
+
+    def test_shutdown_error_still_stops_control_server_after_ack(self) -> None:
         events: list[str] = []
         manager = FakeManager()
+        manager.accept_shutdown = (  # type: ignore[method-assign]
+            lambda *, operation_id=None, timeout_seconds=None: events.append("accepted")
+            or {"shutdownAccepted": True, "operationId": operation_id}
+        )
 
         def fail_shutdown():  # noqa: ANN202
             events.append("manager")
@@ -135,14 +198,31 @@ class ControlApiTests(unittest.TestCase):
 
         manager.shutdown = fail_shutdown  # type: ignore[method-assign]
         server = types.SimpleNamespace(manager=manager, shutdown=lambda: events.append("server"))
+
+        def begin_shutdown() -> None:
+            try:
+                manager.shutdown()
+            except RequestError:
+                pass
+            finally:
+                server.shutdown()
+
+        server.begin_shutdown = begin_shutdown
+        server.defer_shutdown = lambda request: events.append("deferred")
         handler = object.__new__(ControlHandler)
         handler.server = server
+        handler.request = object()
         handler.path = "/shutdown"
         handler._deny_unless_authorized = lambda: False  # type: ignore[method-assign]
-        handler._read_body = lambda: {}  # type: ignore[method-assign]
+        handler._read_body = lambda: {  # type: ignore[method-assign]
+            "operationId": "0" * 32,
+            "timeoutSeconds": 2.0,
+        }
         handler._send = lambda status, value: events.append("response")  # type: ignore[method-assign]
         handler.do_POST()
-        self.assertEqual(events, ["manager", "response"])
+        self.assertEqual(events, ["accepted", "response", "deferred"])
+        server.begin_shutdown()
+        self.assertEqual(events, ["accepted", "response", "deferred", "manager", "server"])
 
     def test_client_requires_response_instance_identity(self) -> None:
         with workspace_directory() as directory:
@@ -153,10 +233,12 @@ class ControlApiTests(unittest.TestCase):
             identity = build_manager_identity(
                 config,
                 adapter,
+                operation_id="00000000000000000000000000000000",
                 instance_id="expected-instance",
                 port=43210,
                 bootstrap_backend="test",
                 bootstrap_selection_reason="test fixture",
+                runtime_fingerprint="a" * 64,
             )
             write_manager_identity(config, adapter, identity)
             for meta in ({}, {"managerInstanceId": "other-instance"}):
@@ -184,10 +266,12 @@ class ControlApiTests(unittest.TestCase):
                 identity = build_manager_identity(
                     config,
                     adapter,
+                    operation_id=manager.operation_id,
                     instance_id=manager.instance_id,
                     port=int(server.server_address[1]),
                     bootstrap_backend="test",
                     bootstrap_selection_reason="test fixture",
+                    runtime_fingerprint=manager.runtime_fingerprint,
                 )
                 write_manager_identity(config, adapter, identity)
                 client = ManagerClient(config, adapter, timeout=2)

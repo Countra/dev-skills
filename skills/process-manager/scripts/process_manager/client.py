@@ -3,18 +3,48 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any
 
-from .errors import ManagerOfflineError, PMError
+from .errors import ManagerOfflineError, ManagerUnresponsiveError, PMError
 from .models import ManagerConfig
 from .platforms.base import PlatformAdapter
 from .runtime import read_manager_identity, read_token
 
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+def request_manager_shutdown(
+    client: Any,
+    operation_id: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    if (
+        isinstance(timeout_seconds, bool)
+        or not isinstance(timeout_seconds, (int, float))
+        or not math.isfinite(float(timeout_seconds))
+        or timeout_seconds <= 0
+    ):
+        raise ValueError("manager shutdown timeoutSeconds 必须是有限正数")
+    status, response = client.request(
+        "POST",
+        "/shutdown",
+        {"operationId": operation_id, "timeoutSeconds": float(timeout_seconds)},
+    )
+    data = response.get("data")
+    if (
+        status >= 400
+        or response.get("ok") is not True
+        or not isinstance(data, dict)
+        or data.get("shutdownAccepted") is not True
+        or data.get("operationId") != operation_id
+    ):
+        raise ManagerUnresponsiveError("manager shutdown ack 无效", recommended_action="doctor")
+    return data
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):

@@ -1,10 +1,141 @@
-"""process-manager 的不可变配置模型。"""
+"""process-manager 的配置与运行时状态模型。"""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .errors import (
+    EnvironmentUnverifiableError,
+    RuntimeInsecureError,
+    RuntimeRebuildRequiredError,
+    StateError,
+)
+
+
+RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+ACTIVE_STATES = {"starting", "running", "stopping", "terminating"}
+STATE_KEYS = {
+    "schema",
+    "stateRevision",
+    "workGeneration",
+    "intakeFence",
+    "active",
+    "processes",
+}
+RUN_RECORD_REQUIRED_KEYS = {
+    "schema",
+    "service",
+    "processId",
+    "processKey",
+    "status",
+    "runDir",
+    "processFile",
+    "createdAt",
+    "recordRevision",
+    "cleanupClaim",
+    "public",
+    "internal",
+}
+RUN_RECORD_OPTIONAL_KEYS = {"updatedAt"}
+INTAKE_FENCE_KEYS = {
+    "operationId",
+    "kind",
+    "expectedWorkGeneration",
+    "installedAt",
+}
+CLEANUP_CLAIM_KEYS = {
+    "claimId",
+    "managerInstanceId",
+    "claimedAt",
+    "deadlineAt",
+}
+WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
+WINDOWS_GRANT_ACCESS = 1
+WINDOWS_SET_ACCESS = 2
+WINDOWS_DENY_ACCESS = 3
+WINDOWS_REVOKE_ACCESS = 4
+WINDOWS_TRUSTED_SIDS = {
+    "S-1-5-18",      # LocalSystem
+    "S-1-5-32-544",  # Builtin Administrators
+    "S-1-3-0",       # Creator Owner
+    "S-1-3-4",       # Owner Rights
+}
+WINDOWS_BROAD_RESTRICTED_SIDS = {
+    "S-1-1-0",       # Everyone
+    "S-1-2-0",       # Local
+    "S-1-5-4",       # Interactive
+    "S-1-5-11",      # Authenticated Users
+    "S-1-5-32-545",  # Builtin Users
+}
+
+
+@dataclass(frozen=True)
+class WindowsAclEntry:
+    sid: str
+    mask: int
+    access_mode: int
+    inheritance: int
+
+
+@dataclass(frozen=True)
+class WindowsAclSnapshot:
+    owner_sid: str
+    entries: tuple[WindowsAclEntry, ...]
+    effective_mask: int
+
+
+def validate_windows_acl_snapshot(
+    snapshot: WindowsAclSnapshot,
+    current_sid: str,
+    restricted_sids: tuple[str, ...] = (),
+) -> None:
+    """验证 Windows ACL 语义，不依赖继承形态或 SDDL 文本。"""
+
+    if snapshot.owner_sid != current_sid:
+        raise RuntimeInsecureError("Windows runtime owner 不是当前用户")
+    broad = WINDOWS_BROAD_RESTRICTED_SIDS.intersection(restricted_sids)
+    if broad:
+        raise EnvironmentUnverifiableError(
+            "当前 Windows restricting SID 过宽，无法构造私有 runtime",
+            diagnostics={"restrictingSids": sorted(broad)},
+        )
+    trusted = WINDOWS_TRUSTED_SIDS | {current_sid, *restricted_sids}
+    for entry in snapshot.entries:
+        if entry.access_mode in {WINDOWS_GRANT_ACCESS, WINDOWS_SET_ACCESS}:
+            if entry.mask and entry.sid not in trusted:
+                raise RuntimeInsecureError(
+                    "Windows runtime ACL 向非信任 trustee 授予访问",
+                    diagnostics={"trustee": entry.sid, "mask": entry.mask},
+                )
+        elif entry.access_mode not in {WINDOWS_DENY_ACCESS, WINDOWS_REVOKE_ACCESS}:
+            raise EnvironmentUnverifiableError(
+                "Windows runtime ACL 包含无法验证的 ACE 模式",
+                diagnostics={"accessMode": entry.access_mode},
+            )
+    if snapshot.effective_mask & WINDOWS_FILE_ALL_ACCESS != WINDOWS_FILE_ALL_ACCESS:
+        raise RuntimeInsecureError(
+            "当前用户缺少 Windows runtime 完整访问权",
+            diagnostics={"effectiveMask": snapshot.effective_mask},
+        )
+
+
+def empty_state() -> dict[str, Any]:
+    return {
+        "schema": "process-manager",
+        "stateRevision": 0,
+        "workGeneration": 0,
+        "intakeFence": None,
+        "active": {},
+        "processes": {},
+    }
+
+
+def process_key(service: str, run_id: str) -> str:
+    return f"{service}.{run_id}"
 
 
 @dataclass(frozen=True)
@@ -32,12 +163,20 @@ class RuntimePaths:
         return self.control / "manager.lock"
 
     @property
+    def bootstrap(self) -> Path:
+        return self.control / "bootstrap.json"
+
+    @property
     def operation(self) -> Path:
         return self.control / "operation.json"
 
     @property
     def operation_lock(self) -> Path:
         return self.control / "operation.lock"
+
+    @property
+    def repository_lock(self) -> Path:
+        return self.control / "repository.lock"
 
     @property
     def processes(self) -> Path:
@@ -62,6 +201,102 @@ class RuntimePaths:
     @property
     def tmp(self) -> Path:
         return self.state_root / "tmp"
+
+
+@dataclass(frozen=True)
+class StateSchema:
+    paths: RuntimePaths
+
+    def run_paths(self, service: str, run_id: str) -> tuple[Path, Path]:
+        if not SERVICE_NAME_RE.fullmatch(service) or not RUN_ID_RE.fullmatch(run_id):
+            raise StateError("run identity 格式无效")
+        run_dir = self.paths.runs / service / run_id
+        return run_dir, run_dir / "process.json"
+
+    def validate_record(self, key: str, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict) or value.get("schema") != "process-manager":
+            raise RuntimeRebuildRequiredError("run record 使用旧或未知 runtime schema")
+        fields = set(value)
+        if not RUN_RECORD_REQUIRED_KEYS <= fields or fields - RUN_RECORD_REQUIRED_KEYS - RUN_RECORD_OPTIONAL_KEYS:
+            raise StateError("run record 字段集合无效")
+        service = value.get("service")
+        run_id = value.get("processId")
+        if (
+            not isinstance(service, str)
+            or not isinstance(run_id, str)
+            or key != process_key(service, run_id)
+            or value.get("processKey") != key
+        ):
+            raise StateError("run record identity 不一致")
+        run_dir, process_file = self.run_paths(service, run_id)
+        if value.get("runDir") != str(run_dir) or value.get("processFile") != str(process_file):
+            raise StateError("run record path 不一致")
+        if not isinstance(value.get("public"), dict) or not isinstance(value.get("internal"), dict):
+            raise StateError("run record public/internal 必须是 object")
+        revision = value.get("recordRevision")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+            raise StateError("run record revision 无效")
+        claim = value.get("cleanupClaim")
+        if claim is not None:
+            if not isinstance(claim, dict) or set(claim) != CLEANUP_CLAIM_KEYS:
+                raise StateError("run cleanup claim 字段集合无效")
+            if any(not isinstance(claim.get(name), str) or not claim[name] for name in CLEANUP_CLAIM_KEYS):
+                raise StateError("run cleanup claim 字段无效")
+        if value["public"].get("state") != value.get("status"):
+            raise StateError("run public state 与 status 不一致")
+        return value
+
+    def validate_state(self, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict) or value.get("schema") != "process-manager":
+            raise RuntimeRebuildRequiredError("process state 使用旧或未知 runtime schema")
+        if set(value) != STATE_KEYS:
+            raise StateError("process state 字段集合无效")
+        active = value.get("active")
+        processes = value.get("processes")
+        revision = value.get("stateRevision")
+        generation = value.get("workGeneration")
+        if (
+            not isinstance(active, dict)
+            or not isinstance(processes, dict)
+            or isinstance(revision, bool)
+            or not isinstance(revision, int)
+            or revision < 0
+            or isinstance(generation, bool)
+            or not isinstance(generation, int)
+            or generation < 0
+        ):
+            raise StateError("process state 结构无效")
+        self._validate_fence(value.get("intakeFence"))
+        for key, record in processes.items():
+            self.validate_record(key, record)
+        for service, key in active.items():
+            if not isinstance(service, str) or not isinstance(key, str) or key not in processes:
+                raise StateError("active 索引引用无效")
+            record = processes[key]
+            if record.get("service") != service or record.get("status") not in ACTIVE_STATES:
+                raise StateError("active 索引与 run record 不一致")
+        for key, record in processes.items():
+            if record.get("status") in ACTIVE_STATES and active.get(record["service"]) != key:
+                raise StateError("active run record 缺少唯一索引")
+        return value
+
+    @staticmethod
+    def _validate_fence(fence: Any) -> None:
+        if fence is None:
+            return
+        if not isinstance(fence, dict) or set(fence) != INTAKE_FENCE_KEYS:
+            raise StateError("intake fence 字段集合无效")
+        if (
+            not isinstance(fence.get("operationId"), str)
+            or not fence["operationId"]
+            or fence.get("kind") not in {"stop", "restart"}
+            or isinstance(fence.get("expectedWorkGeneration"), bool)
+            or not isinstance(fence.get("expectedWorkGeneration"), int)
+            or fence["expectedWorkGeneration"] < 0
+            or not isinstance(fence.get("installedAt"), str)
+            or not fence["installedAt"]
+        ):
+            raise StateError("intake fence 字段无效")
 
 
 @dataclass(frozen=True)

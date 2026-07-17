@@ -31,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
                     "doctor",
                     {
                         "managerReady": False,
-                        "supervisorReady": True,
+                        "supervisorReady": False,
                         "diagnostics": adapter.diagnostics(),
                         "managerError": exc.public_dict(),
                     },

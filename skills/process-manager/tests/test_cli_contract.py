@@ -49,7 +49,7 @@ class CliContractTests(unittest.TestCase):
 
     def test_manager_subcommands_share_one_public_contract(self) -> None:
         script = SCRIPTS_DIR / "pm_manager.py"
-        for command in ("ensure", "start", "status", "stop"):
+        for command in ("ensure", "start", "status", "restart", "stop"):
             with self.subTest(command=command):
                 result = run_script(script, command, "--help")
                 self.assertEqual(result.returncode, 0, result.stderr)

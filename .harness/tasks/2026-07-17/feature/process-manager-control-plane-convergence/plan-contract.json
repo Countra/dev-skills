@@ -1,6 +1,6 @@
 {
   "task_id": "2026-07-17-feature-process-manager-control-plane-convergence",
-  "plan_revision": 2,
+  "plan_revision": 3,
   "lifecycle_route": "managed",
   "plan_profile": "full",
   "goal": {
@@ -41,7 +41,7 @@
     {
       "id": "REQ-07",
       "priority": "must",
-      "summary": "active、inactive、age、bytes 配额、automatic GC、compact tombstone 与 start admission 持续生效"
+      "summary": "active run、open/heavy session、pending prune、control request、history age/count 和 retained total reservation 都有 closed cap，日志与 metadata 容量预留、automatic GC、compact tombstone、可恢复 prune journal 与 mutation admission 持续生效"
     },
     {
       "id": "REQ-08",
@@ -98,12 +98,12 @@
     {
       "id": "AC-05",
       "requirement_ids": ["REQ-04"],
-      "summary": "restart 对 healthy 或 exact-unresponsive manager 完成 cleanup 和新 instance ready且不恢复 service，身份不确定不 kill，存在其它 ownership 时无显式 destructive confirmation 不执行"
+      "summary": "restart 对 healthy 或 exact-unresponsive manager 完成 cleanup 和新 instance ready且不恢复 service，身份不确定不 kill，存在其它 ownership 时无显式 destructive confirmation 不执行，确认后的 work generation 变化则 fail precondition；generation 匹配时先事务化安装 intake fence，再停止已确认 work"
     },
     {
       "id": "AC-06",
       "requirement_ids": ["REQ-04"],
-      "summary": "stop 对 absent 和重复调用幂等，任一 owner、identity 或 bootstrap 未清时保留 pending evidence 且不虚假成功"
+      "summary": "stop 对 absent 和重复调用幂等，healthy 或 exact-unresponsive manager 都通过同一 stop phase 收敛到 absent；live ownership 未显式确认时不执行，确认后的 work generation 变化则 fail precondition；shutdown handler 只 ack 并在 response 后交给单一 coordinator，identity 不确定时不执行 destructive action，任一 owner、session、handler/thread、identity 或 bootstrap 未清时不虚假成功"
     },
     {
       "id": "AC-07",
@@ -118,7 +118,7 @@
     {
       "id": "AC-09",
       "requirement_ids": ["REQ-06"],
-      "summary": "lease expiry 或 close 中断后 sweeper 或 ensure 继续同一 finalizer并在 owner empty 后 closed，idle shutdown 与新 work 原子互斥且竞态时保留 manager"
+      "summary": "live session 只在 current manager instance 内、monotonic/wall deadline 前显式续租；clock anomaly 或 manager instance 变化使旧 session 失效且不能 renew/start，expiry、close 或 restart 中断后继续同一 finalizer并在 owner empty 后 closed，idle shutdown 与新 work 通过 persisted work generation/intake fence 原子互斥"
     },
     {
       "id": "AC-10",
@@ -128,12 +128,12 @@
     {
       "id": "AC-11",
       "requirement_ids": ["REQ-07"],
-      "summary": "history 超 age、count 或 bytes 时只事务化清理 eligible terminal run，active 和 terminating 不删除且 central tombstone 保留"
+      "summary": "history 超 age、count 或 bytes 时只事务化清理 eligible terminal run且 active/terminating 不删除，closed session 压缩为 compact tombstone，prune/cleanup evidence 可恢复且 central tombstone 有界保留"
     },
     {
       "id": "AC-12",
       "requirement_ids": ["REQ-07", "REQ-13"],
-      "summary": "active 或 retained bytes 达限时先有界 GC，仍超限则拒绝 start，status 报 usage、limit、overBudget 和 cleanupPending"
+      "summary": "active/session/journal/control-request count 或 projected total reservation 达限时执行对应有界收敛并拒绝超额 mutation；total reservation 合并 fixed actual、closed metadata capacity、manager/active/candidate rotation capacity，status 报 usedBytes、reservedBytes、limitBytes、overBudget 和 cleanupPending且控制线程不越界；饱和只接受 domain-separated、current-instance、短时有效的 HMAC-SHA256 busy evidence，建议 wait 且不得自动 restart"
     },
     {
       "id": "AC-13",
@@ -164,6 +164,11 @@
       "id": "AC-18",
       "requirement_ids": ["REQ-11"],
       "summary": "final review、cleanup 和 audit 后 required receipt passed，无 active、terminating、cleanup pending、manager、bootstrap 或 task tmp residue且 diff allowlist 合法"
+    },
+    {
+      "id": "AC-19",
+      "requirement_ids": ["REQ-04", "REQ-09", "REQ-13"],
+      "summary": "manager 启动内容由 bounded runtime fingerprint 固定；只有 operation expected、identity、authenticated health 与当前受控源码全部一致才 ready，源码漂移归 non-retryable stale/restart，摘要不可验证归 environment_unverifiable 且不触发 ACL 或任意 kill"
     }
   ],
   "nonfunctional_requirements": [
@@ -261,7 +266,7 @@
     {
       "id": "ART-08",
       "kind": "review",
-      "path": "artifacts/reviews/plan-review-attempt-2.json",
+      "path": "artifacts/reviews/plan-review-attempt-4.json",
       "required": true,
       "approval_included": true
     }
@@ -314,14 +319,18 @@
     },
     {
       "id": "STG-02",
-      "title": "Manager Restart 与 Owner-first Reconciliation",
+      "title": "Manager Convergence 与 Runtime Security Foundation",
       "depends_on": ["STG-01"],
-      "requirement_ids": ["REQ-04", "REQ-05", "REQ-12"],
-      "acceptance_ids": ["AC-05", "AC-06", "AC-07", "AC-16"],
-      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-07", "NFR-09"],
-      "validation_ids": ["VAL-02", "VAL-03", "VAL-06", "VAL-09", "VAL-10", "VAL-13"],
+      "requirement_ids": ["REQ-04", "REQ-05", "REQ-08", "REQ-09", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-05", "AC-06", "AC-07", "AC-13", "AC-14", "AC-16", "AC-19"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-06", "VAL-08", "VAL-10", "VAL-13"],
       "allowed_changes": [
         "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/manager_start.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
+        "skills/process-manager/scripts/process_manager/resources.py",
         "skills/process-manager/scripts/process_manager/state.py",
         "skills/process-manager/scripts/process_manager/manager.py",
         "skills/process-manager/scripts/process_manager/control_api.py",
@@ -329,30 +338,48 @@
         "skills/process-manager/scripts/process_manager/bootstrap.py",
         "skills/process-manager/scripts/process_manager/service_host.py",
         "skills/process-manager/scripts/process_manager/launch.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/models.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/runtime_fingerprint.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/client.py",
         "skills/process-manager/scripts/process_manager/platforms/base.py",
         "skills/process-manager/scripts/process_manager/platforms/dispatcher.py",
+        "skills/process-manager/scripts/process_manager/platforms/windows_acl.py",
         "skills/process-manager/scripts/process_manager/platforms/windows.py",
         "skills/process-manager/scripts/process_manager/platforms/linux.py",
         "skills/process-manager/scripts/process_manager/platforms/posix.py",
         "skills/process-manager/scripts/process_manager/platforms/macos.py",
+        "skills/process-manager/scripts/pm_init.py",
+        "skills/process-manager/scripts/pm_doctor.py",
         "skills/process-manager/scripts/pm_manager.py",
+        "evals/process-manager/run_static_checks.py",
         "skills/process-manager/tests/**"
       ],
       "forbidden_changes": [
         "arbitrary PID, process-name or whole-machine cleanup",
         "service auto restore, restart loop, public platform switch or system daemon",
         "terminal commit or active removal before owner empty",
-        "session, resource or consumer public migration"
+        "session or consumer public migration; resource behavior change beyond no-op module extraction",
+        "SDDL string equality, regex or error text as ACL truth",
+        "automatic elevation or status-time remediation",
+        "legacy identity or operation parser, weak runtime fingerprint or fingerprint mismatch as kill authority"
       ],
       "entry_conditions": [
         "STG-01 resolver、ensure 与 operation receipt 已通过并审查",
-        "exact manager identity、owner capability 与 bootstrap evidence 已固定",
-        "现有三平台 owner contract baseline 可重现"
+        "exact manager identity、owner capability、bootstrap evidence 与 runtime fingerprint closed schema/预算已固定",
+        "现有三平台 owner contract baseline 可重现",
+        "runtime security verify/remediate taxonomy 与 500 行生产模块预算已冻结",
+        "identity/operation schema 切换前可证明 manager、owned runs、bootstrap 和 pending operation 全空；未知旧 schema 按 stop condition 阻塞且不实现兼容 parser"
       ],
       "exit_conditions": [
-        "stop 和 restart 对重复调用及 phase interruption 可恢复",
+        "stop 和 restart 对 healthy、exact-unresponsive、runtime-stale、重复调用及 phase interruption 可恢复，shutdown ack 后只有单一 coordinator且 identity 不确定或 live ownership 未确认时不执行 destructive action",
         "manager crash 后 persisted run 只在 owner empty 后 terminal",
         "restart 不恢复 service、其它 ownership 无确认不停止且 unrelated process 存活",
+        "Windows ACL equivalence、insecure、denied、unverifiable 与 no-mutation 分类通过",
+        "operation expected、child startup capture、manager identity、authenticated health 与当前 source fingerprint 只有全等才 ready，drift、manifest race/escape/overflow 与 identity-health mismatch 均 fail closed",
+        "manager state/start/finalization/resource/fingerprint extraction 形成低耦合模块且生产 Python 文件不超过 500 行",
         "stage code-review 无 blocking 或 major finding"
       ],
       "risk": "high",
@@ -365,11 +392,16 @@
       "requirement_ids": ["REQ-06", "REQ-12"],
       "acceptance_ids": ["AC-08", "AC-09", "AC-10", "AC-16"],
       "nonfunctional_ids": ["NFR-02", "NFR-04", "NFR-07", "NFR-08", "NFR-09"],
-      "validation_ids": ["VAL-02", "VAL-04", "VAL-09", "VAL-10", "VAL-13"],
+      "validation_ids": ["VAL-02", "VAL-04", "VAL-13", "VAL-18"],
       "allowed_changes": [
         "skills/process-manager/scripts/process_manager/sessions.py",
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
         "skills/process-manager/scripts/process_manager/models.py",
         "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
         "skills/process-manager/scripts/process_manager/state.py",
         "skills/process-manager/scripts/process_manager/manager.py",
         "skills/process-manager/scripts/process_manager/control_api.py",
@@ -388,12 +420,13 @@
       ],
       "entry_conditions": [
         "STG-02 owner-first finalizer、persisted reconciliation 与 restart 已通过",
-        "session schema、TTL、transitions 和 index 已冻结",
+        "session schema、manager-instance binding、monotonic/wall TTL、transitions 和 index 已冻结",
         "default validation TTL 1800 seconds 与 persistent opt-in 已确认"
       ],
       "exit_conditions": [
         "多 session、persistent 与 unrelated process 隔离通过",
         "normal close 和 expiry 只在 owner empty 后 cleanup verified",
+        "manager restart、clock forward/backward 不延长或恢复旧 session",
         "start ownership 必填、service restart 保持 ownership且 idle-stop race 保留新 work",
         "stage code-review 无 blocking 或 major finding"
       ],
@@ -402,14 +435,19 @@
     },
     {
       "id": "STG-04",
-      "title": "资源治理与 Runtime Security",
+      "title": "Resource Governance",
       "depends_on": ["STG-03"],
-      "requirement_ids": ["REQ-07", "REQ-08", "REQ-12", "REQ-13"],
-      "acceptance_ids": ["AC-11", "AC-12", "AC-13", "AC-14", "AC-16"],
+      "requirement_ids": ["REQ-07", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-11", "AC-12", "AC-16"],
       "nonfunctional_ids": ["NFR-03", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09"],
-      "validation_ids": ["VAL-02", "VAL-05", "VAL-06", "VAL-09", "VAL-13"],
+      "validation_ids": ["VAL-02", "VAL-05", "VAL-13"],
       "allowed_changes": [
         "skills/process-manager/scripts/process_manager/resources.py",
+        "skills/process-manager/scripts/process_manager/sessions.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/protocol.py",
         "skills/process-manager/scripts/process_manager/config.py",
         "skills/process-manager/scripts/process_manager/models.py",
         "skills/process-manager/scripts/process_manager/state.py",
@@ -417,8 +455,10 @@
         "skills/process-manager/scripts/process_manager/control_api.py",
         "skills/process-manager/scripts/process_manager/runtime.py",
         "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/logs.py",
+        "skills/process-manager/scripts/process_manager/bootstrap.py",
+        "skills/process-manager/scripts/manager_server.py",
         "skills/process-manager/scripts/process_manager/platforms/base.py",
-        "skills/process-manager/scripts/process_manager/platforms/windows_acl.py",
         "skills/process-manager/scripts/process_manager/platforms/windows.py",
         "skills/process-manager/scripts/process_manager/platforms/posix.py",
         "skills/process-manager/scripts/process_manager/platforms/linux.py",
@@ -427,24 +467,24 @@
         "skills/process-manager/scripts/pm_prune.py",
         "skills/process-manager/scripts/pm_list.py",
         "skills/process-manager/tests/test_resources.py",
-        "skills/process-manager/tests/test_runtime_security.py",
         "skills/process-manager/tests/**"
       ],
       "forbidden_changes": [
         "automatic deletion of active or terminating runs",
         "unbounded scan, logs, wait or poll",
-        "SDDL string equality, regex or error text as ACL truth",
-        "automatic elevation or status-time remediation"
+        "runtime security contract regression or duplicate ACL engine",
+        "new public busy state, unsigned, mismatched, expired or replayed busy trust, or busy-triggered automatic restart"
       ],
       "entry_conditions": [
         "STG-03 ownership 与 finalizer 已稳定",
-        "resource defaults、usage、quarantine 和 tombstone transaction 已冻结",
-        "Windows ACL 与 POSIX security design 已审查"
+        "resource defaults、actual/total reservation formula、metadata cap、manager/service log rotation capacity、quarantine 和 tombstone transaction 已冻结",
+        "STG-02 runtime security foundation 与 no-op resource extraction 已通过"
       ],
       "exit_conditions": [
-        "active、count、age、bytes 与 cleanup pending 边界通过",
-        "GC 不选择 active 或 terminating且中断可恢复",
-        "ACL equivalence、insecure、denied 与 unverifiable 精确分类",
+        "active/history/session/journal/request count、age、metadata、manager/service log generations、actual/total reserved bytes 与 cleanup pending 边界通过",
+        "GC 不选择 active 或 terminating且中断可由 bounded pendingPrunes 恢复，closed session 可安全压缩",
+        "resource status/doctor summary 复用既有 security evidence且不建立第二 ACL engine",
+        "domain-separated、current-instance 且未过期的 signed busy 在 public unresponsive 下只产生 bounded wait；unsigned、mismatch、expired 或 replay fail closed且不触发 auto-restart，shutdown response 后唯一 coordinator 排空 tracked control resources 后才成功",
         "stage code-review 无 blocking 或 major finding"
       ],
       "risk": "high",
@@ -457,11 +497,18 @@
       "requirement_ids": ["REQ-09", "REQ-10", "REQ-11", "REQ-13"],
       "acceptance_ids": ["AC-10", "AC-14", "AC-15"],
       "nonfunctional_ids": ["NFR-01", "NFR-06", "NFR-09", "NFR-10"],
-      "validation_ids": ["VAL-01", "VAL-07", "VAL-08", "VAL-11", "VAL-12", "VAL-13"],
+      "validation_ids": ["VAL-01", "VAL-07", "VAL-08", "VAL-09", "VAL-11", "VAL-12", "VAL-13"],
       "allowed_changes": [
         "skills/process-manager/scripts/pm_init.py",
         "skills/process-manager/scripts/pm_manager.py",
         "skills/process-manager/scripts/pm_session.py",
+        "skills/process-manager/scripts/process_manager/__init__.py",
+        "skills/process-manager/scripts/process_manager/runtime_context.py",
+        "skills/process-manager/scripts/process_manager/cli.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/protocol.py",
         "skills/process-manager/scripts/pm_validate.py",
         "skills/process-manager/scripts/pm_start.py",
         "skills/process-manager/scripts/pm_ready.py",
@@ -514,7 +561,7 @@
       "requirement_ids": ["REQ-11", "REQ-12"],
       "acceptance_ids": ["AC-16", "AC-17", "AC-18"],
       "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
-      "validation_ids": ["VAL-02", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-14", "VAL-15", "VAL-16", "VAL-17"],
+      "validation_ids": ["VAL-02", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-14", "VAL-15", "VAL-16", "VAL-17", "VAL-18"],
       "allowed_changes": [
         "all files approved by STG-01 through STG-05 and ART-04 for directly evidenced fixes",
         "task-local execution, validation, review and observation artifacts",
@@ -533,7 +580,7 @@
         "用户推送当前 commit 后才读取 hosted evidence"
       ],
       "exit_conditions": [
-        "VAL-01 through VAL-17 required evidence 当前且通过",
+        "VAL-01 through VAL-18 required evidence 当前且通过",
         "三平台和 delegated evidence 绑定最终 commit 和 attempt",
         "final receipt passed 且无 blocking 或 major finding",
         "无 active、terminating、cleanup pending、manager、bootstrap 或 task tmp residue",
@@ -620,7 +667,7 @@
       "id": "VAL-10",
       "kind": "smoke",
       "required": true,
-      "covers": ["AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-16", "NFR-02", "NFR-04", "NFR-07", "NFR-08"],
+      "covers": ["AC-05", "AC-06", "AC-07", "AC-16", "AC-19", "NFR-02", "NFR-04", "NFR-07", "NFR-08"],
       "command": "python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace <task-local-absolute-workspace> --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/manager-recovery-smoke.json --scenario manager-recovery --require-native-permissions",
       "evidence_path": "artifacts/validation/manager-recovery-smoke.json"
     },
@@ -652,7 +699,7 @@
       "id": "VAL-14",
       "kind": "smoke",
       "required": true,
-      "covers": ["AC-03", "AC-07", "AC-08", "AC-09", "AC-12", "AC-13", "AC-16", "AC-17", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "covers": ["AC-03", "AC-07", "AC-08", "AC-09", "AC-12", "AC-13", "AC-16", "AC-17", "AC-19", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
       "command": "用户推送最终 candidate 后运行 .github/workflows/process-manager-platforms.yml 的 Windows、Ubuntu、macOS matrix，并导入匹配 commit SHA、run ID 和 attempt 的 artifacts",
       "evidence_path": "artifacts/validation/github-platform-matrix.json"
     },
@@ -679,6 +726,14 @@
       "covers": ["AC-18", "NFR-02", "NFR-03", "NFR-05", "NFR-07", "NFR-08", "NFR-10"],
       "command": "关闭 task sessions 和 owned runs，必要时停止 idle manager，验证 owner、bootstrap、runtime tmp 全空；扫描旧 public refs 和 changed-path allowlist；运行 git -c diff.autoRefreshIndex=false diff --check",
       "evidence_path": "artifacts/validation/final-cleanup-audit.json"
+    },
+    {
+      "id": "VAL-18",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-08", "AC-09", "AC-10", "AC-16", "NFR-02", "NFR-03", "NFR-04", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace <task-local-absolute-workspace> --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/session-isolation-smoke.json --scenario session-isolation --require-native-permissions",
+      "evidence_path": "artifacts/validation/session-isolation-smoke.json"
     }
   ],
   "research": {

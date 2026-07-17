@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import IdentityError, SupervisorError
-from .base import PlatformSelection, RunOwner
+from .base import OwnerInspection, PersistedOwnerEvidence, PlatformSelection, RunOwner
 from .posix import PosixAdapter, PosixRunOwner
 
 
@@ -40,6 +40,18 @@ def discover_delegated_cgroup() -> tuple[Path | None, str]:
 
 
 class LinuxProcessGroupAdapter(PosixAdapter):
+    @staticmethod
+    def _identity_evidence_valid(expected: dict[str, Any]) -> bool:
+        return (
+            set(expected) == {"pid", "startTimeTicks", "executable"}
+            and isinstance(expected.get("pid"), int)
+            and expected["pid"] > 0
+            and isinstance(expected.get("startTimeTicks"), str)
+            and bool(expected["startTimeTicks"])
+            and isinstance(expected.get("executable"), str)
+            and bool(expected["executable"])
+        )
+
     def process_identity(self, pid: int) -> dict[str, Any]:
         stat_path = Path(f"/proc/{pid}/stat")
         exe_path = Path(f"/proc/{pid}/exe")
@@ -73,15 +85,31 @@ class CgroupRunOwner(PosixRunOwner):
     ) -> None:
         super().__init__(selection, host, capability_hash)
         self.cgroup_path = cgroup_path
-        self.cgroup_path.mkdir(mode=0o700)
-        if not (self.cgroup_path / "cgroup.kill").exists():
-            raise SupervisorError("delegated cgroup 不支持 cgroup.kill")
+        created = False
         try:
+            self.cgroup_path.mkdir(mode=0o700)
+            created = True
+            if not (self.cgroup_path / "cgroup.kill").exists():
+                raise SupervisorError("delegated cgroup 不支持 cgroup.kill")
             (self.cgroup_path / "cgroup.procs").write_text(f"{host.pid}\n", encoding="ascii")
-        except OSError as exc:
-            raise SupervisorError("无法把 service-host 加入 delegated cgroup") from exc
-        if str(host.pid) not in self._member_pids():
-            raise SupervisorError("service-host cgroup membership 验证失败")
+            if str(host.pid) not in self._member_pids():
+                raise SupervisorError("service-host cgroup membership 验证失败")
+        except Exception as exc:
+            cleanup_failures: list[str] = []
+            if host.poll() is None:
+                try:
+                    host.kill()
+                    host.wait(timeout=5)
+                except (OSError, subprocess.SubprocessError) as cleanup_exc:
+                    cleanup_failures.append(type(cleanup_exc).__name__)
+            if created:
+                try:
+                    self.cgroup_path.rmdir()
+                except OSError as cleanup_exc:
+                    cleanup_failures.append(type(cleanup_exc).__name__)
+            for failure in cleanup_failures:
+                exc.add_note(f"cgroup owner 构造回滚失败: {failure}")
+            raise
 
     @property
     def control_data(self) -> dict[str, Any]:
@@ -117,11 +145,12 @@ class CgroupRunOwner(PosixRunOwner):
 
     def close(self) -> None:
         super().close()
-        if self.is_empty():
-            try:
-                self.cgroup_path.rmdir()
-            except OSError:
-                return
+        if not self.is_empty():
+            raise SupervisorError("run cgroup 在释放前仍有成员")
+        try:
+            self.cgroup_path.rmdir()
+        except OSError as exc:
+            raise SupervisorError("run cgroup 释放失败") from exc
 
     def internal_identity(self) -> dict[str, Any]:
         return {**super().internal_identity(), "cgroupPath": str(self.cgroup_path)}
@@ -153,3 +182,90 @@ class LinuxCgroupAdapter(LinuxProcessGroupAdapter):
             return CgroupRunOwner(self.selection, host, capability_hash, run_path)
         except OSError as exc:
             raise SupervisorError("delegated cgroup owner 创建失败") from exc
+
+    def _persisted_cgroup(self, evidence: PersistedOwnerEvidence) -> Path | None:
+        owner = evidence.owner
+        value = owner.get("cgroupPath")
+        if (
+            owner.get("platform") != self.selection.platform
+            or owner.get("backend") != self.selection.backend
+            or owner.get("capabilityHash") != evidence.capability_hash
+            or owner.get("hostPid") != evidence.host_identity.get("pid")
+            or not isinstance(value, str)
+        ):
+            return None
+        expected = (self.cgroup_base / evidence.run_id).resolve()
+        candidate = Path(value)
+        if not candidate.is_absolute() or candidate.is_symlink() or candidate.resolve() != expected:
+            return None
+        return candidate
+
+    def inspect_persisted_owner(self, evidence: PersistedOwnerEvidence) -> OwnerInspection:
+        path = self._persisted_cgroup(evidence)
+        if path is None:
+            return OwnerInspection("unverifiable", False, {}, "owner_cgroup_identity_invalid")
+        host_alive = self.identity_matches(evidence.host_identity)
+        target_identity = evidence.target_identity
+        target_alive = isinstance(target_identity, dict) and self.identity_matches(target_identity)
+        if not path.exists():
+            accounting = {"hostAlive": host_alive, "targetAlive": target_alive, "populated": False}
+            if not (
+                self._identity_evidence_valid(evidence.host_identity)
+                and isinstance(target_identity, dict)
+                and self._identity_evidence_valid(target_identity)
+            ):
+                return OwnerInspection("unverifiable", False, accounting, "owner_process_identity_invalid")
+            if not host_alive and not target_alive:
+                return OwnerInspection("empty", False, accounting)
+            return OwnerInspection("unverifiable", False, accounting, "owner_cgroup_missing")
+        if not path.is_dir():
+            return OwnerInspection("unverifiable", False, {}, "owner_cgroup_type_invalid")
+        try:
+            events = (path / "cgroup.events").read_text(encoding="ascii").splitlines()
+            populated_value = next((line.split()[1] for line in events if line.startswith("populated ")), None)
+            member_count = len((path / "cgroup.procs").read_text(encoding="ascii").split())
+        except (OSError, IndexError):
+            return OwnerInspection("unverifiable", False, {}, "owner_cgroup_unreadable")
+        if populated_value not in {"0", "1"}:
+            return OwnerInspection("unverifiable", False, {}, "owner_cgroup_accounting_invalid")
+        populated = populated_value == "1"
+        accounting = {
+            "hostAlive": host_alive,
+            "targetAlive": target_alive,
+            "populated": populated,
+            "activeProcesses": member_count,
+        }
+        if not populated and not host_alive and not target_alive:
+            return OwnerInspection("empty", False, accounting)
+        if not populated:
+            return OwnerInspection("unverifiable", False, accounting, "owner_cgroup_membership_mismatch")
+        return OwnerInspection("active", True, accounting)
+
+    def signal_persisted_owner(self, evidence: PersistedOwnerEvidence, *, force: bool) -> bool:
+        inspection = self.inspect_persisted_owner(evidence)
+        if inspection.empty:
+            return True
+        if not inspection.cleanup_supported:
+            return False
+        path = self._persisted_cgroup(evidence)
+        if path is None:
+            return False
+        if not force:
+            return super().signal_persisted_owner(evidence, force=False)
+        try:
+            (path / "cgroup.kill").write_text("1\n", encoding="ascii")
+            return True
+        except OSError:
+            return False
+
+    def release_persisted_owner(self, evidence: PersistedOwnerEvidence) -> bool:
+        path = self._persisted_cgroup(evidence)
+        if path is None:
+            return False
+        if not path.exists():
+            return True
+        try:
+            path.rmdir()
+            return True
+        except OSError:
+            return False

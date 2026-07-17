@@ -268,17 +268,17 @@ def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
     init_code, initialized = _run_facade(
         [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
     )
-    start_code = status_code = stop_code = -1
-    started: dict[str, Any] = {}
+    ensure_code = status_code = stop_code = -1
+    ensured: dict[str, Any] = {}
     status: dict[str, Any] = {}
     stopped: dict[str, Any] = {}
     audit: dict[str, Any] = {}
     if init_code == 0:
-        start_code, started = _run_facade(
-            [str(SCRIPT_DIR / "pm_manager.py"), "start", "--config", str(config), "--pretty"]
+        ensure_code, ensured = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "ensure", "--config", str(config), "--pretty"]
         )
     try:
-        if start_code == 0:
+        if ensure_code == 0:
             status_code, status = _run_facade(
                 [str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config), "--pretty"]
             )
@@ -289,35 +289,36 @@ def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
                 "bootstrapSelectionReason": identity.get("bootstrapSelectionReason"),
             }
     finally:
-        if start_code == 0:
+        if ensure_code == 0:
             stop_code, stopped = _run_facade(
                 [str(SCRIPT_DIR / "pm_manager.py"), "stop", "--config", str(config), "--pretty"],
                 timeout=60,
             )
     stop_data = stopped.get("data", {}) if isinstance(stopped.get("data"), dict) else {}
+    cleanup = stop_data.get("cleanup", {}) if isinstance(stop_data.get("cleanup"), dict) else {}
     ok = (
         init_code == 0
-        and start_code == 0
+        and ensure_code == 0
         and status_code == 0
         and stop_code == 0
         and initialized.get("ok") is True
-        and started.get("ok") is True
+        and ensured.get("ok") is True
         and status.get("ok") is True
         and stopped.get("ok") is True
-        and stop_data.get("managerStopped") is True
-        and stop_data.get("bootstrapCleaned") is True
+        and cleanup.get("managerStopped") is True
+        and cleanup.get("bootstrapCleaned") is True
         and not (workspace / ".harness" / "process-manager" / "manager.json").exists()
     )
     return {
         "ok": ok,
-        "exitCodes": {"init": init_code, "start": start_code, "status": status_code, "stop": stop_code},
-        "state": started.get("data", {}).get("state") if isinstance(started.get("data"), dict) else None,
-        "managerStopped": stop_data.get("managerStopped"),
-        "bootstrapCleaned": stop_data.get("bootstrapCleaned"),
+        "exitCodes": {"init": init_code, "ensure": ensure_code, "status": status_code, "stop": stop_code},
+        "state": ensured.get("data", {}).get("state") if isinstance(ensured.get("data"), dict) else None,
+        "managerStopped": cleanup.get("managerStopped"),
+        "bootstrapCleaned": cleanup.get("bootstrapCleaned"),
         "audit": audit,
         "responses": {
             "init": _facade_diagnostic(initialized),
-            "start": _facade_diagnostic(started),
+            "ensure": _facade_diagnostic(ensured),
             "status": _facade_diagnostic(status),
             "stop": _facade_diagnostic(stopped),
         },

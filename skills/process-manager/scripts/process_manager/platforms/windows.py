@@ -10,7 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from ..errors import ConflictError, IdentityError, SupervisorError
-from .base import ManagerLock, PlatformAdapter, PlatformSelection, RunOwner
+from .base import (
+    ManagerLock,
+    OwnerInspection,
+    PersistedOwnerEvidence,
+    PlatformAdapter,
+    PlatformSelection,
+    RunOwner,
+)
 from .windows_acl import WindowsAcl
 
 
@@ -18,6 +25,8 @@ ERROR_ALREADY_EXISTS = 183
 PROCESS_TERMINATE = 0x0001
 PROCESS_SET_QUOTA = 0x0100
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+SYNCHRONIZE = 0x00100000
+WAIT_OBJECT_0 = 0
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
 JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION = 1
@@ -117,6 +126,10 @@ class WindowsApi:
             ctypes.POINTER(wintypes.DWORD),
         ]
         kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        kernel32.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+        kernel32.TerminateProcess.restype = wintypes.BOOL
+        kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        kernel32.WaitForSingleObject.restype = wintypes.DWORD
         kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
         kernel32.CloseHandle.restype = wintypes.BOOL
 
@@ -264,12 +277,19 @@ class WindowsAdapter(PlatformAdapter):
         self.acl = WindowsAcl()
 
     def secure_directory(self, path: Path) -> None:
+        self.validate_runtime_path(path)
         self.acl.secure_directory(path)
 
     def secure_file(self, path: Path) -> None:
+        self.validate_runtime_path(path)
         self.acl.secure_file(path)
 
+    def verify_directory(self, path: Path) -> None:
+        self.validate_runtime_path(path)
+        self.acl.verify_directory(path)
+
     def verify_file(self, path: Path) -> None:
+        self.validate_runtime_path(path)
         self.acl.verify_file(path)
 
     def acquire_manager_lock(self) -> ManagerLock:
@@ -363,3 +383,74 @@ class WindowsAdapter(PlatformAdapter):
             return self.process_identity(pid) == expected
         except (IdentityError, SupervisorError):
             return False
+
+    @staticmethod
+    def _identity_evidence_valid(expected: dict[str, Any]) -> bool:
+        return (
+            set(expected) == {"pid", "creationFileTime", "executable"}
+            and isinstance(expected.get("pid"), int)
+            and expected["pid"] > 0
+            and isinstance(expected.get("creationFileTime"), str)
+            and bool(expected["creationFileTime"])
+            and isinstance(expected.get("executable"), str)
+            and bool(expected["executable"])
+        )
+
+    def inspect_persisted_owner(self, evidence: PersistedOwnerEvidence) -> OwnerInspection:
+        owner = evidence.owner
+        host_pid = evidence.host_identity.get("pid")
+        target_identity = evidence.target_identity
+        target_pid = target_identity.get("pid") if isinstance(target_identity, dict) else None
+        if (
+            owner.get("platform") != self.selection.platform
+            or owner.get("backend") != self.selection.backend
+            or owner.get("capabilityHash") != evidence.capability_hash
+            or owner.get("hostPid") != host_pid
+            or not self._identity_evidence_valid(evidence.host_identity)
+            or target_identity is not None
+            and (
+                not isinstance(target_identity, dict)
+                or not self._identity_evidence_valid(target_identity)
+                or not isinstance(target_pid, int)
+            )
+        ):
+            return OwnerInspection("unverifiable", False, {}, "owner_identity_invalid")
+        host_alive = self.identity_matches(evidence.host_identity)
+        target_alive = self.identity_matches(target_identity) if isinstance(target_identity, dict) else None
+        accounting = {
+            "hostAlive": host_alive,
+            "targetAlive": target_alive,
+            "knownProcessesActive": int(host_alive) + int(target_alive is True),
+        }
+        if not host_alive and target_alive is not True:
+            return OwnerInspection("empty", False, accounting)
+        if target_alive is None:
+            return OwnerInspection("unverifiable", False, accounting, "owner_target_identity_missing")
+        return OwnerInspection("active", False, accounting, "owner_job_handle_unavailable")
+
+    def signal_persisted_owner(self, evidence: PersistedOwnerEvidence, *, force: bool) -> bool:
+        del force
+        return self.inspect_persisted_owner(evidence).empty
+
+    def terminate_manager(self, expected: dict[str, Any], *, timeout: float) -> bool:
+        pid = expected.get("pid")
+        if not isinstance(pid, int) or not self.identity_matches(expected):
+            return False
+        handle = self.api.kernel32.OpenProcess(
+            PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE,
+            False,
+            pid,
+        )
+        if not handle:
+            return not self.identity_matches(expected)
+        terminated = False
+        try:
+            if not self.identity_matches(expected):
+                return True
+            if not self.api.kernel32.TerminateProcess(handle, 1):
+                return False
+            wait_ms = max(0, min(int(timeout * 1000), 3_600_000))
+            terminated = self.api.kernel32.WaitForSingleObject(handle, wait_ms) == WAIT_OBJECT_0
+        finally:
+            self.api.close(handle)
+        return terminated and not self.identity_matches(expected)

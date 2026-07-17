@@ -96,9 +96,24 @@ def _absolute_path(value: Any, label: str, *, file_only: bool = False, directory
     return resolved
 
 
+def _lexical_absolute_path(value: Any, label: str) -> Path:
+    path = Path(_string(value, label))
+    if not path.is_absolute():
+        raise ValidationError(f"{label} 必须是绝对路径")
+    return Path(os.path.abspath(path))
+
+
 def _is_within(path: Path, parent: Path) -> bool:
     try:
         path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def _is_lexically_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
         return True
     except ValueError:
         return False
@@ -135,8 +150,8 @@ def load_manager_config(path: Path) -> ManagerConfig:
         required={"workspaceRoot", "stateRoot", "control", "history", "logs"},
     )
     workspace = _absolute_path(data["workspaceRoot"], "workspaceRoot", directory_only=True)
-    state_root = _absolute_path(data["stateRoot"], "stateRoot")
-    if state_root == workspace or not _is_within(state_root, workspace):
+    state_root = _lexical_absolute_path(data["stateRoot"], "stateRoot")
+    if state_root == workspace or not _is_lexically_within(state_root, workspace):
         raise ValidationError("stateRoot 必须是 workspaceRoot 内的独立目录")
     if not _is_within(config_path, workspace):
         raise ValidationError("manager config 必须位于 workspaceRoot 内")

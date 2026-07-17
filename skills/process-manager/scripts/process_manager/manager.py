@@ -3,45 +3,36 @@
 from __future__ import annotations
 
 import hashlib
+import math
 import secrets
 import subprocess
 import threading
 import time
-from dataclasses import dataclass, field
+import uuid
 from pathlib import Path
 from typing import Any
 
-from .atomic import read_json_file
 from .config import load_service_config, resolve_service_environment
 from .errors import ConflictError, IdentityError, NotFoundError, PMError, StateError, SupervisorError, ValidationError
 from .launch import (
-    MAX_HOST_MESSAGE_BYTES,
     build_host_spec,
     cleanup_failed_start,
+    owned_run,
     read_host_message,
+    read_managed_host_state,
     service_host_command,
     validate_target_handshake,
     write_host_spec,
 )
 from .logs import read_log_tail
+from .manager_start import StartDrainGate
 from .models import ManagerConfig, ServiceConfig
 from .platforms.base import PlatformAdapter, RunOwner
 from .probes import wait_for_readiness
+from .run_finalization import ManagedRun, OwnerFinalization, RunFinalizationCoordinator
 from .state import ACTIVE_STATES, StateStore
 
-
-OWNER_FORCE_SECONDS = 5
-OWNER_SETTLE_SECONDS = 1
-
-
-@dataclass
-class ManagedRun:
-    service: ServiceConfig
-    owner: RunOwner
-    capability: str
-    capability_hash: str
-    host_state: Path
-    finalization_lock: Any = field(default_factory=threading.RLock)
+MANAGER_SHUTDOWN_SECONDS = 30.0
 
 
 class ProcessManager:
@@ -50,27 +41,35 @@ class ProcessManager:
         config: ManagerConfig,
         adapter: PlatformAdapter,
         state: StateStore,
-        instance_id: str,
+        instance_id: str, *,
+        operation_id: str,
+        runtime_fingerprint: str = "0" * 64,
         bootstrap_backend: str = "direct",
         bootstrap_selection_reason: str = "direct composition root",
     ) -> None:
         self.config = config
         self.adapter = adapter
         self.state = state
-        self.instance_id = instance_id
+        self.instance_id, self.operation_id = instance_id, operation_id
+        self.runtime_fingerprint = runtime_fingerprint
         self.bootstrap_backend = bootstrap_backend
         self.bootstrap_selection_reason = bootstrap_selection_reason
         self._runs: dict[str, ManagedRun] = {}
         self._watchers: dict[str, threading.Thread] = {}
         self._lock = threading.RLock()
-        self._accepting_starts = True
-        self.reconciled_records = self.state.reconcile_manager_loss(instance_id)
+        self._start_gate = StartDrainGate()
+        self._finalization = RunFinalizationCoordinator(state, adapter, instance_id)
+        self._shutdown_operation_id: str | None = None
+        self._shutdown_deadline: float | None = None
+        self.reconciled_records = self._finalization.reconcile_manager_loss(deadline=time.monotonic() + MANAGER_SHUTDOWN_SECONDS)
+        self._start_gate.open()
 
     def health(self) -> dict[str, Any]:
         return {
             "managerReady": True,
             "supervisorReady": True,
-            "instance": {"id": self.instance_id},
+            "instance": {"id": self.instance_id}, "operationId": self.operation_id,
+            "runtimeFingerprint": self.runtime_fingerprint,
             "endpointHealthy": True,
         }
 
@@ -78,29 +77,30 @@ class ProcessManager:
         return {
             "managerReady": True,
             "supervisorReady": True,
-            "instance": {"id": self.instance_id},
+            "instance": {"id": self.instance_id}, "operationId": self.operation_id,
+            "runtimeFingerprint": self.runtime_fingerprint,
             "diagnostics": {
                 "bootstrapBackend": self.bootstrap_backend,
                 "bootstrapSelectionReason": self.bootstrap_selection_reason,
                 **self.adapter.diagnostics(),
-                "reconciledManagerLostRecords": self.reconciled_records,
+                "managerLossReconciliation": self.reconciled_records,
             },
         }
 
-
     def start(self, service_path: Path) -> dict[str, Any]:
+        with self._start_gate.admit():
+            return self._start(service_path)
+
+    def _start(self, service_path: Path) -> dict[str, Any]:
         service = load_service_config(service_path, self.config)
         environment, secrets_to_redact = resolve_service_environment(service)
-        with self._lock:
-            if not self._accepting_starts:
-                raise ConflictError("manager 正在关闭，不再接受新 start")
-            capability = secrets.token_urlsafe(32)
-            capability_hash = hashlib.sha256(capability.encode("utf-8")).hexdigest()
-            record = self.state.reserve(
-                service,
-                manager_instance_id=self.instance_id,
-                capability_hash=capability_hash,
-            )
+        capability = secrets.token_urlsafe(32)
+        capability_hash = hashlib.sha256(capability.encode("utf-8")).hexdigest()
+        record = self.state.reserve(
+            service,
+            manager_instance_id=self.instance_id,
+            capability_hash=capability_hash,
+        )
         key = str(record["processKey"])
         host_state = Path(record["runDir"]) / "host-state.json"
         owner: RunOwner | None = None
@@ -112,6 +112,16 @@ class ProcessManager:
             if ready.get("event") != "host_ready" or ready.get("pid") != host.pid:
                 raise IdentityError("service-host ready identity 不匹配")
             owner = self.adapter.create_run_owner(record["processId"], host, capability_hash)
+            record = self.state.update(
+                key,
+                status="starting",
+                internal_updates={
+                    "owner": owner.internal_identity(),
+                    "hostIdentity": self.adapter.process_identity(host.pid),
+                    "targetIdentity": None,
+                    "hostState": str(host_state),
+                },
+            )
             spec = build_host_spec(
                 self.instance_id,
                 service,
@@ -124,24 +134,23 @@ class ProcessManager:
             )
             write_host_spec(host, spec)
             identities = validate_target_handshake(self.adapter, owner, host, capability_hash)
-            public_updates = {
-                "state": "running",
-                "logs": {
-                    "stdout": str(Path(record["runDir"]) / "stdout.log"),
-                    "stderr": str(Path(record["runDir"]) / "stderr.log"),
+            record = self.state.update(
+                key,
+                status="starting",
+                internal_updates={
+                    "owner": identities["ownerIdentity"],
+                    "targetIdentity": identities["targetIdentity"],
                 },
-            }
-            internal_updates = {
-                "owner": owner.internal_identity(),
-                "hostIdentity": identities["hostIdentity"],
-                "targetIdentity": identities["targetIdentity"],
-                "hostState": str(host_state),
-            }
+            )
             record = self.state.update(
                 key,
                 status="running",
-                public_updates=public_updates,
-                internal_updates=internal_updates,
+                public_updates={
+                    "logs": {
+                        "stdout": str(Path(record["runDir"]) / "stdout.log"),
+                        "stderr": str(Path(record["runDir"]) / "stderr.log"),
+                    },
+                },
             )
             run = ManagedRun(service, owner, capability, capability_hash, host_state)
             with self._lock:
@@ -149,16 +158,44 @@ class ProcessManager:
             self._start_completion_watcher(key, run)
             return self.state.public_record(record)
         except Exception as exc:
-            cleanup_failures = cleanup_failed_start(owner, host)
+            if owner is not None:
+                cleanup_result = self._finalization.owner_finalizer.finalize_live(
+                    owner,
+                    grace_seconds=0.0,
+                    request_graceful=False,
+                )
+                if not cleanup_result.cleanup_verified:
+                    cleanup_result = OwnerFinalization(
+                        cleanup_result.owner_empty,
+                        cleanup_result.cleanup_verified,
+                        cleanup_result.graceful_signaled,
+                        cleanup_result.force_required,
+                        cleanup_result.force_signaled,
+                        cleanup_result.accounting,
+                        "start_cleanup_failed",
+                    )
+                cleanup_failures = [] if cleanup_result.cleanup_verified else [cleanup_result.error or "owner_cleanup_unverified"]
+            else:
+                cleanup_failures = cleanup_failed_start(None, host)
+                cleanup_result = OwnerFinalization(
+                    not cleanup_failures,
+                    not cleanup_failures,
+                    False,
+                    False,
+                    False,
+                    {},
+                    None if not cleanup_failures else "start_cleanup_failed",
+                )
             try:
-                self.state.update(
-                    key,
-                    status="start_failed",
-                    public_updates={
-                        "failure": type(exc).__name__,
-                        "cleanupVerified": not cleanup_failures,
-                    },
-                    clear_active=True,
+                current = self.state.get(key=key)
+                self._finalization.commit_result(
+                    current,
+                    terminal_status="start_failed",
+                    result=cleanup_result,
+                    public_updates={"failure": type(exc).__name__},
+                    request_graceful=False,
+                    grace_seconds=0.0,
+                    reason="start_failed",
                 )
             except Exception as state_exc:  # noqa: BLE001
                 cleanup_failures.append(f"state update: {type(state_exc).__name__}")
@@ -166,25 +203,6 @@ class ProcessManager:
                 for failure in cleanup_failures:
                     exc.add_note(f"start cleanup warning: {failure}")
             raise
-
-    def _host_state(self, run: ManagedRun) -> dict[str, Any] | None:
-        if not run.host_state.exists():
-            return None
-        value = read_json_file(run.host_state, max_bytes=MAX_HOST_MESSAGE_BYTES)
-        if not isinstance(value, dict) or value.get("capabilityHash") != run.capability_hash:
-            raise IdentityError("host-state capability identity 不匹配")
-        return value
-
-    def _owned_run(self, record: dict[str, Any]) -> ManagedRun:
-        key = str(record["processKey"])
-        with self._lock:
-            run = self._runs.get(key)
-        internal = record.get("internal", {})
-        if run is None or internal.get("managerInstanceId") != self.instance_id:
-            raise IdentityError("run owner 不属于当前 manager")
-        if internal.get("capabilityHash") != run.capability_hash:
-            raise IdentityError("run capability 不匹配")
-        return run
 
     def _start_completion_watcher(self, key: str, run: ManagedRun) -> None:
         def watch() -> None:
@@ -196,10 +214,13 @@ class ProcessManager:
                 try:
                     record = self.state.get(key=key)
                     if record.get("status") in ACTIVE_STATES:
-                        self.state.update(
-                            key,
-                            status="cleanup_unverified",
-                            public_updates={"failure": type(exc).__name__, "cleanupVerified": False},
+                        self._finalization.finalize(
+                            record,
+                            reason="completion_watcher_failed",
+                            terminal_status="host_failed",
+                            live_run=run,
+                            public_updates={"failure": type(exc).__name__},
+                            request_graceful=False,
                         )
                 except Exception:
                     pass
@@ -222,7 +243,7 @@ class ProcessManager:
             with self._lock:
                 if self._runs.get(key) is not run:
                     return self.state.get(key=key)
-            host_state = self._host_state(run)
+            host_state = read_managed_host_state(run, self.adapter)
             host_exited = run.owner.host.poll() is not None
             if host_state is None or host_state.get("state") == "running":
                 if not host_exited:
@@ -236,35 +257,18 @@ class ProcessManager:
                     raise IdentityError("host-state terminal state 无效")
                 exit_code = host_state.get("exitCode")
                 exited_at = host_state.get("exitedAt")
-            force_required = False
-            force_signaled = False
-            owner_empty = run.owner.is_empty()
-            if not owner_empty and terminal_state == "exited":
-                owner_empty = self._wait_empty(run.owner, OWNER_SETTLE_SECONDS)
-            if not owner_empty:
-                if terminal_state == "exited":
-                    terminal_state = "contract_violation"
-                force_required = True
-                force_signaled = run.owner.force_stop()
-                owner_empty = self._wait_empty(run.owner, OWNER_FORCE_SECONDS)
-            status = str(terminal_state) if owner_empty else "cleanup_unverified"
-            record = self.state.update(
-                key,
-                status=status,
+            record = self._finalization.finalize(
+                record,
+                reason=f"host_{terminal_state}",
+                terminal_status=str(terminal_state),
+                live_run=run,
+                request_graceful=False,
                 public_updates={
                     "exitCode": exit_code,
                     "exitedAt": exited_at,
-                    "completion": {
-                        "forceRequired": force_required,
-                        "forceSignaled": force_signaled,
-                        "ownerEmpty": owner_empty,
-                    },
-                    "cleanupVerified": owner_empty,
                 },
-                clear_active=owner_empty,
             )
-            if owner_empty:
-                run.owner.close()
+            if record["status"] not in ACTIVE_STATES:
                 with self._lock:
                     if self._runs.get(key) is run:
                         self._runs.pop(key, None)
@@ -339,7 +343,7 @@ class ProcessManager:
         record = self._refresh(key, record)
         if record.get("status") != "running":
             raise ConflictError("只有 running process 可以执行 readiness")
-        run = self._owned_run(record)
+        run = owned_run(self._runs, self._lock, record, self.instance_id)
         readiness = run.service.readiness
         if readiness is None:
             raise ValidationError("service 未配置 readiness，不能声明 ready")
@@ -373,62 +377,53 @@ class ProcessManager:
             )
         return {"processKey": key, **result, "state": record["status"]}
 
-    @staticmethod
-    def _wait_empty(owner: RunOwner, timeout: float) -> bool:
-        deadline = time.monotonic() + max(0.0, timeout)
-        while time.monotonic() <= deadline:
-            if owner.is_empty():
-                return True
-            time.sleep(0.1)
-        return owner.is_empty()
+    def _finalize_run_record(
+        self,
+        record: dict[str, Any],
+        *,
+        reason: str,
+        terminal_status: str,
+        public_updates: dict[str, Any] | None = None,
+        deadline: float | None = None,
+    ) -> dict[str, Any]:
+        key = str(record["processKey"])
+        if record.get("status") not in ACTIVE_STATES:
+            return record
+        with self._lock:
+            run = self._runs.get(key)
+        current = self.state.get(key=key)
+        committed = self._finalization.finalize(
+            current,
+            reason=reason,
+            terminal_status=terminal_status,
+            live_run=run,
+            public_updates=public_updates,
+            deadline=deadline,
+        )
+        if committed.get("status") not in ACTIVE_STATES and run is not None:
+            with self._lock:
+                if self._runs.get(key) is run:
+                    self._runs.pop(key, None)
+        return committed
 
     def stop(self, *, service: str | None = None, process_key: str | None = None) -> dict[str, Any]:
         record = self.state.get(service=service, key=process_key)
+        record = self._finalize_run_record(
+            record,
+            reason="stop_requested",
+            terminal_status="stopped",
+        )
+        if record.get("public", {}).get("cleanupVerified"):
+            return self.state.public_record(record)
         key = str(record["processKey"])
-        run = self._owned_run(record)
-        with run.finalization_lock:
-            with self._lock:
-                if self._runs.get(key) is not run:
-                    return self.state.public_record(self.state.get(key=key))
-            self.state.update(key, status="stopping")
-            graceful_signaled = run.owner.graceful_stop()
-            owner_empty = self._wait_empty(run.owner, float(run.service.stop["graceSeconds"]))
-            force_required = False
-            force_signaled = False
-            if not owner_empty:
-                force_required = True
-                force_signaled = run.owner.force_stop()
-                owner_empty = self._wait_empty(run.owner, OWNER_FORCE_SECONDS)
-            host_state = self._host_state(run)
-            status = "stopped" if owner_empty else "cleanup_unverified"
-            record = self.state.update(
-                key,
-                status=status,
-                public_updates={
-                    "exitCode": host_state.get("exitCode") if host_state else None,
-                    "exitedAt": host_state.get("exitedAt") if host_state else None,
-                    "stopResult": {
-                        "gracefulRequested": True,
-                        "gracefulSignaled": graceful_signaled,
-                        "forceRequired": force_required,
-                        "forceSignaled": force_signaled,
-                        "graceSeconds": run.service.stop["graceSeconds"],
-                        "ownerEmpty": owner_empty,
-                    },
-                    "cleanupVerified": owner_empty,
-                },
-                clear_active=owner_empty,
-            )
-            if owner_empty:
-                run.owner.close()
-                with self._lock:
-                    if self._runs.get(key) is run:
-                        self._runs.pop(key, None)
-                return self.state.public_record(record)
-            raise SupervisorError(
-                "run owner 在 graceful-force 生命周期后仍非空",
-                diagnostics={"processKey": key, "ownerEmpty": False},
-            )
+        raise SupervisorError(
+            "run owner 清理尚未完成",
+            diagnostics={
+                "processKey": key,
+                "ownerEmpty": record.get("public", {}).get("ownerEmpty", False),
+                "cleanupError": record.get("public", {}).get("cleanupError"),
+            },
+        )
 
     def restart(self, service_path: Path, *, timeout_seconds: float | None = None) -> dict[str, Any]:
         service_config = load_service_config(service_path, self.config)
@@ -457,29 +452,49 @@ class ProcessManager:
     ) -> dict[str, Any]:
         return self.state.prune(max_inactive=max_inactive, dry_run=dry_run, keep_runs=keep_runs)
 
-    def shutdown(self) -> dict[str, Any]:
+    def accept_shutdown(
+        self,
+        *,
+        operation_id: str,
+        timeout_seconds: float = MANAGER_SHUTDOWN_SECONDS,
+    ) -> dict[str, Any]:
+        try:
+            canonical_operation_id = uuid.UUID(operation_id).hex
+        except (ValueError, AttributeError) as exc:
+            raise ValidationError("manager shutdown operationId 无效") from exc
+        if operation_id != canonical_operation_id:
+            raise ValidationError("manager shutdown operationId 不是 canonical UUID")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not math.isfinite(float(timeout_seconds))
+            or not 0 < timeout_seconds <= 3600
+        ):
+            raise ValidationError("manager shutdown timeoutSeconds 必须在 (0, 3600] 范围内")
+        requested_deadline = time.monotonic() + float(timeout_seconds)
         with self._lock:
-            self._accepting_starts = False
-            keys = list(self._runs)
-        results: list[dict[str, Any]] = []
-        failures: list[str] = []
-        for key in keys:
-            try:
-                results.append(self.stop(process_key=key))
-            except PMError as exc:
-                failures.append(exc.code)
+            if (
+                self._shutdown_operation_id is not None
+                and self._shutdown_operation_id != operation_id
+            ):
+                raise ConflictError("manager 已接受其它 shutdown operation")
+            self._start_gate.close()
+            self._shutdown_operation_id = operation_id
+            if self._shutdown_deadline is None:
+                self._shutdown_deadline = requested_deadline
+            else:
+                self._shutdown_deadline = min(self._shutdown_deadline, requested_deadline)
+        return {"shutdownAccepted": True, "operationId": operation_id}
+
+    def shutdown(self) -> dict[str, Any]:
+        self._start_gate.close()
+        with self._lock:
+            operation_id = self._shutdown_operation_id
+            deadline = self._shutdown_deadline or time.monotonic() + MANAGER_SHUTDOWN_SECONDS
+            self._shutdown_deadline = deadline
+        self._start_gate.wait_for_drain(deadline)
         with self._lock:
             watchers = list(self._watchers.values())
-        for watcher in watchers:
-            watcher.join(timeout=5)
-        if failures:
-            raise SupervisorError(
-                "manager shutdown 未能清空全部 run owner",
-                diagnostics={"failureCodes": failures, "ownerEmpty": False},
-            )
-        return {
-            "stopped": results,
-            "failures": failures,
-            "ownerEmpty": not failures,
-            "cleanupVerified": not failures,
-        }
+        return self._finalization.shutdown_active(
+            operation_id=operation_id, finalize_record=self._finalize_run_record,
+            watchers=watchers, deadline=deadline)

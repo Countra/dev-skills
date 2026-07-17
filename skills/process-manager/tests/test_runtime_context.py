@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
@@ -70,6 +71,34 @@ class RuntimeContextTests(unittest.TestCase):
             with self.assertRaises(ContextInvalidError):
                 resolve_runtime_context(config=config_path)
             self.assertEqual(before, config_path.read_bytes())
+
+    def test_state_root_keeps_lexical_path_for_platform_validation(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config_path = workspace / ".harness" / "process-manager" / "config.json"
+            state_root = workspace / ".harness" / "runtime-link"
+            resolved_target = workspace / ".harness" / "runtime-target"
+            write_json(
+                config_path,
+                {
+                    "workspaceRoot": str(workspace),
+                    "stateRoot": str(state_root),
+                    "control": {"host": "127.0.0.1", "port": 0, "maxRequestBytes": 65536},
+                    "history": {"maxInactive": 20, "deleteRunDirs": True},
+                    "logs": {"maxBytes": 10485760, "backups": 3},
+                },
+            )
+            original_resolve = Path.resolve
+
+            def redirected_resolve(path: Path, *args, **kwargs):  # noqa: ANN002, ANN003
+                if path == state_root:
+                    return resolved_target
+                return original_resolve(path, *args, **kwargs)
+
+            with mock.patch("pathlib.Path.resolve", new=redirected_resolve):
+                context = resolve_runtime_context(config=config_path)
+
+            self.assertEqual(context.state_root, state_root)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@ TEST_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
 from process_manager.config import create_default_manager_config, load_service_config  # noqa: E402
 from process_manager.platforms.base import (  # noqa: E402
     ManagerLock,
+    OwnerInspection,
+    PersistedOwnerEvidence,
     PlatformAdapter,
     PlatformSelection,
     RunOwner,
@@ -61,7 +63,9 @@ class FakeOwner(RunOwner):
         return self.empty
 
     def close(self) -> None:
-        return
+        self.empty = True
+        if hasattr(self.host, "finish") and self.host.poll() is None:
+            self.host.finish(0)
 
 
 class FakeAdapter(PlatformAdapter):
@@ -73,14 +77,23 @@ class FakeAdapter(PlatformAdapter):
         )
         self.host_factory = None
         self.last_owner: FakeOwner | None = None
+        self.owners: dict[str, FakeOwner] = {}
         self.identity_valid = True
+        self.manager_terminations = 0
 
     def secure_directory(self, path: Path) -> None:
+        self.validate_runtime_path(path)
         path.mkdir(parents=True, exist_ok=True)
 
     def secure_file(self, path: Path) -> None:
+        self.validate_runtime_path(path)
         if not path.is_file():
             raise AssertionError(f"missing file: {path}")
+
+    def verify_directory(self, path: Path) -> None:
+        self.validate_runtime_path(path)
+        if not path.is_dir():
+            raise AssertionError(f"missing directory: {path}")
 
     def verify_file(self, path: Path) -> None:
         self.secure_file(path)
@@ -99,6 +112,7 @@ class FakeAdapter(PlatformAdapter):
     def create_run_owner(self, run_id, host, capability_hash):  # noqa: ANN001
         host.capability_hash = capability_hash
         self.last_owner = FakeOwner(self.selection, host, capability_hash)
+        self.owners[str(run_id)] = self.last_owner
         return self.last_owner
 
     def process_identity(self, pid: int) -> dict[str, Any]:
@@ -106,6 +120,34 @@ class FakeAdapter(PlatformAdapter):
 
     def identity_matches(self, expected: dict[str, Any]) -> bool:
         return self.identity_valid and expected == self.process_identity(int(expected.get("pid", -1)))
+
+    def inspect_persisted_owner(self, evidence: PersistedOwnerEvidence) -> OwnerInspection:
+        owner = self.owners.get(evidence.run_id)
+        if (
+            owner is None
+            or evidence.owner.get("capabilityHash") != evidence.capability_hash
+            or owner.capability_hash != evidence.capability_hash
+        ):
+            return OwnerInspection("unverifiable", False, {}, "fixture_owner_missing")
+        return OwnerInspection(
+            "empty" if owner.empty else "active",
+            not owner.empty,
+            {"activeProcesses": 0 if owner.empty else 1},
+        )
+
+    def signal_persisted_owner(self, evidence: PersistedOwnerEvidence, *, force: bool) -> bool:
+        owner = self.owners.get(evidence.run_id)
+        if owner is None:
+            return False
+        return owner.force_stop() if force else owner.graceful_stop()
+
+    def terminate_manager(self, expected: dict[str, Any], *, timeout: float) -> bool:
+        del timeout
+        if not self.identity_matches(expected):
+            return False
+        self.manager_terminations += 1
+        self.identity_valid = False
+        return True
 
 
 def write_json(path: Path, value: Any) -> None:

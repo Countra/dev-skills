@@ -139,6 +139,18 @@ class ConflictError(PMError):
     exit_code = 4
 
 
+class OwnedRunsConfirmationRequiredError(ConflictError):
+    code = "owned_runs_confirmation_required"
+
+
+class RestartConfirmationRequiredError(OwnedRunsConfirmationRequiredError):
+    code = "restart_confirmation_required"
+
+
+class StopConfirmationRequiredError(OwnedRunsConfirmationRequiredError):
+    code = "stop_confirmation_required"
+
+
 class IdentityError(PMError):
     code = "identity_mismatch"
     http_status = 409

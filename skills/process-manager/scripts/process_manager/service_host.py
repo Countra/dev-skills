@@ -18,6 +18,7 @@ from typing import Any, BinaryIO, Callable
 
 from .atomic import atomic_write_json, retry_windows_file_operation
 from .errors import ConfigurationError
+from .launch import read_target_identity_message
 from .runtime import now_text
 
 
@@ -346,6 +347,19 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     process, mode, console = _spawn_target(spec)
     owner_control = dict(spec["ownerControl"])
     controller = TargetController(process, mode, owner_control)
+    target = {"pid": process.pid, "pgid": process.pid}
+    _emit({"event": "target_spawned", "capabilityHash": spec["capabilityHash"], "target": target})
+    try:
+        target_identity, owner_identity = read_target_identity_message(
+            sys.stdin,
+            spec,
+            target,
+            os.getpid(),
+        )
+    except Exception:
+        controller.cleanup_after_manager_loss(float(spec.get("graceSeconds", 8)))
+        console.close()
+        raise
     logs = dict(spec["logs"])
     secrets = [str(value) for value in spec.get("redactValues", []) if value]
     stdout_log = RotatingBinaryLog(Path(logs["stdout"]), int(logs["maxBytes"]), int(logs["backups"]))
@@ -368,7 +382,6 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     ]
     for thread in pumps:
         thread.start()
-    target = {"pid": process.pid, "pgid": process.pid}
     state = {
         "schema": "process-manager",
         "runId": spec["runId"],
@@ -376,11 +389,21 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
         "capabilityHash": spec["capabilityHash"],
         "hostPid": os.getpid(),
         "target": target,
+        "targetIdentity": target_identity,
+        "ownerIdentity": owner_identity,
         "state": "running",
         "startedAt": now_text(),
     }
     atomic_write_json(host_state, state)
-    _emit({"event": "target_started", "capabilityHash": spec["capabilityHash"], "target": target})
+    _emit(
+        {
+            "event": "target_started",
+            "capabilityHash": spec["capabilityHash"],
+            "target": target,
+            "targetIdentity": target_identity,
+            "ownerIdentity": owner_identity,
+        }
+    )
 
     manager_lost = threading.Event()
 
