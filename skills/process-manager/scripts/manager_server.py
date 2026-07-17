@@ -115,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             runtime_fingerprint=current_fingerprint,
             bootstrap_backend=args.bootstrap_backend,
             bootstrap_selection_reason=args.bootstrap_reason,
+            workspace_digest=context.workspace_digest,
         )
         token = read_token(config, adapter)
         server = ControlServer((config.host, config.port), manager, token, config.max_request_bytes)

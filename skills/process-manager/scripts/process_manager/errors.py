@@ -163,6 +163,14 @@ class NotFoundError(PMError):
     exit_code = 8
 
 
+class SessionNotFoundError(NotFoundError):
+    code = "session_not_found"
+
+
+class SessionExpiredError(ConflictError):
+    code = "session_expired"
+
+
 class StateError(PMError):
     code = "state_error"
     http_status = 500
@@ -177,6 +185,11 @@ class SupervisorError(PMError):
     code = "supervisor_unavailable"
     http_status = 503
     exit_code = 7
+
+
+class SessionCleanupPendingError(SupervisorError):
+    code = "session_cleanup_pending"
+    retryable = True
 
 
 class UnsupportedPlatformError(SupervisorError):

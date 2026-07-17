@@ -11,30 +11,14 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .atomic import InterProcessFileLock, atomic_write_bytes, atomic_write_json, read_json_file
-from .errors import (
-    ConflictError,
-    NotFoundError,
-    OperationConflictError,
-    RuntimeRebuildRequiredError,
-    StateError,
-)
-from .models import (
-    ACTIVE_STATES,
-    ManagerConfig,
-    ServiceConfig,
-    StateSchema,
-    process_key,
-)
+from .errors import ConflictError, NotFoundError, OperationConflictError, RuntimeRebuildRequiredError, StateError
+from .models import ACTIVE_STATES, ManagerConfig, ServiceConfig, StateSchema, process_key
 from .platforms.base import PlatformAdapter
 from .resources import PruneCoordinator, StateRebuilder
 from .runtime import now_text, prepare_runtime_lock
-
+from .sessions import RepositoryCommitter, restore_session_index
 
 MAX_STATE_BYTES = 16 * 1024 * 1024
-MAX_STATE_TRANSACTION_BYTES = 32 * 1024 * 1024
-STATE_TRANSACTION_KEYS = {"schema", "state", "records"}
-
-
 class StateStore:
     _lock_guard = threading.Lock()
     _repository_locks: dict[str, threading.RLock] = {}
@@ -48,6 +32,7 @@ class StateStore:
         with self._lock_guard:
             self._lock = self._repository_locks.setdefault(lock_key, threading.RLock())
         self._transaction_state = threading.local()
+        self._committer = RepositoryCommitter(self)
 
     @property
     def active_states(self) -> set[str]:
@@ -59,7 +44,7 @@ class StateStore:
 
     @property
     def _pending_transaction(self) -> Path:
-        return self.paths.state_root / "processes.pending.json"
+        return self._committer.path
 
     @contextmanager
     def transaction(self) -> Iterator[None]:
@@ -86,51 +71,24 @@ class StateStore:
         return self.schema.validate_state(read_json_file(path, max_bytes=MAX_STATE_BYTES))
 
     def _read_pending_transaction(self) -> dict[str, Any] | None:
-        path = self.adapter.validate_runtime_path(self._pending_transaction)
-        if not path.exists():
-            return None
-        self.adapter.verify_file(path)
-        value = read_json_file(path, max_bytes=MAX_STATE_TRANSACTION_BYTES)
-        if not isinstance(value, dict) or set(value) != STATE_TRANSACTION_KEYS:
-            raise StateError("process state pending transaction 字段集合无效")
-        if value.get("schema") != "process-manager-state-transaction":
-            raise RuntimeRebuildRequiredError("process state pending transaction 使用旧或未知 schema")
-        state = self.schema.validate_state(value.get("state"))
-        records = value.get("records")
-        if not isinstance(records, list) or len(records) != 1:
-            raise StateError("process state pending transaction record 数量无效")
-        record = records[0]
-        key = record.get("processKey") if isinstance(record, dict) else None
-        if not isinstance(key, str) or self.schema.validate_record(key, record) != state["processes"].get(key):
-            raise StateError("process state pending transaction record 与中央状态不一致")
-        return {"schema": value["schema"], "state": state, "records": records}
+        return self._committer.read()
 
     def _apply_pending_transaction(self, value: dict[str, Any]) -> None:
-        for record in value["records"]:
-            _, process_file = self.schema.run_paths(str(record["service"]), str(record["processId"]))
-            atomic_write_json(self.adapter.validate_runtime_path(process_file), record)
-            self.adapter.secure_file(process_file)
-        self._save(value["state"])
-        self.adapter.validate_runtime_path(self._pending_transaction).unlink(missing_ok=True)
+        self._committer.apply(value)
 
     def _recover_pending_transaction(self) -> None:
         pending = self._read_pending_transaction()
         if pending is not None:
             self._apply_pending_transaction(pending)
 
-    def _commit_record(self, state: dict[str, Any], record: dict[str, Any]) -> None:
-        state["stateRevision"] = int(state.get("stateRevision", 0)) + 1
-        self.schema.validate_state(state)
-        pending = {
-            "schema": "process-manager-state-transaction",
-            "state": state,
-            "records": [record],
-        }
-        path = self.adapter.validate_runtime_path(self._pending_transaction)
-        atomic_write_json(path, pending)
-        self.adapter.secure_file(path)
-        self._apply_pending_transaction(pending)
+    def commit_repository(
+        self, state: dict[str, Any], *, records: list[dict[str, Any]] | None = None,
+        sessions: list[dict[str, Any]] | None = None,
+    ) -> None:
+        self._committer.commit(state, records or [], sessions or [])
 
+    def _commit_record(self, state: dict[str, Any], record: dict[str, Any]) -> None:
+        self.commit_repository(state, records=[record])
     def load(self) -> dict[str, Any]:
         with self._lock:
             pending = self._read_pending_transaction()
@@ -154,7 +112,7 @@ class StateStore:
                     except StateError:
                         backup = None
                 rebuilt = self.rebuild()
-                recovered = rebuilt if rebuilt["processes"] or backup is None else backup
+                recovered = rebuilt if rebuilt["processes"] or rebuilt["sessions"] or backup is None else backup
                 self._save(recovered, backup=False)
                 return recovered
 
@@ -178,17 +136,16 @@ class StateStore:
             self._save(state)
 
     def rebuild(self) -> dict[str, Any]:
-        return StateRebuilder(self).run()
+        return restore_session_index(self, StateRebuilder(self).run())
 
     def reserve(
-        self,
-        service: ServiceConfig,
-        *,
-        manager_instance_id: str,
-        capability_hash: str,
+        self, service: ServiceConfig, *, manager_instance_id: str,
+        capability_hash: str, ownership: dict[str, Any],
+        expected_session_revision: int | None = None,
     ) -> dict[str, Any]:
         with self.transaction():
             state = self.load()
+            ownership = dict(self.schema.validate_ownership(ownership))
             if state["intakeFence"] is not None:
                 raise ConflictError(
                     "manager intake 已关闭，拒绝创建新 run",
@@ -203,6 +160,16 @@ class StateStore:
                 )
             run_id = f"run-{uuid.uuid4().hex}"
             key = process_key(service.name, run_id)
+            session = None
+            if ownership["kind"] == "session":
+                session = state["sessions"].get(ownership["sessionId"])
+                if not isinstance(session, dict) or session["state"] != "open" or (
+                    session["managerInstanceId"] != manager_instance_id
+                    or session["revision"] != expected_session_revision
+                ):
+                    raise ConflictError("session ownership 已变化，拒绝创建 run")
+                if key in session["runKeys"]:
+                    raise StateError("session 已包含待创建 run key")
             run_dir, process_file = self.schema.run_paths(service.name, run_id)
             self.adapter.secure_directory(run_dir.parent)
             self.adapter.secure_directory(run_dir)
@@ -217,10 +184,12 @@ class StateStore:
                 "createdAt": now_text(),
                 "recordRevision": 1,
                 "cleanupClaim": None,
+                "ownership": ownership,
                 "public": {
                     "service": service.name,
                     "processKey": key,
                     "state": "starting",
+                    "ownership": ownership,
                     "serviceConfig": service.public_summary(),
                 },
                 "internal": {
@@ -231,15 +200,18 @@ class StateStore:
             }
             state["active"][service.name] = key
             state["processes"][key] = record
+            session_records: list[dict[str, Any]] = []
+            if session is not None:
+                session = dict(session)
+                session["runKeys"] = [*session["runKeys"], key]
+                session["revision"] = int(session["revision"]) + 1
+                state["sessions"][session["sessionId"]] = session
+                session_records.append(session)
             state["workGeneration"] += 1
-            self._commit_record(state, record)
+            self.commit_repository(state, records=[record], sessions=session_records)
             return record
-
     def update(
-        self,
-        key: str,
-        *,
-        status: str,
+        self, key: str, *, status: str,
         public_updates: dict[str, Any] | None = None,
         internal_updates: dict[str, Any] | None = None,
         record_updates: dict[str, Any] | None = None,
@@ -284,8 +256,19 @@ class StateStore:
                 state["active"].pop(record["service"], None)
             if was_active != is_active:
                 state["workGeneration"] += 1
+            session_records: list[dict[str, Any]] = []
+            ownership = record["ownership"]
+            if was_active and not is_active and ownership["kind"] == "session":
+                session = state["sessions"].get(ownership["sessionId"])
+                if not isinstance(session, dict) or session["runKeys"].count(key) != 1:
+                    raise StateError("run terminal commit 的 session ownership 不一致")
+                session = dict(session)
+                session["runKeys"] = [item for item in session["runKeys"] if item != key]
+                session["revision"] = int(session["revision"]) + 1
+                state["sessions"][session["sessionId"]] = session
+                session_records.append(session)
             state["processes"][key] = record
-            self._commit_record(state, record)
+            self.commit_repository(state, records=[record], sessions=session_records)
             return record
 
     def claim_finalization(
@@ -395,6 +378,14 @@ class StateStore:
             "workGeneration": state["workGeneration"],
             "intakeFence": dict(state["intakeFence"]) if state["intakeFence"] else None,
             "activeRunKeys": active_keys,
+            "activeSessionIds": sorted(
+                key for key, session in state["sessions"].items()
+                if session.get("state") in {"open", "terminating", "expired", "cleanup_failed"}
+            ),
+            "persistentRunKeys": sorted(
+                key for key, record in state["processes"].items()
+                if record.get("status") in ACTIVE_STATES and record["ownership"]["kind"] == "persistent"
+            ),
         }
 
     def stopped_run_keys(self, operation_id: str) -> list[str]:
@@ -411,6 +402,7 @@ class StateStore:
         operation_id: str,
         kind: str,
         expected_generation: int,
+        require_idle: bool = False,
     ) -> dict[str, Any]:
         with self.transaction():
             state = self.load()
@@ -430,6 +422,15 @@ class StateStore:
                         "expectedWorkGeneration": expected_generation,
                         "actualWorkGeneration": state["workGeneration"],
                     },
+                )
+            active_runs = [key for key, record in state["processes"].items()
+                           if record.get("status") in ACTIVE_STATES]
+            active_sessions = [key for key, session in state["sessions"].items()
+                               if session.get("state") in {"open", "terminating", "expired", "cleanup_failed"}]
+            if require_idle and (active_runs or active_sessions):
+                raise ConflictError(
+                    "conditional stop 要求无 live ownership",
+                    diagnostics={"activeRunKeys": active_runs, "activeSessionIds": active_sessions},
                 )
             fence = {
                 "operationId": operation_id,
@@ -472,10 +473,11 @@ class StateStore:
                 )
             if operation["state"] == "pending":
                 return
-            if summary["activeRunKeys"]:
+            if summary["activeRunKeys"] or summary["activeSessionIds"]:
                 raise OperationConflictError(
-                    "terminal operation 尚有 active run，拒绝清除 intake fence",
-                    diagnostics={"intakeFence": fence, "activeRunKeys": summary["activeRunKeys"]},
+                    "terminal operation 尚有 live ownership，拒绝清除 intake fence",
+                    diagnostics={"intakeFence": fence, "activeRunKeys": summary["activeRunKeys"],
+                                 "activeSessionIds": summary["activeSessionIds"]},
                     recommended_action="doctor",
                 )
             self.clear_intake_fence(str(operation["operationId"]))

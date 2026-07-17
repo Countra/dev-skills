@@ -1,32 +1,20 @@
 """manager operation 的可恢复收敛状态机。"""
-
 from __future__ import annotations
-
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
-
 from .atomic import InterProcessFileLock
 from .bootstrap import ManagerBootstrap
 from .client import ManagerClient, request_manager_shutdown
 from .errors import (
-    ConflictError,
-    IdentityError,
-    ManagerUnresponsiveError,
-    OperationConflictError,
-    RuntimeCorruptError,
-    RuntimeUninitializedError,
+    ConflictError, IdentityError, ManagerUnresponsiveError, OperationConflictError,
+    RuntimeCorruptError, RuntimeUninitializedError,
 )
 from .manager_start import ManagerStartCoordinator
 from .manager_state import (
-    AdapterFactory,
-    BootstrapFactory,
-    ClientFactory,
-    ManagerStateResolver,
-    observed_manager_instance_id, operation_store,
-    require_owned_run_confirmation,
-    state_error,
+    AdapterFactory, BootstrapFactory, ClientFactory, ManagerStateResolver,
+    observed_manager_instance_id, operation_store, require_owned_run_confirmation, state_error,
 )
 from .platforms import select_platform_adapter
 from .platforms.base import PlatformAdapter
@@ -34,8 +22,8 @@ from .run_finalization import RunFinalizationCoordinator
 from .runtime import OperationStore, read_manager_identity_record, validate_operation_timeout
 from .runtime_context import RuntimeContext
 from .runtime_fingerprint import compute_runtime_fingerprint
+from .sessions import close_orphaned_sessions
 from .state import StateStore
-
 DEFAULT_START_TIMEOUT_SECONDS = 12.0
 STOP_REQUEST_CHECKPOINTS = {"stop": "stop-requested", "restart": "restart-requested"}
 STOP_PHASE_CHECKPOINTS = frozenset("stop-requested restart-requested intake-closed runs-terminating owners-empty manager-stopped bootstrap-cleaned".split())
@@ -59,7 +47,6 @@ class ManagerConverger:
         self.manager_script = manager_script or Path(__file__).resolve().parents[1] / "manager_server.py"
         self.fingerprint_factory = fingerprint_factory
         self.sleeper = sleeper
-
     def _resolver(self) -> ManagerStateResolver:
         return ManagerStateResolver(
             self.context,
@@ -68,18 +55,15 @@ class ManagerConverger:
             bootstrap_factory=self.bootstrap_factory,
             fingerprint_factory=self.fingerprint_factory,
         )
-
     @staticmethod
     def _remaining(deadline: float) -> float:
         return max(0.0, deadline - time.monotonic())
-
     def _runtime(self) -> tuple[Any, PlatformAdapter, OperationStore]:
         config = self.context.config
         if not self.context.initialized or config is None:
             raise RuntimeUninitializedError("runtime 尚未初始化", recommended_action="init")
         adapter = self.adapter_factory(config.workspace_root, config.state_root)
         return config, adapter, operation_store(self.context, adapter)
-
     def _start_coordinator(
         self,
         config: Any,
@@ -97,7 +81,6 @@ class ManagerConverger:
             fingerprint_factory=self.fingerprint_factory,
             sleeper=self.sleeper,
         )
-
     @staticmethod
     def _operation_conflict(store: OperationStore, operation: dict[str, Any]) -> OperationConflictError:
         return OperationConflictError(
@@ -105,7 +88,6 @@ class ManagerConverger:
             diagnostics={"operation": store.public_summary(operation)},
             recommended_action="status",
         )
-
     def ensure(self, *, timeout: float = DEFAULT_START_TIMEOUT_SECONDS) -> dict[str, Any]:
         timeout = validate_operation_timeout(timeout)
         deadline = time.monotonic() + timeout
@@ -165,7 +147,6 @@ class ManagerConverger:
                 "operationId": completed["operationId"],
                 "manager": manager,
             }
-
     def _destructive_operation(
         self,
         kind: str,
@@ -173,7 +154,10 @@ class ManagerConverger:
         state: StateStore,
         *,
         timeout: float,
-        confirmed: bool, expected_instance_id: str | None = None,
+        confirmed: bool,
+        expected_instance_id: str | None = None,
+        expected_work_generation: int | None = None,
+        require_idle: bool = False,
     ) -> tuple[dict[str, Any], list[str]]:
         request_checkpoint = STOP_REQUEST_CHECKPOINTS[kind]
         with state.transaction():
@@ -188,6 +172,7 @@ class ManagerConverger:
                         operation["checkpoint"] == "bootstrap-cleaned"
                         and fence is None
                         and not summary["activeRunKeys"]
+                        and not summary["activeSessionIds"]
                     ):
                         return operation, []
                     if not isinstance(fence, dict) or fence.get("operationId") != operation["operationId"]:
@@ -199,9 +184,18 @@ class ManagerConverger:
                         )
                     return operation, list(summary["activeRunKeys"])
             summary = state.work_summary()
-            affected = require_owned_run_confirmation(kind, state, confirmed=confirmed)
-            generation = int(summary["workGeneration"])
+            affected = [] if require_idle else require_owned_run_confirmation(kind, state, confirmed=confirmed)
+            generation = (
+                int(expected_work_generation)
+                if expected_work_generation is not None
+                else int(summary["workGeneration"])
+            )
             if operation is not None and operation["state"] == "pending":
+                if expected_work_generation is not None and operation["expectedWorkGeneration"] != generation:
+                    raise OperationConflictError(
+                        "conditional stop receipt 与请求 generation 不一致",
+                        recommended_action="status",
+                    )
                 if operation["expectedWorkGeneration"] != generation:
                     store.update(
                         operation,
@@ -234,6 +228,7 @@ class ManagerConverger:
                     operation_id=str(operation["operationId"]),
                     kind=kind,
                     expected_generation=generation,
+                    require_idle=require_idle,
                 )
             except ConflictError as exc:
                 store.update(
@@ -247,7 +242,6 @@ class ManagerConverger:
                     recommended_action="status",
                 ) from exc
             return store.update(operation, checkpoint="intake-closed"), affected
-
     def _stop_exact_manager(
         self,
         operation: dict[str, Any],
@@ -296,7 +290,6 @@ class ManagerConverger:
             timeout=self._remaining(deadline),
         )
         return operation
-
     def _stop_phase(
         self,
         kind: str,
@@ -341,6 +334,13 @@ class ManagerConverger:
             checkpoint = "bootstrap-cleaned"
         if checkpoint != "bootstrap-cleaned":
             raise RuntimeCorruptError("manager stop phase 未收敛")
+        sessions = close_orphaned_sessions(state, reason=f"manager_{kind}")
+        if sessions["pendingSessionIds"]:
+            raise ManagerUnresponsiveError(
+                "manager session 清理尚未完成",
+                diagnostics={"pendingSessionIds": sessions["pendingSessionIds"]},
+                recommended_action="status",
+            )
         operation_id = str(operation["operationId"])
         return operation, {
             "oldManagerInstanceId": operation.get("expectedInstanceId"),
@@ -350,13 +350,15 @@ class ManagerConverger:
                 "managerStopped": True,
                 "bootstrapCleaned": True,
             },
+            "sessions": sessions,
         }
-
     def stop(
         self,
         *,
         timeout: float = DEFAULT_START_TIMEOUT_SECONDS,
         confirm_stop_owned_runs: bool = False,
+        expected_work_generation: int | None = None,
+        require_idle: bool = False,
     ) -> dict[str, Any]:
         timeout = validate_operation_timeout(timeout)
         if not self.context.initialized:
@@ -376,7 +378,8 @@ class ManagerConverger:
             state.clear_terminal_intake_fence(store)
             current = self._resolver().resolve()
             existing = store.read()
-            affected = state.work_summary()["activeRunKeys"]
+            work = state.work_summary()
+            affected = [*work["activeRunKeys"], *work["activeSessionIds"]]
             if current.state == "absent" and not affected and not (
                 existing is not None and existing["state"] == "pending"
             ):
@@ -393,6 +396,8 @@ class ManagerConverger:
                 state,
                 timeout=timeout, confirmed=confirm_stop_owned_runs,
                 expected_instance_id=current.manager_instance_id,
+                expected_work_generation=expected_work_generation,
+                require_idle=require_idle,
             )
             operation, summary = self._stop_phase(
                 "stop",
@@ -407,7 +412,6 @@ class ManagerConverger:
             completed = store.update(operation, state="succeeded", outcome=outcome)
             state.clear_terminal_intake_fence(store)
             return {**outcome, "operationId": completed["operationId"]}
-
     def restart(
         self,
         *,
@@ -489,6 +493,7 @@ class ManagerConverger:
                 **summary,
                 "newManagerInstanceId": new_instance,
                 "servicesRestored": False,
+                "sessionsRestored": False,
             }
             completed = store.update(operation, state="succeeded", outcome=outcome)
             state.clear_terminal_intake_fence(store)

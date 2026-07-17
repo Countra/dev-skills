@@ -4,28 +4,17 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .errors import (
-    EnvironmentUnverifiableError,
-    RuntimeInsecureError,
-    RuntimeRebuildRequiredError,
-    StateError,
-)
-
-
+from .errors import EnvironmentUnverifiableError, RuntimeInsecureError, RuntimeRebuildRequiredError, StateError
 RUN_ID_RE = re.compile(r"^run-[0-9a-f]{32}$")
+SESSION_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 SERVICE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 ACTIVE_STATES = {"starting", "running", "stopping", "terminating"}
-STATE_KEYS = {
-    "schema",
-    "stateRevision",
-    "workGeneration",
-    "intakeFence",
-    "active",
-    "processes",
-}
+SESSION_ACTIVE_STATES = {"open", "terminating", "expired", "cleanup_failed"}
+STATE_KEYS = frozenset("schema stateRevision workGeneration intakeFence active processes sessions".split())
 RUN_RECORD_REQUIRED_KEYS = {
     "schema",
     "service",
@@ -37,6 +26,7 @@ RUN_RECORD_REQUIRED_KEYS = {
     "createdAt",
     "recordRevision",
     "cleanupClaim",
+    "ownership",
     "public",
     "internal",
 }
@@ -53,6 +43,10 @@ CLEANUP_CLAIM_KEYS = {
     "claimedAt",
     "deadlineAt",
 }
+OWNERSHIP_KEYS = {"kind", "sessionId"}
+SESSION_KEYS = frozenset("schema sessionId revision holder kind state workspaceDigest managerInstanceId "
+                         "leaseDurationSeconds createdAt renewedAt expiresAt closingReason runKeys cleanup".split())
+SESSION_CLEANUP_KEYS = {"ownerEmpty", "cleanupVerified", "closedAt", "failures"}
 WINDOWS_FILE_ALL_ACCESS = 0x001F01FF
 WINDOWS_GRANT_ACCESS = 1
 WINDOWS_SET_ACCESS = 2
@@ -131,6 +125,7 @@ def empty_state() -> dict[str, Any]:
         "intakeFence": None,
         "active": {},
         "processes": {},
+        "sessions": {},
     }
 
 
@@ -191,6 +186,10 @@ class RuntimePaths:
         return self.state_root / "services"
 
     @property
+    def sessions(self) -> Path:
+        return self.state_root / "sessions"
+
+    @property
     def runs(self) -> Path:
         return self.state_root / "runs"
 
@@ -213,6 +212,32 @@ class StateSchema:
         run_dir = self.paths.runs / service / run_id
         return run_dir, run_dir / "process.json"
 
+    def session_path(self, session_id: str) -> Path:
+        if not SESSION_ID_RE.fullmatch(session_id):
+            raise StateError("session identity 格式无效")
+        return self.paths.sessions / f"{session_id}.json"
+
+    @staticmethod
+    def _session_time(value: Any, label: str) -> datetime:
+        try:
+            parsed = datetime.fromisoformat(value) if isinstance(value, str) else None
+        except ValueError as exc:
+            raise StateError(f"session {label} 不是 RFC3339 时间") from exc
+        if parsed is None or parsed.tzinfo is None:
+            raise StateError(f"session {label} 不是 RFC3339 时间")
+        return parsed
+
+    @staticmethod
+    def validate_ownership(value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict) or set(value) != OWNERSHIP_KEYS:
+            raise StateError("run ownership 字段集合无效")
+        kind, session_id = value.get("kind"), value.get("sessionId")
+        if kind == "persistent" and session_id is None:
+            return value
+        if kind == "session" and isinstance(session_id, str) and SESSION_ID_RE.fullmatch(session_id):
+            return value
+        raise StateError("run ownership 字段无效")
+
     def validate_record(self, key: str, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict) or value.get("schema") != "process-manager":
             raise RuntimeRebuildRequiredError("run record 使用旧或未知 runtime schema")
@@ -233,6 +258,9 @@ class StateSchema:
             raise StateError("run record path 不一致")
         if not isinstance(value.get("public"), dict) or not isinstance(value.get("internal"), dict):
             raise StateError("run record public/internal 必须是 object")
+        ownership = self.validate_ownership(value.get("ownership"))
+        if value["public"].get("ownership") != ownership:
+            raise StateError("run public ownership 与 record 不一致")
         revision = value.get("recordRevision")
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
             raise StateError("run record revision 无效")
@@ -246,6 +274,74 @@ class StateSchema:
             raise StateError("run public state 与 status 不一致")
         return value
 
+    def validate_session(self, session_id: str, value: Any) -> dict[str, Any]:
+        if not isinstance(value, dict) or set(value) != SESSION_KEYS:
+            raise StateError("session record 字段集合无效")
+        if (
+            value.get("schema") != "process-manager-session"
+            or value.get("sessionId") != session_id
+            or not SESSION_ID_RE.fullmatch(session_id)
+            or value.get("kind") not in {"validation", "task"}
+            or value.get("state") not in SESSION_ACTIVE_STATES | {"closed"}
+        ):
+            raise StateError("session record identity/kind/state 无效")
+        revision, ttl = value.get("revision"), value.get("leaseDurationSeconds")
+        if (
+            isinstance(revision, bool)
+            or not isinstance(revision, int)
+            or revision < 1
+            or isinstance(ttl, bool)
+            or not isinstance(ttl, int)
+            or not 60 <= ttl <= 86400
+        ):
+            raise StateError("session revision/TTL 无效")
+        for name in ("holder", "workspaceDigest", "managerInstanceId"):
+            if not isinstance(value.get(name), str) or not value[name]:
+                raise StateError(f"session {name} 无效")
+        created, renewed, expires = (
+            self._session_time(value.get(name), name)
+            for name in ("createdAt", "renewedAt", "expiresAt")
+        )
+        if not created <= renewed < expires:
+            raise StateError("session lease 时间顺序无效")
+        if len(value["holder"].encode("utf-8")) > 256 or any(ord(char) < 32 for char in value["holder"]):
+            raise StateError("session holder 无效")
+        if re.fullmatch(r"[0-9a-f]{64}", value["workspaceDigest"]) is None:
+            raise StateError("session workspaceDigest 无效")
+        if SESSION_ID_RE.fullmatch(value["managerInstanceId"]) is None:
+            raise StateError("session managerInstanceId 无效")
+        run_keys = value.get("runKeys")
+        if not isinstance(run_keys, list) or any(not isinstance(key, str) or not key for key in run_keys):
+            raise StateError("session runKeys 无效")
+        if len(run_keys) != len(set(run_keys)):
+            raise StateError("session runKeys 包含重复项")
+        cleanup = value.get("cleanup")
+        if cleanup is not None:
+            if not isinstance(cleanup, dict) or set(cleanup) != SESSION_CLEANUP_KEYS:
+                raise StateError("session cleanup 字段集合无效")
+            failures = cleanup.get("failures")
+            self._session_time(cleanup.get("closedAt"), "cleanup.closedAt")
+            if (
+                not isinstance(cleanup.get("ownerEmpty"), bool)
+                or not isinstance(cleanup.get("cleanupVerified"), bool)
+                or not isinstance(failures, list)
+                or any(not isinstance(item, str) for item in failures)
+            ):
+                raise StateError("session cleanup 字段无效")
+        state_name, closing = value["state"], value.get("closingReason")
+        if state_name == "open" and (closing is not None or cleanup is not None):
+            raise StateError("open session 不能包含 closing/cleanup")
+        if state_name != "open" and (not isinstance(closing, str) or not closing):
+            raise StateError("non-open session 必须包含 closingReason")
+        if state_name in {"terminating", "expired"} and cleanup is not None:
+            raise StateError("待清理 session 不能提前写 cleanup")
+        if state_name == "cleanup_failed" and (not isinstance(cleanup, dict) or cleanup["cleanupVerified"]):
+            raise StateError("cleanup_failed session 必须保留失败证据")
+        if value["state"] == "closed":
+            if run_keys or not isinstance(cleanup, dict) or not cleanup["ownerEmpty"] or not cleanup["cleanupVerified"]:
+                raise StateError("closed session 必须 owner empty 且 cleanup verified")
+        return value
+
     def validate_state(self, value: Any) -> dict[str, Any]:
         if not isinstance(value, dict) or value.get("schema") != "process-manager":
             raise RuntimeRebuildRequiredError("process state 使用旧或未知 runtime schema")
@@ -253,11 +349,13 @@ class StateSchema:
             raise StateError("process state 字段集合无效")
         active = value.get("active")
         processes = value.get("processes")
+        sessions = value.get("sessions")
         revision = value.get("stateRevision")
         generation = value.get("workGeneration")
         if (
             not isinstance(active, dict)
             or not isinstance(processes, dict)
+            or not isinstance(sessions, dict)
             or isinstance(revision, bool)
             or not isinstance(revision, int)
             or revision < 0
@@ -269,6 +367,8 @@ class StateSchema:
         self._validate_fence(value.get("intakeFence"))
         for key, record in processes.items():
             self.validate_record(key, record)
+        for session_id, session in sessions.items():
+            self.validate_session(session_id, session)
         for service, key in active.items():
             if not isinstance(service, str) or not isinstance(key, str) or key not in processes:
                 raise StateError("active 索引引用无效")
@@ -278,6 +378,22 @@ class StateSchema:
         for key, record in processes.items():
             if record.get("status") in ACTIVE_STATES and active.get(record["service"]) != key:
                 raise StateError("active run record 缺少唯一索引")
+            ownership = record["ownership"]
+            if record.get("status") in ACTIVE_STATES and ownership["kind"] == "session":
+                session = sessions.get(ownership["sessionId"])
+                if not isinstance(session, dict) or session["state"] not in SESSION_ACTIVE_STATES:
+                    raise StateError("active run 引用无效 session")
+                if session["runKeys"].count(key) != 1:
+                    raise StateError("active run 缺少唯一 session 反向索引")
+        for session_id, session in sessions.items():
+            for key in session["runKeys"]:
+                record = processes.get(key)
+                if (
+                    not isinstance(record, dict)
+                    or record.get("status") not in ACTIVE_STATES
+                    or record["ownership"] != {"kind": "session", "sessionId": session_id}
+                ):
+                    raise StateError("session runKeys 与 active run ownership 不一致")
         return value
 
     @staticmethod

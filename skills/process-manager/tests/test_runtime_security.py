@@ -456,7 +456,10 @@ class RuntimeSecurityTests(unittest.TestCase):
             store = StateStore(config, adapter)
             store.load()
             service = create_service(workspace, config)
-            record = store.reserve(service, manager_instance_id="old-manager", capability_hash="hash")
+            record = store.reserve(
+                service, manager_instance_id="old-manager", capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
             host = types.SimpleNamespace(pid=101, returncode=None)
             owner = adapter.create_run_owner(record["processId"], host, "hash")
             owner.bind_target({"pid": 202})
@@ -485,7 +488,10 @@ class RuntimeSecurityTests(unittest.TestCase):
             store = StateStore(config, adapter)
             store.load()
             service = create_service(workspace, config)
-            record = store.reserve(service, manager_instance_id="old-manager", capability_hash="hash")
+            record = store.reserve(
+                service, manager_instance_id="old-manager", capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
             host = types.SimpleNamespace(pid=101, returncode=None)
             owner = adapter.create_run_owner(record["processId"], host, "hash")
             host_state = Path(record["runDir"]) / "host-state.json"

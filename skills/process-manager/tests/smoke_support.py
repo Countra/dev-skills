@@ -265,6 +265,7 @@ def _facade_diagnostic(value: dict[str, Any]) -> dict[str, Any]:
 def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
     workspace.mkdir(parents=True, exist_ok=True)
     config = workspace / ".harness" / "process-manager" / "config.json"
+    identity_path = workspace / ".harness" / "process-manager" / "control" / "manager.json"
     init_code, initialized = _run_facade(
         [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
     )
@@ -282,7 +283,6 @@ def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
             status_code, status = _run_facade(
                 [str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config), "--pretty"]
             )
-            identity_path = workspace / ".harness" / "process-manager" / "manager.json"
             identity = json.loads(identity_path.read_text(encoding="utf-8"))
             audit = {
                 "bootstrapBackend": identity.get("bootstrapBackend"),
@@ -307,7 +307,7 @@ def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
         and stopped.get("ok") is True
         and cleanup.get("managerStopped") is True
         and cleanup.get("bootstrapCleaned") is True
-        and not (workspace / ".harness" / "process-manager" / "manager.json").exists()
+        and not identity_path.exists()
     )
     return {
         "ok": ok,

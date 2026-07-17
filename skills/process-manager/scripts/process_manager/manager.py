@@ -1,9 +1,8 @@
 """受管 run 的线性化生命周期核心。"""
-
 from __future__ import annotations
-
 import hashlib
 import math
+import os
 import secrets
 import subprocess
 import threading
@@ -11,18 +10,11 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any
-
 from .config import load_service_config, resolve_service_environment
 from .errors import ConflictError, IdentityError, NotFoundError, PMError, StateError, SupervisorError, ValidationError
 from .launch import (
-    build_host_spec,
-    cleanup_failed_start,
-    owned_run,
-    read_host_message,
-    read_managed_host_state,
-    service_host_command,
-    validate_target_handshake,
-    write_host_spec,
+    build_host_spec, cleanup_failed_start, owned_run, read_host_message, read_managed_host_state,
+    service_host_command, validate_target_handshake, write_host_spec,
 )
 from .logs import read_log_tail
 from .manager_start import StartDrainGate
@@ -30,22 +22,18 @@ from .models import ManagerConfig, ServiceConfig
 from .platforms.base import PlatformAdapter, RunOwner
 from .probes import wait_for_readiness
 from .run_finalization import ManagedRun, OwnerFinalization, RunFinalizationCoordinator
+from .sessions import SessionController
 from .state import ACTIVE_STATES, StateStore
-
 MANAGER_SHUTDOWN_SECONDS = 30.0
-
-
 class ProcessManager:
     def __init__(
-        self,
-        config: ManagerConfig,
-        adapter: PlatformAdapter,
-        state: StateStore,
-        instance_id: str, *,
-        operation_id: str,
+        self, config: ManagerConfig, adapter: PlatformAdapter, state: StateStore,
+        instance_id: str, *, operation_id: str,
         runtime_fingerprint: str = "0" * 64,
         bootstrap_backend: str = "direct",
         bootstrap_selection_reason: str = "direct composition root",
+        workspace_digest: str | None = None,
+        session_sweeper: bool = True,
     ) -> None:
         self.config = config
         self.adapter = adapter
@@ -59,24 +47,28 @@ class ProcessManager:
         self._lock = threading.RLock()
         self._start_gate = StartDrainGate()
         self._finalization = RunFinalizationCoordinator(state, adapter, instance_id)
+        digest = workspace_digest or hashlib.sha256(
+            os.path.normcase(str(config.workspace_root.resolve())).encode()).hexdigest()
+        self._sessions = SessionController(
+            state, manager_instance_id=instance_id, workspace_digest=digest,
+            finalize_record=self._finalize_run_record,
+        )
         self._shutdown_operation_id: str | None = None
         self._shutdown_deadline: float | None = None
         self.reconciled_records = self._finalization.reconcile_manager_loss(deadline=time.monotonic() + MANAGER_SHUTDOWN_SECONDS)
+        self.session_reconciliation = self._sessions.reconcile_startup()
+        if session_sweeper:
+            self._sessions.start_sweeper()
         self._start_gate.open()
-
     def health(self) -> dict[str, Any]:
         return {
-            "managerReady": True,
-            "supervisorReady": True,
+            "managerReady": True, "supervisorReady": True,
             "instance": {"id": self.instance_id}, "operationId": self.operation_id,
-            "runtimeFingerprint": self.runtime_fingerprint,
-            "endpointHealthy": True,
+            "runtimeFingerprint": self.runtime_fingerprint, "endpointHealthy": True,
         }
-
     def doctor(self) -> dict[str, Any]:
         return {
-            "managerReady": True,
-            "supervisorReady": True,
+            "managerReady": True, "supervisorReady": True,
             "instance": {"id": self.instance_id}, "operationId": self.operation_id,
             "runtimeFingerprint": self.runtime_fingerprint,
             "diagnostics": {
@@ -84,22 +76,23 @@ class ProcessManager:
                 "bootstrapSelectionReason": self.bootstrap_selection_reason,
                 **self.adapter.diagnostics(),
                 "managerLossReconciliation": self.reconciled_records,
+                "sessionReconciliation": self.session_reconciliation, "sessions": self._sessions.diagnostics(),
             },
         }
-
-    def start(self, service_path: Path) -> dict[str, Any]:
+    def start(
+        self, service_path: Path, *, session_id: str | None = None, persistent: bool = False,
+    ) -> dict[str, Any]:
+        ownership = self._sessions.ownership(session_id, persistent)
         with self._start_gate.admit():
-            return self._start(service_path)
-
-    def _start(self, service_path: Path) -> dict[str, Any]:
+            return self._start(service_path, ownership)
+    def _start(self, service_path: Path, ownership: dict[str, Any]) -> dict[str, Any]:
         service = load_service_config(service_path, self.config)
         environment, secrets_to_redact = resolve_service_environment(service)
         capability = secrets.token_urlsafe(32)
         capability_hash = hashlib.sha256(capability.encode("utf-8")).hexdigest()
-        record = self.state.reserve(
-            service,
-            manager_instance_id=self.instance_id,
-            capability_hash=capability_hash,
+        record = self._sessions.reserve_run(
+            service, capability_hash=capability_hash, session_id=ownership["sessionId"],
+            persistent=ownership["kind"] == "persistent",
         )
         key = str(record["processKey"])
         host_state = Path(record["runDir"]) / "host-state.json"
@@ -203,7 +196,6 @@ class ProcessManager:
                 for failure in cleanup_failures:
                     exc.add_note(f"start cleanup warning: {failure}")
             raise
-
     def _start_completion_watcher(self, key: str, run: ManagedRun) -> None:
         def watch() -> None:
             try:
@@ -228,12 +220,10 @@ class ProcessManager:
                 with self._lock:
                     if self._watchers.get(key) is threading.current_thread():
                         self._watchers.pop(key, None)
-
         watcher = threading.Thread(target=watch, name=f"pm-watch-{key[-12:]}", daemon=True)
         with self._lock:
             self._watchers[key] = watcher
         watcher.start()
-
     def _refresh(self, key: str, record: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
             run = self._runs.get(key)
@@ -273,12 +263,10 @@ class ProcessManager:
                     if self._runs.get(key) is run:
                         self._runs.pop(key, None)
             return record
-
     def status(self, *, service: str | None = None, process_key: str | None = None) -> dict[str, Any]:
         record = self.state.get(service=service, key=process_key)
         record = self._refresh(str(record["processKey"]), record)
         return self.state.public_record(record)
-
     def list_processes(self, *, include_history: bool = False) -> dict[str, Any]:
         state = self.state.list_records()
         for key in list(state["active"].values()):
@@ -297,7 +285,6 @@ class ProcessManager:
                 key: self.state.public_record(record) for key, record in state["processes"].items()
             }
         return result
-
     def logs(
         self,
         *,
@@ -330,7 +317,6 @@ class ProcessManager:
             "stream": stream,
             **value,
         }
-
     def ready(
         self,
         *,
@@ -349,7 +335,6 @@ class ProcessManager:
             raise ValidationError("service 未配置 readiness，不能声明 ready")
         stream = str(readiness.get("stream", "stdout"))
         log_path = Path(record["runDir"]) / f"{stream}.log"
-
         def is_running() -> bool:
             try:
                 current = self.state.get(key=key)
@@ -357,7 +342,6 @@ class ProcessManager:
                 return current.get("status") == "running"
             except PMError:
                 return False
-
         result = wait_for_readiness(
             readiness,
             log_path=log_path,
@@ -376,7 +360,6 @@ class ProcessManager:
                 public_updates={"readiness": result, "observed": result["observed"]},
             )
         return {"processKey": key, **result, "state": record["status"]}
-
     def _finalize_run_record(
         self,
         record: dict[str, Any],
@@ -405,7 +388,6 @@ class ProcessManager:
                 if self._runs.get(key) is run:
                     self._runs.pop(key, None)
         return committed
-
     def stop(self, *, service: str | None = None, process_key: str | None = None) -> dict[str, Any]:
         record = self.state.get(service=service, key=process_key)
         record = self._finalize_run_record(
@@ -424,39 +406,50 @@ class ProcessManager:
                 "cleanupError": record.get("public", {}).get("cleanupError"),
             },
         )
-
-    def restart(self, service_path: Path, *, timeout_seconds: float | None = None) -> dict[str, Any]:
+    def restart(
+        self, service_path: Path, *, timeout_seconds: float | None = None,
+        session_id: str | None = None, persistent: bool = False,
+    ) -> dict[str, Any]:
         service_config = load_service_config(service_path, self.config)
         if timeout_seconds is not None and service_config.readiness is None:
             raise ValidationError("restart --timeout 要求 service 配置 readiness")
         previous = None
+        requested = None
+        if session_id is not None or persistent:
+            requested = self._sessions.ownership(session_id, persistent)
         try:
             current = self.state.get(service=service_config.name)
+            ownership = dict(current["ownership"])
+            if requested is not None and requested != ownership:
+                raise ValidationError("service restart 不能改变原 ownership")
             previous = self.stop(process_key=str(current["processKey"]))
             if not previous.get("cleanupVerified"):
                 raise SupervisorError("旧 run owner 未清空，拒绝启动 replacement")
         except NotFoundError:
             previous = None
-        started = self.start(service_path)
+            ownership = requested or self._sessions.ownership(None, False)
+        started = self.start(
+            service_path, session_id=ownership["sessionId"],
+            persistent=ownership["kind"] == "persistent")
         readiness = None
         if timeout_seconds is not None:
             readiness = self.ready(process_key=started["processKey"], timeout_seconds=timeout_seconds)
         return {"previous": previous, "current": started, "readiness": readiness}
-
+    def open_session(self, *, kind: str, ttl_seconds: int, holder: str) -> dict[str, Any]:
+        return self._sessions.open(kind=kind, ttl_seconds=ttl_seconds, holder=holder)
+    def renew_session(self, session_id: str, *, ttl_seconds: int) -> dict[str, Any]:
+        return self._sessions.renew(session_id, ttl_seconds=ttl_seconds)
+    def session_status(self, session_id: str) -> dict[str, Any]:
+        return self._sessions.status(session_id)
+    def close_session(self, session_id: str) -> dict[str, Any]:
+        return self._sessions.close(session_id)
     def prune(
-        self,
-        *,
-        max_inactive: int | None = None,
-        dry_run: bool = True,
+        self, *, max_inactive: int | None = None, dry_run: bool = True,
         keep_runs: bool = False,
     ) -> dict[str, Any]:
         return self.state.prune(max_inactive=max_inactive, dry_run=dry_run, keep_runs=keep_runs)
-
     def accept_shutdown(
-        self,
-        *,
-        operation_id: str,
-        timeout_seconds: float = MANAGER_SHUTDOWN_SECONDS,
+        self, *, operation_id: str, timeout_seconds: float = MANAGER_SHUTDOWN_SECONDS,
     ) -> dict[str, Any]:
         try:
             canonical_operation_id = uuid.UUID(operation_id).hex
@@ -485,7 +478,6 @@ class ProcessManager:
             else:
                 self._shutdown_deadline = min(self._shutdown_deadline, requested_deadline)
         return {"shutdownAccepted": True, "operationId": operation_id}
-
     def shutdown(self) -> dict[str, Any]:
         self._start_gate.close()
         with self._lock:
@@ -495,6 +487,14 @@ class ProcessManager:
         self._start_gate.wait_for_drain(deadline)
         with self._lock:
             watchers = list(self._watchers.values())
-        return self._finalization.shutdown_active(
-            operation_id=operation_id, finalize_record=self._finalize_run_record,
-            watchers=watchers, deadline=deadline)
+        self._sessions.begin_shutdown(deadline=deadline)
+        session_result: dict[str, Any]
+        try:
+            result = self._finalization.shutdown_active(
+                operation_id=operation_id, finalize_record=self._finalize_run_record,
+                watchers=watchers, deadline=deadline)
+        finally:
+            session_result = self._sessions.finish_shutdown(deadline=deadline)
+        if not session_result["cleanupVerified"]:
+            raise SupervisorError("manager shutdown 后仍有 session cleanup pending", diagnostics=session_result)
+        return {**result, "sessions": session_result}

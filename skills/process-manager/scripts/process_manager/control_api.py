@@ -237,6 +237,12 @@ class ControlHandler(BaseHTTPRequestHandler):
             raise RequestError("operationId 必须是 canonical UUID hex")
         return value
 
+    @staticmethod
+    def _session_id(value: Any) -> str:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{32}", value) is None:
+            raise RequestError("sessionId 必须是 canonical UUID hex")
+        return value
+
     def _handle(self, operation: str, action: Callable[[], Any]) -> bool:
         try:
             data = action()
@@ -306,6 +312,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 )
 
             self._handle("processes.logs", logs)
+        elif path == "/sessions/status":
+            def session_status() -> Any:
+                query = self._query({"sessionId"})
+                return self.control.manager.session_status(
+                    self._session_id(self._single(query, "sessionId"))
+                )
+
+            self._handle("sessions.status", session_status)
         else:
             self._send(
                 404,
@@ -325,11 +339,23 @@ class ControlHandler(BaseHTTPRequestHandler):
         def action() -> Any:
             body = self._read_body()
             if path == "/processes/start":
-                self._closed_body(body, allowed={"servicePath"}, required={"servicePath"})
+                self._closed_body(
+                    body,
+                    allowed={"servicePath", "sessionId", "persistent"},
+                    required={"servicePath"},
+                )
                 service_path = body.get("servicePath")
                 if not isinstance(service_path, str) or not service_path:
                     raise RequestError("start 缺少 servicePath")
-                return self.control.manager.start(Path(service_path))
+                persistent = self._boolean(body.get("persistent", False), "persistent")
+                session_id = body.get("sessionId")
+                if session_id is not None:
+                    session_id = self._session_id(session_id)
+                return self.control.manager.start(
+                    Path(service_path),
+                    session_id=session_id,
+                    persistent=persistent,
+                )
             if path == "/processes/stop":
                 self._closed_body(body, allowed={"service", "processKey"})
                 service, process_key = self._selector(body)
@@ -344,12 +370,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                     timeout_seconds=timeout,
                 )
             if path == "/processes/restart":
-                self._closed_body(body, allowed={"servicePath", "timeoutSeconds"}, required={"servicePath"})
+                self._closed_body(
+                    body,
+                    allowed={"servicePath", "timeoutSeconds", "sessionId", "persistent"},
+                    required={"servicePath"},
+                )
                 service_path = body.get("servicePath")
                 if not isinstance(service_path, str) or not service_path:
                     raise RequestError("restart 缺少 servicePath")
                 timeout = self._number(body.get("timeoutSeconds"), "timeoutSeconds", 0.1, 600)
-                return self.control.manager.restart(Path(service_path), timeout_seconds=timeout)
+                persistent = self._boolean(body.get("persistent", False), "persistent")
+                session_id = body.get("sessionId")
+                if session_id is not None:
+                    session_id = self._session_id(session_id)
+                return self.control.manager.restart(
+                    Path(service_path),
+                    timeout_seconds=timeout,
+                    session_id=session_id,
+                    persistent=persistent,
+                )
             if path == "/processes/prune":
                 self._closed_body(body, allowed={"dryRun", "maxInactive", "keepRuns"}, required={"dryRun"})
                 dry_run = self._boolean(body.get("dryRun"), "dryRun")
@@ -359,6 +398,35 @@ class ControlHandler(BaseHTTPRequestHandler):
                     max_inactive=max_inactive,
                     dry_run=dry_run,
                     keep_runs=keep_runs,
+                )
+            if path == "/sessions/open":
+                self._closed_body(
+                    body,
+                    allowed={"kind", "ttlSeconds", "holder"},
+                    required={"kind", "ttlSeconds", "holder"},
+                )
+                kind, holder = body.get("kind"), body.get("holder")
+                if not isinstance(kind, str) or not isinstance(holder, str):
+                    raise RequestError("session kind/holder 必须是字符串")
+                ttl = self._integer(body.get("ttlSeconds"), "ttlSeconds", 60, 86400)
+                assert ttl is not None
+                return self.control.manager.open_session(kind=kind, ttl_seconds=ttl, holder=holder)
+            if path == "/sessions/renew":
+                self._closed_body(
+                    body,
+                    allowed={"sessionId", "ttlSeconds"},
+                    required={"sessionId", "ttlSeconds"},
+                )
+                ttl = self._integer(body.get("ttlSeconds"), "ttlSeconds", 60, 86400)
+                assert ttl is not None
+                return self.control.manager.renew_session(
+                    self._session_id(body.get("sessionId")),
+                    ttl_seconds=ttl,
+                )
+            if path == "/sessions/close":
+                self._closed_body(body, allowed={"sessionId"}, required={"sessionId"})
+                return self.control.manager.close_session(
+                    self._session_id(body.get("sessionId"))
                 )
             if path == "/shutdown":
                 self._closed_body(

@@ -15,7 +15,13 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from helpers import FakeAdapter, create_config, service_value, workspace_directory, write_json  # noqa: E402
-from process_manager.errors import ConflictError, IdentityError, NotFoundError, SupervisorError  # noqa: E402
+from process_manager.errors import (  # noqa: E402
+    ConflictError,
+    IdentityError,
+    NotFoundError,
+    SupervisorError,
+    ValidationError,
+)
 from process_manager.manager import ProcessManager  # noqa: E402
 from process_manager.run_finalization import OwnerFinalization  # noqa: E402
 from process_manager.state import ACTIVE_STATES, StateStore  # noqa: E402
@@ -109,9 +115,17 @@ class ManagerTests(unittest.TestCase):
             config,
             adapter,
             state,
-            "manager-instance",
+            "1" * 32,
             operation_id="00000000000000000000000000000000",
+            session_sweeper=False,
         )
+        start = manager.start
+
+        def persistent_start(path, **kwargs):  # noqa: ANN001,ANN003,ANN201
+            kwargs.setdefault("persistent", True)
+            return start(path, **kwargs)
+
+        manager.start = persistent_start  # type: ignore[method-assign]
         return config, adapter, state, manager, hosts
 
     def test_start_status_stop_hide_internal_owner_and_secret(self) -> None:
@@ -287,6 +301,39 @@ class ManagerTests(unittest.TestCase):
             self.assertEqual(len(hosts), 2)
             manager.shutdown()
 
+    def test_start_requires_ownership_and_restart_preserves_it(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            _, _, state, manager, _ = self.make_manager(workspace)
+            service_path = workspace / "service.json"
+            write_json(service_path, service_value(workspace))
+            with self.assertRaises(ValidationError):
+                ProcessManager.start(manager, service_path)
+            session = manager.open_session(
+                kind="validation",
+                ttl_seconds=1800,
+                holder="manager-ownership-test",
+            )
+            started = ProcessManager.start(
+                manager,
+                service_path,
+                session_id=session["sessionId"],
+            )
+            self.assertEqual(
+                state.get(key=started["processKey"])["ownership"],
+                {"kind": "session", "sessionId": session["sessionId"]},
+            )
+            with self.assertRaises(ValidationError):
+                manager.restart(service_path, persistent=True)
+            restarted = manager.restart(service_path)
+            self.assertEqual(
+                state.get(key=restarted["current"]["processKey"])["ownership"],
+                {"kind": "session", "sessionId": session["sessionId"]},
+            )
+            closed = manager.close_session(session["sessionId"])
+            self.assertTrue(closed["cleanup"]["cleanupVerified"])
+            manager.shutdown()
+
     def test_completion_watcher_persists_exit_without_status_poll(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
@@ -396,8 +443,9 @@ class ManagerTests(unittest.TestCase):
                 config,
                 adapter,
                 state,
-                "replacement-manager",
+                "2" * 32,
                 operation_id="11111111111111111111111111111111",
+                session_sweeper=False,
             )
             persisted = state.get(key=started["processKey"])
             self.assertEqual(persisted["status"], "manager_lost")
@@ -416,8 +464,8 @@ class ManagerTests(unittest.TestCase):
             start_result: list[dict[str, object]] = []
             shutdown_result: list[dict[str, object]] = []
 
-            def blocked_start(service_path: Path) -> dict[str, object]:
-                del service_path
+            def blocked_start(service_path: Path, ownership: dict[str, object]) -> dict[str, object]:
+                del service_path, ownership
                 entered.set()
                 release.wait(2)
                 return {"state": "running"}

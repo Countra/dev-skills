@@ -93,6 +93,17 @@ class CliContractTests(unittest.TestCase):
         self.assertEqual(value["error"]["code"], "configuration_error")
         self.assertEqual(set(value), {"ok", "operation", "error", "meta"})
 
+    def test_start_requires_explicit_session_or_persistent_ownership(self) -> None:
+        result = run_script(
+            SCRIPTS_DIR / "pm_start.py",
+            "--config",
+            "manager.json",
+            "--service",
+            "service.json",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--session-id --persistent", result.stderr)
+
     def test_ready_client_covers_service_timeout_when_override_is_omitted(self) -> None:
         client = mock.Mock()
         client.request.return_value = (200, {"ok": True})

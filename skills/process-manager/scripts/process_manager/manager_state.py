@@ -102,12 +102,14 @@ def require_owned_run_confirmation(
     *,
     confirmed: bool,
 ) -> list[str]:
-    affected = state.work_summary()["activeRunKeys"]
-    if affected and not confirmed:
+    summary = state.work_summary()
+    affected = summary["activeRunKeys"]
+    sessions = summary["activeSessionIds"]
+    if (affected or sessions) and not confirmed:
         error_type = RestartConfirmationRequiredError if kind == "restart" else StopConfirmationRequiredError
         raise error_type(
-            f"{kind} 将停止当前 owned runs，需要显式确认",
-            diagnostics={"affectedRunKeys": affected},
+            f"{kind} 将停止当前 live ownership，需要显式确认",
+            diagnostics={"affectedRunKeys": affected, "affectedSessionIds": sessions},
             recommended_action=kind,
         )
     return affected

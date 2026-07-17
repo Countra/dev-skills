@@ -19,6 +19,7 @@ from process_manager.errors import (
     IdentityError,
     ManagerOfflineError,
     ManagerUnresponsiveError,
+    OperationConflictError,
     OperationTimeoutError,
     RestartConfirmationRequiredError,
     RuntimeInsecureError,
@@ -948,7 +949,10 @@ class ManagerLifecycleTests(unittest.TestCase):
             workspace = Path(directory)
             config, _, _, state, control, converger = self.make_control_fixture(workspace)
             service = create_service(workspace, config)
-            state.reserve(service, manager_instance_id="old-manager", capability_hash="hash")
+            state.reserve(
+                service, manager_instance_id="old-manager", capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
             with self.assertRaises(RestartConfirmationRequiredError) as raised:
                 converger.restart(timeout=2)
             self.assertIn("affectedRunKeys", raised.exception.diagnostics)
@@ -982,6 +986,7 @@ class ManagerLifecycleTests(unittest.TestCase):
                         service,
                         manager_instance_id="producer",
                         capability_hash="hash",
+                        ownership={"kind": "persistent", "sessionId": None},
                     )
                 except BaseException as exc:  # noqa: BLE001
                     failures.append(exc)
@@ -1010,6 +1015,27 @@ class ManagerLifecycleTests(unittest.TestCase):
             self.assertEqual(operation["checkpoint"], "intake-closed")
             self.assertEqual(len(failures), 1)
             self.assertIsInstance(failures[0], ConflictError)
+
+    def test_conditional_idle_stop_retains_manager_when_generation_changes(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config, _, _, state, control, converger = self.make_control_fixture(workspace)
+            generation = state.work_summary()["workGeneration"]
+            state.reserve(
+                create_service(workspace, config),
+                manager_instance_id="producer",
+                capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
+            with self.assertRaises(OperationConflictError):
+                converger.stop(
+                    timeout=2,
+                    expected_work_generation=generation,
+                    require_idle=True,
+                )
+            self.assertEqual(control["shutdowns"], 0)
+            receipt = operation_store(converger.context, state.adapter).read()
+            self.assertEqual(receipt["state"], "failed")
 
     def test_exact_unresponsive_restart_terminates_only_verified_manager(self) -> None:
         with workspace_directory() as directory:
@@ -1056,7 +1082,10 @@ class ManagerLifecycleTests(unittest.TestCase):
             workspace = Path(directory)
             config, context, adapter, state, control, converger = self.make_control_fixture(workspace)
             service = create_service(workspace, config)
-            record = state.reserve(service, manager_instance_id="old-manager", capability_hash="hash")
+            record = state.reserve(
+                service, manager_instance_id="old-manager", capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
             with self.assertRaises(ManagerUnresponsiveError):
                 converger.restart(timeout=2, confirm_stop_owned_runs=True)
             current = state.get(key=record["processKey"])
@@ -1132,7 +1161,10 @@ class ManagerLifecycleTests(unittest.TestCase):
             config, context, adapter, state, control, converger = self.make_control_fixture(workspace)
             store = operation_store(context, adapter)
             service = create_service(workspace, config)
-            record = state.reserve(service, manager_instance_id="old-manager", capability_hash="hash")
+            record = state.reserve(
+                service, manager_instance_id="old-manager", capability_hash="hash",
+                ownership={"kind": "persistent", "sessionId": None},
+            )
             operation = create_operation(store, "restart", 2)
             operation["expectedWorkGeneration"] = state.work_summary()["workGeneration"]
             store.write(operation)

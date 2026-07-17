@@ -24,6 +24,12 @@ class StateTests(unittest.TestCase):
         adapter.secure_directory(config.paths.runs)
         store = StateStore(config, adapter)
         store.load()
+        reserve = store.reserve
+        store.reserve = lambda service, **kwargs: reserve(  # type: ignore[method-assign]
+            service,
+            ownership={"kind": "persistent", "sessionId": None},
+            **kwargs,
+        )
         return config, adapter, store
 
     def test_concurrent_reservation_creates_one_active_run(self) -> None:

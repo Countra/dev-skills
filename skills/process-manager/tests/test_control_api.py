@@ -50,8 +50,8 @@ class FakeManager:
     def status(self, **kwargs):  # noqa: ANN003,ANN201
         return kwargs
 
-    def start(self, path):  # noqa: ANN001,ANN201
-        return {"service": str(path), "state": "running"}
+    def start(self, path, **kwargs):  # noqa: ANN001,ANN003,ANN201
+        return {"service": str(path), "state": "running", **kwargs}
 
     def stop(self, **kwargs):  # noqa: ANN003,ANN201
         return {**kwargs, "state": "stopped", "cleanupVerified": True}
@@ -67,6 +67,18 @@ class FakeManager:
 
     def prune(self, **kwargs):  # noqa: ANN003,ANN201
         return kwargs
+
+    def open_session(self, **kwargs):  # noqa: ANN003,ANN201
+        return {"sessionId": "1" * 32, **kwargs}
+
+    def renew_session(self, session_id, **kwargs):  # noqa: ANN001,ANN003,ANN201
+        return {"sessionId": session_id, **kwargs}
+
+    def session_status(self, session_id):  # noqa: ANN001,ANN201
+        return {"sessionId": session_id, "state": "open"}
+
+    def close_session(self, session_id):  # noqa: ANN001,ANN201
+        return {"sessionId": session_id, "state": "closed", "workGeneration": 1}
 
     def shutdown(self):  # noqa: ANN201
         return {"cleanupVerified": True}
@@ -301,11 +313,60 @@ class ControlApiTests(unittest.TestCase):
                 )
                 self.assertEqual(status, 200)
                 self.assertTrue(value["data"]["dry_run"])
+                status, value = client.request(
+                    "POST",
+                    "/sessions/open",
+                    {"kind": "validation", "ttlSeconds": 1800, "holder": "control-test"},
+                )
+                session_id = value["data"]["sessionId"]
+                self.assertEqual(status, 200)
+                status, value = client.request(
+                    "GET",
+                    "/sessions/status",
+                    params={"sessionId": session_id},
+                )
+                self.assertEqual((status, value["data"]["state"]), (200, "open"))
+                status, value = client.request(
+                    "POST",
+                    "/sessions/renew",
+                    {"sessionId": session_id, "ttlSeconds": 3600},
+                )
+                self.assertEqual((status, value["data"]["ttl_seconds"]), (200, 3600))
+                status, value = client.request(
+                    "POST",
+                    "/processes/start",
+                    {
+                        "servicePath": "service.json",
+                        "sessionId": session_id,
+                        "persistent": False,
+                    },
+                )
+                self.assertEqual(
+                    (status, value["data"]["session_id"], value["data"]["persistent"]),
+                    (200, session_id, False),
+                )
+                status, value = client.request(
+                    "POST",
+                    "/sessions/close",
+                    {"sessionId": session_id},
+                )
+                self.assertEqual((status, value["data"]["state"]), (200, "closed"))
+                status, value = client.request(
+                    "POST",
+                    "/processes/start",
+                    {
+                        "servicePath": "service.json",
+                        "sessionId": None,
+                        "persistent": "true",
+                    },
+                )
+                self.assertEqual((status, value["error"]["code"]), (400, "invalid_request"))
 
                 url = f"http://127.0.0.1:{server.server_address[1]}/health"
                 with self.assertRaises(urllib.error.HTTPError) as unauthorized:
                     urllib.request.urlopen(url, timeout=2)
                 self.assertEqual(unauthorized.exception.code, 401)
+                unauthorized.exception.close()
 
                 request = urllib.request.Request(
                     f"http://127.0.0.1:{server.server_address[1]}/processes/start",
@@ -316,6 +377,7 @@ class ControlApiTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as oversized:
                     urllib.request.urlopen(request, timeout=2)
                 self.assertEqual(oversized.exception.code, 400)
+                oversized.exception.close()
 
                 manager.instance_id = "different-instance"
                 with self.assertRaises(ManagerOfflineError):
