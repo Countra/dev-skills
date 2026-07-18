@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +16,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.actions import ActionExecution  # noqa: E402
 from electron_verifier.approval import ApprovalService  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
@@ -100,7 +100,7 @@ class ApprovalTests(unittest.TestCase):
         return runs, prepared["runId"], finalized["pending"]
 
     def test_exact_fingerprint_approval_is_content_addressed_and_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, _ = self._parameterized_run(root)
@@ -121,7 +121,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual("workflow", first["workflowAsset"]["kind"])
 
     def test_restart_repairs_index_after_decision_and_retry_returns_same_bundle(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, _ = self._parameterized_run(root)
@@ -152,7 +152,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual(decision["assetIds"], retry["decision"]["assetIds"])
 
     def test_modified_pending_invalidates_fingerprint(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, pending_path = self._parameterized_run(root)
@@ -167,7 +167,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertEqual("pending_fingerprint_invalid", caught.exception.code)
 
     def test_recomputed_fingerprint_cannot_replace_verified_proposal(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, pending_path = self._parameterized_run(root)
@@ -196,7 +196,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertIn("proposal_derivation_mismatch", {item["code"] for item in preview["issues"]})
 
     def test_missing_artifact_blocks_approval(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, _ = self._parameterized_run(root)
@@ -208,7 +208,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertIn("path_not_found", {item["code"] for item in preview["issues"]})
 
     def test_consumed_high_risk_receipt_is_approvable(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs = RunService(config(root), FakeSessions())
@@ -248,7 +248,7 @@ class ApprovalTests(unittest.TestCase):
             self.assertNotIn("risk_confirmation_required", {item["code"] for item in preview["issues"]})
 
     def test_reject_is_idempotent_and_seals_against_approval(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder) / "state"
             KnowledgeReset(root).ensure()
             runs, run_id, _ = self._parameterized_run(root)

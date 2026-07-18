@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
@@ -33,7 +33,7 @@ class RetrievalTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(dir=TEST_ROOT)
+        self.temporary = TestTemporaryDirectory(dir=TEST_ROOT)
         self.state = Path(self.temporary.name) / "state"
         KnowledgeReset(self.state).ensure()
         self.store = CanonicalStore(self.state)

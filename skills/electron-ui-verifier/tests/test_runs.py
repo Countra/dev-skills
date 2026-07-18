@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -18,6 +17,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.actions import ActionExecution  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.evidence import PendingArtifact  # noqa: E402
@@ -61,7 +61,7 @@ class RunTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def test_twenty_actions_are_unique_and_finalize_is_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(
@@ -109,7 +109,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(1, len(list((root / "pending" / prepared["runId"]).glob("pending.json"))))
 
     def test_recovery_marks_inflight_step_unknown_and_aborts(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo"}))
@@ -124,7 +124,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual("unknown", recovered["steps"][0]["status"])
 
     def test_independent_diagnostic_failure_does_not_skip_next_diagnostic(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo"}))
@@ -147,7 +147,7 @@ class RunTests(unittest.TestCase):
             self.assertEqual(["failed", "passed"], [step["status"] for step in result["steps"]])
 
     def test_workflow_parameter_schema_is_adopted_without_persisting_binding_value(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
@@ -180,7 +180,7 @@ class RunTests(unittest.TestCase):
             self.assertNotIn("private-value", json.dumps(journal, ensure_ascii=False))
 
     def test_action_asset_parameter_schema_is_adopted_before_binding(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
@@ -210,7 +210,7 @@ class RunTests(unittest.TestCase):
             self.assertNotIn("private-value", json.dumps(journal, ensure_ascii=False))
 
     def test_sensitive_value_is_removed_from_results_errors_and_text_artifacts(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(
@@ -278,7 +278,7 @@ class RunTests(unittest.TestCase):
                     self.assertNotIn(sentinel.encode(), path.read_bytes(), msg=str(path))
 
     def test_risky_mutation_requires_and_consumes_one_receipt(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
@@ -316,7 +316,7 @@ class RunTests(unittest.TestCase):
                 self.assertEqual(1, mutation_count)
 
     def test_restart_rebuilds_sensitive_mask_from_stable_locator(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             first_service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(
@@ -363,7 +363,7 @@ class RunTests(unittest.TestCase):
             self.assertTrue(result["ok"])
 
     def test_operation_cancel_aborts_run_and_stops_later_mutations(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RunService(service_config(root), FakeSessions())
             prepared = asyncio.run(service.prepare({"session": "demo", "appId": "demo"}))
