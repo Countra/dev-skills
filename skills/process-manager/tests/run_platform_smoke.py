@@ -88,6 +88,7 @@ def run_manager_crash_smoke(workspace_parent: Path, adapter, secret: str) -> tup
         return True, None
     finally:
         terminate_fixture(process)
+        remove_tree(workspace)
 
 
 def enable_windows_permission_harness(adapter) -> None:  # noqa: ANN001
