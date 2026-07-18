@@ -8,7 +8,7 @@ _AUTHENTICATED_HEALTH_ERROR_STATES = {
     "runtime_insecure": ("runtime_insecure", False),
     "runtime_permission_denied": ("runtime_permission_denied", None),
     "environment_unverifiable": ("environment_unverifiable", None),
-    "resource_usage_unverifiable": ("environment_unverifiable", None),
+    "resource_usage_unverifiable": ("environment_unverifiable", True),
 }
 
 

@@ -382,7 +382,7 @@ class ManagerLifecycleTests(unittest.TestCase):
         cases = (
             ("runtime_insecure", "runtime_insecure", False),
             ("runtime_permission_denied", "runtime_permission_denied", None),
-            ("resource_usage_unverifiable", "environment_unverifiable", None),
+            ("resource_usage_unverifiable", "environment_unverifiable", True),
         )
         with workspace_directory() as directory:
             workspace = Path(directory)
@@ -832,6 +832,46 @@ class ManagerLifecycleTests(unittest.TestCase):
             self.assertEqual(failed["error"]["code"], "manager_unresponsive")
             self.assertTrue(failed["error"]["cleanupVerified"])
             self.assertEqual(cleaned, ["fixture"])
+
+    def test_bootstrap_failure_before_result_never_claims_unverified_cleanup(self) -> None:
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config = create_config(workspace)
+            context = resolve_runtime_context(config=config.config_path)
+            adapter = FakeAdapter(workspace, config.state_root)
+            cleanup_attempts: list[float] = []
+
+            class FailedBeforeResultBootstrap:
+                def __init__(self, current_config, current_adapter) -> None:  # noqa: ANN001
+                    del current_config, current_adapter
+
+                @staticmethod
+                def residue_present() -> bool:
+                    return False
+
+                @staticmethod
+                def start(factory, **kwargs):  # noqa: ANN001,ANN201
+                    del factory, kwargs
+                    raise ManagerUnresponsiveError("native bootstrap residue")
+
+                @staticmethod
+                def cleanup_residue(*, timeout, preferred_backend=None):  # noqa: ANN001,ANN201
+                    del preferred_backend
+                    cleanup_attempts.append(timeout)
+                    return False
+
+            with self.assertRaises(ManagerUnresponsiveError):
+                ManagerConverger(
+                    context,
+                    adapter_factory=lambda *_: adapter,
+                    client_factory=UnreachableClient,
+                    bootstrap_factory=FailedBeforeResultBootstrap,
+                ).ensure(timeout=1)
+            failed = operation_store(context, adapter).read()
+            self.assertEqual(failed["state"], "failed")
+            self.assertEqual(failed["error"]["code"], "manager_unresponsive")
+            self.assertFalse(failed["error"]["cleanupVerified"])
+            self.assertEqual(len(cleanup_attempts), 1)
 
     def test_concurrent_ensure_launches_one_manager_operation(self) -> None:
         with workspace_directory() as directory:

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
 
-from .atomic import atomic_write_bytes, retry_windows_file_operation
+from .atomic import atomic_write_bytes, open_private_binary_append, retry_windows_file_operation
 from .errors import RequestError, ResourceUsageUnverifiableError, StateError
 
 MAX_TAIL_LINES, MAX_TAIL_BYTES, MAX_HOST_STATE_BYTES = 10000, 1024 * 1024, 64 * 1024
@@ -56,7 +56,7 @@ class RotatingTextLog(io.TextIOBase):
         self._handle = self._open_handle()
 
     def _open_handle(self) -> BinaryIO:
-        handle = self.path.open("ab", buffering=0)
+        handle = open_private_binary_append(self.path)
         try:
             self.adapter.secure_file(self.path)
         except BaseException:

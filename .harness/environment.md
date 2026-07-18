@@ -48,7 +48,7 @@ Harness 分支策略（Harness branch policy）:
 - 最近一次 Git 检查使用一次性 `safe.directory` 参数，观察到当前分支为 `harness/feature`。
 - 当前仓库存在 ignored 的旧 `.harness/tasks/2026-06-11/` 运行产物和 `skills/complex-coding-harness/scripts/` 产物；本任务不清理、不提交这些历史 ignored 文件。
 - 本任务是 feature 类型，当前使用 `harness/feature`。
-- 当前活动 managed task 为 `.harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade`，用户已授权实施与最终提交；运行事实以该任务 ledger/run-state 为准。
+- 当前活动 managed task 为 `.harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence`，用户已授权实施与最终提交；运行事实以该任务 ledger/run-state 为准。
 - 从本任务起，同一仓库 Git 命令串行执行，不和其它 Git 命令放入并发批次。
 - 当前 Git 只读状态可使用 `git --no-optional-locks status --short --branch`；若遇到 ownership 保护，优先使用一次性 `safe.directory` 参数，不自动写入全局配置。
 

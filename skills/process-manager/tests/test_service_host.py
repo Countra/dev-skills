@@ -69,6 +69,12 @@ class FailingDestination(RecordingDestination):
         raise OSError(28, "disk full")
 
 
+class StateFailingDestination(RecordingDestination):
+    def write(self, data: bytes) -> None:
+        del data
+        raise StateError("private log target changed")
+
+
 class WindowsConsoleTests(unittest.TestCase):
     def test_pipe_pump_flushes_short_output_before_eof(self) -> None:
         read_fd, write_fd = os.pipe()
@@ -103,6 +109,15 @@ class WindowsConsoleTests(unittest.TestCase):
         self.assertEqual(
             failures,
             [{"stream": "stdout", "errorType": "OSError", "errno": 28, "winerror": None}],
+        )
+
+    def test_pipe_pump_records_private_log_state_failure(self) -> None:
+        source = io.BytesIO(b"service output")
+        failures: list[dict[str, object]] = []
+        _pump(source, StateFailingDestination(), [], failures, "stderr")
+        self.assertEqual(
+            failures,
+            [{"stream": "stderr", "errorType": "StateError", "errno": None, "winerror": None}],
         )
 
     def test_reuses_existing_console_without_releasing_it(self) -> None:

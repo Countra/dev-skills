@@ -381,6 +381,54 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(result["closedSessionIds"], [sessions[1]["sessionId"]])
             self.assertTrue(result["errors"])
 
+    def test_shutdown_begin_isolates_unexpected_session_failures(self) -> None:
+        with workspace_directory() as directory:
+            _, _, store, controller, _, _, _ = self.make_fixture(Path(directory))
+            failed = controller.open(kind="validation", ttl_seconds=1800, holder="failed")
+            healthy = controller.open(kind="validation", ttl_seconds=1800, holder="healthy")
+            original_commit = controller._commit_session  # noqa: SLF001
+
+            def commit(state, session, *, work_delta=0):  # noqa: ANN001,ANN202
+                if session["sessionId"] == failed["sessionId"]:
+                    raise StateError("fixture shutdown failure")
+                return original_commit(state, session, work_delta=work_delta)
+
+            with mock.patch.object(controller, "_commit_session", side_effect=commit):
+                controller.begin_shutdown(deadline=None)
+            sessions = store.load()["sessions"]
+            self.assertEqual(sessions[failed["sessionId"]]["state"], "open")
+            self.assertEqual(sessions[healthy["sessionId"]]["state"], "terminating")
+            self.assertEqual(
+                controller.diagnostics()["errors"][-1]["sessionId"],
+                failed["sessionId"],
+            )
+            controller.close(failed["sessionId"])
+            controller.close(healthy["sessionId"])
+
+    def test_shutdown_isolates_unexpected_session_failures(self) -> None:
+        with workspace_directory() as directory:
+            _, _, store, controller, _, _, _ = self.make_fixture(Path(directory))
+            failed = controller.open(kind="validation", ttl_seconds=1800, holder="failed")
+            healthy = controller.open(kind="validation", ttl_seconds=1800, holder="healthy")
+            controller.begin_shutdown(deadline=None)
+            original_finalize = controller._finalize  # noqa: SLF001
+
+            def finalize(session_id: str, *, deadline):  # noqa: ANN001,ANN202
+                if session_id == failed["sessionId"]:
+                    raise StateError("fixture shutdown failure")
+                return original_finalize(session_id, deadline=deadline)
+
+            with mock.patch.object(controller, "_finalize", side_effect=finalize):
+                result = controller.finish_shutdown(deadline=None)
+            self.assertEqual(result["pendingSessionIds"], [failed["sessionId"]])
+            self.assertEqual(result["closedSessionIds"], [healthy["sessionId"]])
+            self.assertFalse(result["cleanupVerified"])
+            self.assertIn(f"session:{healthy['sessionId']}", store.load()["tombstones"])
+            self.assertEqual(
+                controller.diagnostics()["errors"][-1]["sessionId"],
+                failed["sessionId"],
+            )
+
     def test_idle_stop_generation_rejects_concurrent_new_session(self) -> None:
         with workspace_directory() as directory:
             _, _, store, controller, _, _, _ = self.make_fixture(Path(directory))

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
 from .atomic import open_private_binary_append, retry_windows_file_operation
-from .errors import ConfigurationError
+from .errors import ConfigurationError, StateError
 from .launch import read_target_identity_message
 from .logs import MAX_HOST_STATE_BYTES, write_capped_json
 from .runtime import now_text
@@ -214,13 +214,13 @@ def _pump(
                     break
                 destination.write(redactor.feed(chunk))
             destination.write(redactor.finish())
-        except OSError as exc:
+        except (OSError, StateError) as exc:
             if failures is not None:
                 failures.append(
                     {
                         "stream": stream,
                         "errorType": type(exc).__name__,
-                        "errno": exc.errno,
+                        "errno": getattr(exc, "errno", None),
                         "winerror": getattr(exc, "winerror", None),
                     }
                 )

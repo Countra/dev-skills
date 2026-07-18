@@ -455,6 +455,8 @@ class SessionController:
                             self._deadlines.pop(session_id, None)
                 except SessionNotFoundError:
                     continue
+                except Exception as exc:  # noqa: BLE001
+                    self._record_error(session_id, exc)
     def finish_shutdown(self, *, deadline: float | None) -> dict[str, Any]:
         state = self.state.load()
         closed: list[str] = []
@@ -466,6 +468,9 @@ class SessionController:
                 self._finalize(session_id, deadline=deadline)
                 closed.append(session_id)
             except SessionCleanupPendingError:
+                pending.append(session_id)
+            except Exception as exc:  # noqa: BLE001
+                self._record_error(session_id, exc)
                 pending.append(session_id)
         return {"closedSessionIds": closed, "pendingSessionIds": pending, "cleanupVerified": not pending}
     def diagnostics(self) -> dict[str, Any]:

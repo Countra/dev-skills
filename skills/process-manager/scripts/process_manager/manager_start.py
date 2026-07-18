@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
+from .atomic import open_private_binary_append
 from .bootstrap import (
     BootstrapResult,
     ManagerBootstrap,
@@ -50,7 +51,24 @@ def cleanup_bootstrap_result(
         if process is not None and process.poll() is None:
             return False
         return bootstrap.cleanup_residue(timeout=timeout, preferred_backend=result.backend)
-    except (OSError, subprocess.SubprocessError):
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def cleanup_bootstrap_attempt(
+    bootstrap: ManagerBootstrap | None,
+    result: BootstrapResult | None,
+    *,
+    timeout: float,
+) -> bool:
+    """清理已进入 native/detached 启动边界但尚未返回完整结果的尝试。"""
+    if bootstrap is None:
+        return True
+    if result is not None:
+        return cleanup_bootstrap_result(bootstrap, result, timeout=timeout)
+    try:
+        return bootstrap.cleanup_residue(timeout=timeout)
+    except Exception:  # noqa: BLE001
         return False
 
 
@@ -315,6 +333,7 @@ class ManagerStartCoordinator:
             return self._wait_existing(operation, deadline=deadline)
         launched: BootstrapResult | None = None
         bootstrap: ManagerBootstrap | None = None
+        launch_attempted = False
         try:
             runtime_fingerprint = self._assert_runtime_contract(operation)
             initialize_runtime(self.config, self.adapter)
@@ -335,7 +354,13 @@ class ManagerStartCoordinator:
                 )
 
             bootstrap = self.bootstrap_factory(self.config, self.adapter)
-            with stdout_path.open("ab") as stdout, stderr_path.open("ab") as stderr:
+            with (
+                open_private_binary_append(stdout_path) as stdout,
+                open_private_binary_append(stderr_path) as stderr,
+            ):
+                self.adapter.secure_file(stdout_path)
+                self.adapter.secure_file(stderr_path)
+                launch_attempted = True
                 launched = bootstrap.start(
                     command_factory,
                     stdout_path=stdout_path,
@@ -343,8 +368,6 @@ class ManagerStartCoordinator:
                     stdout=stdout,
                     stderr=stderr,
                 )
-            self.adapter.secure_file(stdout_path)
-            self.adapter.secure_file(stderr_path)
             operation = self.store.update(operation, checkpoint="bootstrap-launched")
             identity_seen = operation["checkpoint"] == "identity-published"
             last_state = None
@@ -377,14 +400,10 @@ class ManagerStartCoordinator:
                 recommended_action="status",
             )
         except BaseException as exc:
-            cleanup_verified = (
-                launched is None
-                or bootstrap is not None
-                and cleanup_bootstrap_result(
-                    bootstrap,
-                    launched,
-                    timeout=min(5.0, self._remaining(deadline)),
-                )
+            cleanup_verified = cleanup_bootstrap_attempt(
+                bootstrap if launch_attempted else None,
+                launched,
+                timeout=min(5.0, self._remaining(deadline)),
             )
             error = (
                 {"code": exc.code, "message": exc.message}
