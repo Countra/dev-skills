@@ -88,7 +88,8 @@ Harness 分支策略（Harness branch policy）:
 - 批准证明：`python -X utf8 -B skills/complex-coding-executor/scripts/harness_attest_plan.py --workspace . --task-dir <task-dir> --mode write|check|archive|activate-amendment`
 - 事件写入：`python -X utf8 -B skills/complex-coding-executor/scripts/harness_ledger_append.py --workspace . --task-dir <task-dir> --event <type>`
 - 联合评测：`python -X utf8 -B evals/complex-coding-planner/run_evals.py`、`python -X utf8 -B evals/complex-coding-executor/run_evals.py`
-- Process manager 初始化与 bootstrap：`pm_init.py --workspace <workspace>`、`pm_manager.py status|start|stop --config <config>`
+- Process manager 初始化与收敛：`pm_init.py --workspace <workspace>`、`pm_manager.py ensure|status|restart|stop --config <config>`
+- Process manager task/validation ownership：`pm_session.py open|renew|status|close --config <config>`；start 绑定 session，退出路径 finally close
 - Process lifecycle：`pm_validate.py`、`pm_start.py`、`pm_ready.py`、`pm_status.py`、`pm_logs.py`、`pm_stop.py`、`pm_restart.py`、`pm_prune.py`
 - Process manager 验证：`python -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_*.py`、`run_platform_smoke.py`、`evals/process-manager/run_evals.py`、`run_static_checks.py`
 - Python 检查：使用 `python -B` 测试或 AST parse，避免无必要写入 `__pycache__`

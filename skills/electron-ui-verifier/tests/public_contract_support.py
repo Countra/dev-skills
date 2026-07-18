@@ -126,7 +126,8 @@ class ManagedVerifier:
         self.host_python = host_python
         self.python_path: Path | None = None
         self.process_key: str | None = None
-        self.manager_started = False
+        self.session_id: str | None = None
+        self.manager_ensured = False
         self.install_before: str | None = None
 
     def _pm(self, script: str, *arguments: str, timeout: float = 90.0) -> dict[str, Any]:
@@ -171,6 +172,24 @@ class ManagedVerifier:
         except OSError as exc:
             return f"[日志不可读：{type(exc).__name__}]"
 
+    def _stop_manager(self) -> dict[str, Any]:
+        """仅为隔离 fixture 执行确认式最终清理并校验结果。"""
+        stopped = self._pm(
+            "pm_manager.py",
+            "stop",
+            "--config",
+            str(self.manager_config),
+            "--confirm-stop-owned-runs",
+            "--pretty",
+        )
+        data = dict(stopped.get("data", {}))
+        cleanup = data.get("cleanup", {})
+        fields = ("managerStopped", "bootstrapCleaned", "ownersEmpty")
+        missing = [field for field in fields if cleanup.get(field) is not True]
+        if missing:
+            raise RuntimeError("manager 最终清理证据缺失：" + ", ".join(missing))
+        return data
+
     def reset(self) -> None:
         if self.work_dir.exists():
             shutil.rmtree(self.work_dir)
@@ -198,14 +217,30 @@ class ManagedVerifier:
             cwd=self.workspace,
         )
         self._validate_service(self.service_file)
-        self._pm("pm_manager.py", "start", "--config", str(self.manager_config), "--pretty")
-        self.manager_started = True
+        self.manager_ensured = True
+        self._pm("pm_manager.py", "ensure", "--config", str(self.manager_config), "--pretty")
+        session = self._pm(
+            "pm_session.py",
+            "open",
+            "--config",
+            str(self.manager_config),
+            "--kind",
+            "validation",
+            "--holder",
+            "electron-ui-verifier-contract",
+            "--ttl-seconds",
+            "1800",
+            "--pretty",
+        )
+        self.session_id = str(session["data"]["sessionId"])
         started = self._pm(
             "pm_start.py",
             "--config",
             str(self.manager_config),
             "--service",
             str(self.service_file),
+            "--session-id",
+            self.session_id,
             "--pretty",
         )
         self.process_key = str(started["data"]["processKey"])
@@ -219,10 +254,17 @@ class ManagedVerifier:
             "--pretty",
             timeout=readiness_timeout + 15,
         )
-        return {"initialized": initialized, "started": started.get("data"), "ready": ready.get("data")}
+        return {
+            "initialized": initialized,
+            "session": session.get("data"),
+            "started": started.get("data"),
+            "ready": ready.get("data"),
+        }
 
     def start_managed_service(self, service_file: Path, *, timeout: float = 90.0) -> dict[str, Any]:
         """通过同一 manager 启动并等待一个额外的受管服务。"""
+        if self.session_id is None:
+            raise RuntimeError("Process Manager validation session 尚未打开")
         self._validate_service(service_file)
         started = self._pm(
             "pm_start.py",
@@ -230,6 +272,8 @@ class ManagedVerifier:
             str(self.manager_config),
             "--service",
             str(service_file),
+            "--session-id",
+            self.session_id,
             "--pretty",
             timeout=timeout,
         )
@@ -250,6 +294,23 @@ class ManagedVerifier:
             "started": started.get("data", {}),
             "ready": ready.get("data", {}),
         }
+
+    def renew_session(self, *, ttl_seconds: int = 1800) -> dict[str, Any]:
+        """在长但有界的验证步骤前显式续租。"""
+        if self.session_id is None:
+            raise RuntimeError("Process Manager validation session 尚未打开")
+        renewed = self._pm(
+            "pm_session.py",
+            "renew",
+            "--config",
+            str(self.manager_config),
+            "--session-id",
+            self.session_id,
+            "--ttl-seconds",
+            str(ttl_seconds),
+            "--pretty",
+        )
+        return dict(renewed.get("data", {}))
 
     def stop_managed_service(self, process_key: str) -> dict[str, Any]:
         """通过公共 CLI 停止一个额外服务并返回清理证据。"""
@@ -305,48 +366,68 @@ class ManagedVerifier:
     def stop(self) -> tuple[dict[str, Any], list[str]]:
         checks: dict[str, Any] = {}
         failures: list[str] = []
+        manager_stopped = False
         if self.process_key:
             try:
-                stopped = self._pm(
-                    "pm_stop.py",
+                observed = self._pm(
+                    "pm_status.py",
                     "--config",
                     str(self.manager_config),
                     "--process-key",
                     self.process_key,
                     "--pretty",
                 )
-                service_stop = stopped.get("data", {})
-                checks["serviceStop"] = service_stop
-                logs = service_stop.get("logs")
+                service_status = observed.get("data", {})
+                checks["serviceStatusBeforeClose"] = service_status
+                logs = service_status.get("logs")
                 if isinstance(logs, dict):
                     checks["serviceLogs"] = {
                         stream: self._log_tail(logs.get(stream))
                         for stream in ("stdout", "stderr")
                     }
-                if service_stop.get("cleanupVerified") is not True:
-                    failures.append("verifier service cleanupVerified 不为 true")
-                if service_stop.get("stopResult", {}).get("ownerEmpty") is not True:
-                    failures.append("verifier service owner 未清空")
             except Exception as exc:
-                failures.append(f"service stop 失败：{exc}")
-            self.process_key = None
-        if self.manager_started:
+                failures.append(f"session close 前 service 状态读取失败：{exc}")
+        if self.session_id:
             try:
-                stopped = self._pm(
-                    "pm_manager.py",
-                    "stop",
+                closed = self._pm(
+                    "pm_session.py",
+                    "close",
                     "--config",
                     str(self.manager_config),
+                    "--session-id",
+                    self.session_id,
+                    "--stop-manager-if-idle",
                     "--pretty",
                 )
-                manager_stop = stopped.get("data", {})
-                checks["managerStop"] = manager_stop
-                for field in ("managerStopped", "bootstrapCleaned", "ownerEmpty", "cleanupVerified"):
-                    if manager_stop.get(field) is not True:
-                        failures.append(f"process-manager {field} 不为 true")
+                close_data = closed.get("data", {})
+                checks["sessionClose"] = close_data
+                cleanup = close_data.get("cleanup", {})
+                if cleanup.get("cleanupVerified") is not True:
+                    failures.append("validation session cleanupVerified 不为 true")
+                if cleanup.get("ownerEmpty") is not True:
+                    failures.append("validation session owner 未清空")
+                idle_stop = close_data.get("idleStop", {})
+                if close_data.get("managerRetained") is not False:
+                    failures.append("隔离 fixture 结束后 manager 未按 idle 条件停止")
+                manager_cleanup = idle_stop.get("cleanup", {})
+                for field in ("managerStopped", "bootstrapCleaned", "ownersEmpty"):
+                    if manager_cleanup.get(field) is not True:
+                        failures.append(f"process-manager idle stop {field} 不为 true")
+                manager_stopped = close_data.get("managerRetained") is False and all(
+                    manager_cleanup.get(field) is True
+                    for field in ("managerStopped", "bootstrapCleaned", "ownersEmpty")
+                )
+                self.session_id = None
             except Exception as exc:
-                failures.append(f"manager stop 失败：{exc}")
-            self.manager_started = False
+                failures.append(f"validation session close 失败：{exc}")
+        if self.manager_ensured and not manager_stopped:
+            try:
+                checks["managerStopFallback"] = self._stop_manager()
+                self.session_id = None
+            except Exception as exc:
+                failures.append(f"隔离 fixture 的 manager 最终清理失败：{exc}")
+        self.process_key = None
+        self.manager_ensured = False
         if self.install_root.exists() and self.install_before:
             try:
                 install_after = install_digest(self.install_root)

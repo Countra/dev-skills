@@ -62,20 +62,10 @@ def write_json(path: Path, value: Any) -> None:
 
 def create_validation_fixture(workspace: Path) -> tuple[Path, Path, Path]:
     workspace.mkdir(parents=True, exist_ok=True)
-    config = workspace / "manager.json"
-    service = workspace / "service.json"
-    legacy = workspace / "legacy-service.json"
+    config = (workspace / ".harness" / "process-manager" / "config.json").resolve()
+    service = (workspace / "service.json").resolve()
+    legacy = (workspace / "legacy-service.json").resolve()
     fixture = SKILL_ROOT / "tests" / "fixtures" / "process_tree_service.py"
-    write_json(
-        config,
-        {
-            "workspaceRoot": str(workspace.resolve()),
-            "stateRoot": str((workspace / ".runtime").resolve()),
-            "control": {"host": "127.0.0.1", "port": 0, "maxRequestBytes": 65536},
-            "history": {"maxInactive": 20, "deleteRunDirs": True},
-            "logs": {"maxBytes": 10485760, "backups": 3},
-        },
-    )
     write_json(
         service,
         {
@@ -138,6 +128,9 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
     missing_scripts = sorted(set(expected["required_scripts"]) - script_names)
     if missing_scripts:
         failures.append("缺少公共脚本: " + ", ".join(missing_scripts))
+    unexpected_scripts = sorted(script_names - set(expected["required_scripts"]))
+    if unexpected_scripts:
+        failures.append("存在未声明公共脚本: " + ", ".join(unexpected_scripts))
     help_results: dict[str, int] = {}
     help_text = ""
     for script in expected["required_scripts"]:
@@ -152,6 +145,12 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
 
     workspace = work_dir / "workspace"
     config, service, legacy = create_validation_fixture(workspace)
+    initialized = run_command(
+        [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace.resolve())]
+    )
+    initialized_value = parse_output(initialized)
+    if initialized.returncode != 0 or not initialized_value.get("ok"):
+        failures.append("current manager config 初始化失败")
     valid = run_command(
         [str(SCRIPT_DIR / "pm_validate.py"), "--config", str(config), "--service", str(service)]
     )
@@ -164,10 +163,16 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
     rejected_value = parse_output(rejected)
     if rejected.returncode != 2 or rejected_value.get("error", {}).get("code") != "validation_error":
         failures.append("旧 service schema 未稳定拒绝")
-    offline = run_command([str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config)])
-    offline_value = parse_output(offline)
-    if offline.returncode != 3 or offline_value.get("error", {}).get("code") != "manager_offline":
-        failures.append("manager offline 契约不稳定")
+    absent = run_command([str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config)])
+    absent_value = parse_output(absent)
+    absent_data = absent_value.get("data", {}) if isinstance(absent_value.get("data"), dict) else {}
+    if (
+        absent.returncode != 0
+        or absent_value.get("ok") is not True
+        or absent_data.get("state") != "absent"
+        or absent_data.get("recommendedAction") != "ensure"
+    ):
+        failures.append("manager absent/recommendedAction 契约不稳定")
 
     template_types = {
         load_json(path).get("launcher", {}).get("type")
@@ -175,6 +180,25 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
     }
     if template_types != set(expected["required_template_launchers"]):
         failures.append(f"template launcher 集合错误: {sorted(str(item) for item in template_types)}")
+    manager_template = load_json(TEMPLATE_DIR / "manager-config.json")
+    if set(manager_template) != {"workspaceRoot", "stateRoot", "control", "history", "limits", "logs"}:
+        failures.append("manager template 顶层字段不是 current closed schema")
+    if set(manager_template.get("history", {})) != {
+        "maxInactive",
+        "maxAgeSeconds",
+        "maxTombstones",
+        "deleteRunDirs",
+    }:
+        failures.append("manager template history 字段不是 current closed schema")
+    if set(manager_template.get("limits", {})) != {
+        "maxActiveRuns",
+        "maxOpenSessions",
+        "maxSessionRecords",
+        "maxPendingPrunes",
+        "maxConcurrentControlRequests",
+        "maxRetainedBytes",
+    }:
+        failures.append("manager template limits 字段不是 current closed schema")
     forbidden_asset_keys = {"argv", "window", "platform", "backend", "portRetry"}
     asset_failures: list[str] = []
     for path in [*TEMPLATE_DIR.glob("*.json"), *EXAMPLE_DIR.glob("*.json")]:
@@ -192,7 +216,9 @@ def evaluate(work_dir: Path) -> dict[str, Any]:
         "help_results": help_results,
         "valid_schema": valid.returncode,
         "legacy_schema": rejected.returncode,
-        "manager_offline": offline.returncode,
+        "manager_init": initialized.returncode,
+        "manager_absent": absent.returncode,
+        "manager_recommended_action": absent_data.get("recommendedAction"),
         "template_launchers": sorted(template_types),
         "failures": failures,
     }

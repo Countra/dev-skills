@@ -6,19 +6,19 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from process_manager.cli import add_common_args, run_cli
-from process_manager.config import load_manager_config, load_service_config
+from process_manager.cli import add_context_args, require_config, run_cli
+from process_manager.config import load_service_config
 from process_manager.protocol import print_json, success
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="校验 process-manager 配置")
-    add_common_args(parser)
+    add_context_args(parser)
     parser.add_argument("--service", help="service JSON 路径")
     args = parser.parse_args(argv)
 
     def execute() -> int:
-        config = load_manager_config(Path(args.config).resolve())
+        config = require_config(args)
         data = {"manager": config.public_dict()}
         if args.service:
             service = load_service_config(Path(args.service).resolve(), config)

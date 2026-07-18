@@ -17,7 +17,6 @@ sys.path.insert(0, str(SCRIPT_DIR))
 from helpers import FakeAdapter, create_config, create_service, workspace_directory, write_json  # noqa: E402
 from process_manager.errors import (  # noqa: E402
     EnvironmentUnverifiableError,
-    ManagerOfflineError,
     RuntimeInsecureError,
     RuntimePermissionDeniedError,
     SupervisorError,
@@ -530,27 +529,25 @@ class RuntimeSecurityTests(unittest.TestCase):
             self.assertEqual(finalized["internal"]["targetIdentity"], adapter.process_identity(202))
             self.assertEqual(finalized["internal"]["owner"], exact_owner)
 
-    def test_doctor_does_not_claim_supervisor_ready_when_manager_is_unavailable(self) -> None:
+    def test_doctor_reports_absent_manager_without_claiming_supervisor_ready(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
             config = create_config(workspace)
             adapter = FakeAdapter(workspace, config.state_root)
             output = io.StringIO()
             with (
-                mock.patch.object(pm_doctor, "load_manager_config", return_value=config),
                 mock.patch.object(pm_doctor, "select_platform_adapter", return_value=adapter),
-                mock.patch.object(
-                    pm_doctor.ManagerClient,
-                    "request",
-                    side_effect=ManagerOfflineError("fixture offline"),
-                ),
+                mock.patch.object(pm_doctor.ManagerClient, "request") as request,
                 redirect_stdout(output),
             ):
                 result = pm_doctor.main(["--config", str(config.config_path)])
             payload = json.loads(output.getvalue())
             self.assertEqual(result, 0)
-            self.assertFalse(payload["data"]["managerReady"])
-            self.assertFalse(payload["data"]["supervisorReady"])
+            self.assertEqual(payload["data"]["manager"]["state"], "absent")
+            self.assertFalse(payload["data"]["manager"]["managerReady"])
+            self.assertIsNone(payload["data"]["managerError"])
+            self.assertNotIn("supervisorReady", payload["data"])
+            request.assert_not_called()
 
     def test_exact_manager_termination_refuses_identity_mismatch(self) -> None:
         with workspace_directory() as directory:

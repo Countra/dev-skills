@@ -313,14 +313,31 @@ def main() -> int:
         required_support_markers = (
             "shutil.copytree",
             "pm_manager.py",
+            "pm_session.py",
             "pm_start.py",
             "pm_stop.py",
+            "--session-id",
+            "--stop-manager-if-idle",
+            "renew_session",
+            "sessionClose",
             "guarded_harness_path",
             "install_digest",
         )
         missing_support_markers = [marker for marker in required_support_markers if marker not in support_text]
         if missing_support_markers:
             failures.append(f"公共 fixture 支撑未闭合复制安装或进程生命周期：{missing_support_markers}")
+        forbidden_support_markers = (
+            "manager_started",
+            '"pm_manager.py", "start"',
+            "pm_health.py",
+            "pm_shutdown.py",
+            "manager_offline",
+        )
+        support_legacy_hits = [
+            marker for marker in forbidden_support_markers if marker in support_text
+        ]
+        if support_legacy_hits:
+            failures.append(f"公共 fixture 支撑残留旧 Process Manager 契约：{support_legacy_hits}")
     termous_paths = (
         SKILL / "tests" / "run_termous_smoke.py",
         SKILL / "tests" / "termous_contract_support.py",

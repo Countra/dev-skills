@@ -418,7 +418,7 @@ class SessionTests(unittest.TestCase):
         converger.stop.side_effect = OperationConflictError("generation changed")
         with (
             mock.patch.object(pm_session, "make_client", return_value=client),
-            mock.patch.object(pm_session, "resolve_runtime_context", return_value=object()),
+            mock.patch.object(pm_session, "resolve_context", return_value=object()),
             mock.patch.object(pm_session, "ManagerConverger", return_value=converger),
             mock.patch.object(pm_session, "print_json") as output,
         ):

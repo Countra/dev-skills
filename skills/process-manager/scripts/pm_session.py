@@ -5,11 +5,10 @@ from __future__ import annotations
 
 import argparse
 
-from process_manager.cli import add_common_args, make_client, output_remote, run_cli
+from process_manager.cli import add_context_args, make_client, output_remote, resolve_context, run_cli
 from process_manager.errors import OperationConflictError
 from process_manager.manager_lifecycle import ManagerConverger
 from process_manager.protocol import print_json
-from process_manager.runtime_context import resolve_runtime_context
 from process_manager.sessions import DEFAULT_SESSION_TTL_SECONDS
 
 
@@ -17,13 +16,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="打开、续租、查看或关闭 session")
     commands = parser.add_subparsers(dest="command", required=True)
     opened = commands.add_parser("open", help="创建 session")
-    add_common_args(opened)
+    add_context_args(opened)
     opened.add_argument("--kind", choices=("validation", "task"), required=True)
     opened.add_argument("--ttl-seconds", type=int, default=DEFAULT_SESSION_TTL_SECONDS)
     opened.add_argument("--holder", required=True)
     for name in ("renew", "status", "close"):
         command = commands.add_parser(name, help=f"{name} session")
-        add_common_args(command)
+        add_context_args(command)
         command.add_argument("--session-id", required=True)
         if name == "renew":
             command.add_argument("--ttl-seconds", type=int, default=DEFAULT_SESSION_TTL_SECONDS)
@@ -34,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _request(args: argparse.Namespace) -> tuple[int, dict]:
-    client = make_client(args.config)
+    client = make_client(args)
     if args.command == "open":
         return client.request(
             "POST",
@@ -64,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
             generation = data.get("workGeneration") if isinstance(data, dict) else None
             if isinstance(generation, bool) or not isinstance(generation, int):
                 raise ValueError("session close response 缺少 workGeneration")
-            context = resolve_runtime_context(config=args.config)
+            context = resolve_context(args)
             try:
                 stopped = ManagerConverger(context).stop(
                     timeout=args.timeout_seconds,

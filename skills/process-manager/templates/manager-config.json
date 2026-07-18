@@ -8,7 +8,17 @@
   },
   "history": {
     "maxInactive": 20,
+    "maxAgeSeconds": 604800,
+    "maxTombstones": 200,
     "deleteRunDirs": true
+  },
+  "limits": {
+    "maxActiveRuns": 16,
+    "maxOpenSessions": 32,
+    "maxSessionRecords": 128,
+    "maxPendingPrunes": 32,
+    "maxConcurrentControlRequests": 16,
+    "maxRetainedBytes": 536870912
   },
   "logs": {
     "maxBytes": 10485760,

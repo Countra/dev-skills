@@ -11,11 +11,11 @@ from typing import Any, Callable
 
 from .atomic import read_json_file
 from .errors import IdentityError, PMError, StateError, SupervisorError
+from .logs import MAX_HOST_STATE_BYTES
 from .platforms.base import OwnerInspection, PersistedOwnerEvidence, PlatformAdapter, RunOwner
 
 
 OWNER_FORCE_SECONDS, OWNER_SETTLE_SECONDS = 5.0, 1.0
-MAX_HOST_STATE_BYTES = 64 * 1024
 
 
 @dataclass(frozen=True)

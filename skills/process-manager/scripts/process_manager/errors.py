@@ -87,13 +87,6 @@ class ContextInvalidError(ValidationError):
     code = "context_invalid"
 
 
-class ManagerOfflineError(PMError):
-    code = "manager_offline"
-    http_status = 503
-    exit_code = 3
-    retryable = True
-
-
 class ManagerAbsentError(PMError):
     code = "manager_absent"
     http_status = 503

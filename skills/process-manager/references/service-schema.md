@@ -10,7 +10,13 @@ manager config 是封闭 object：
 - `control.port`：固定为 `0`，由 OS 分配实际端口。
 - `control.maxRequestBytes`：控制请求体上限。
 - `history.maxInactive`：保留的 inactive record 数量上限。
+- `history.maxAgeSeconds`：eligible terminal history 的最大保留时间。
+- `history.maxTombstones`：有界保留的 compact tombstone 数量。
 - `history.deleteRunDirs`：prune 时是否删除完整 run directory。
+- `limits.maxActiveRuns`：active/terminating run 上限。
+- `limits.maxOpenSessions`、`limits.maxSessionRecords`：open session 与 session/tombstone 总记录上限。
+- `limits.maxPendingPrunes`、`limits.maxConcurrentControlRequests`：可恢复 prune journal 与并发控制请求上限。
+- `limits.maxRetainedBytes`：actual usage 与已承诺 metadata/log rotation capacity 的总预算。
 - `logs.maxBytes`、`logs.backups`：service 未覆盖时的日志默认值。
 
 优先用 `pm_init.py` 生成，不手写动态端口或 manager identity。
@@ -29,6 +35,15 @@ service config 只允许：
 - `logs`：可选，覆盖 manager 默认轮转预算。
 
 未知字段会被拒绝。不要添加顶层 `host`、`port`、`window`、shell command 或平台字段。
+
+## Start Ownership
+
+service config 描述可重复使用的启动规格，本身不保存 session。公共 `pm_start.py` 每次调用必须二选一：
+
+- `--session-id <sessionId>`：绑定当前 manager instance 的 live task/validation session，由 close/expiry 成组收口；
+- `--persistent`：显式声明跨 session 保留，调用方承担后续 stop 责任。
+
+缺少两者、同时提供两者、session 已过期或属于旧 manager instance 时都拒绝 start。`pm_restart.py` 继承原 run 的 ownership，不把 session run 静默改成 persistent。
 
 ## Launcher
 

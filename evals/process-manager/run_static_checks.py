@@ -120,9 +120,15 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
     forbidden = (
         "taskkill /F",
         "shell=True",
+        "default_config_path",
+        "ManagerOfflineError",
+        "manager_offline",
+        "pm_health.py",
+        "pm_shutdown.py",
         "minimumGuarantee",
         "cmd-file",
         "powershell-file",
+        "pm_manager.py status|start",
         "posix-file",
         "start_manager.ps1",
         "stop_manager.ps1",
@@ -176,7 +182,7 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
     required_scripts = {
         "pm_manager.py",
         "pm_init.py",
-        "pm_health.py",
+        "pm_session.py",
         "pm_validate.py",
         "pm_start.py",
         "pm_ready.py",
@@ -187,12 +193,14 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
         "pm_stop.py",
         "pm_restart.py",
         "pm_doctor.py",
-        "pm_shutdown.py",
     }
     observed_scripts = {path.name for path in (PROCESS_ROOT / "scripts").glob("pm_*.py")}
     missing_scripts = sorted(required_scripts - observed_scripts)
     if missing_scripts:
         failures.append("process-manager 公共脚本缺失: " + ", ".join(missing_scripts))
+    unexpected_scripts = sorted(observed_scripts - required_scripts)
+    if unexpected_scripts:
+        failures.append("process-manager 存在未声明公共脚本: " + ", ".join(unexpected_scripts))
     for path in (PROCESS_ROOT / "scripts").glob("pm_*.py"):
         text = path.read_text(encoding="utf-8")
         for option in ("--platform", "--backend", "--systemd", "--launchd", "--job-object"):
@@ -229,6 +237,25 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
                 launcher_types.add(str(launcher_type))
             if "argv" in launcher:
                 asset_failures.append(relative(path))
+        if path.name == "manager-config.json":
+            if set(value) != {"workspaceRoot", "stateRoot", "control", "history", "limits", "logs"}:
+                asset_failures.append(relative(path))
+            if set(value.get("history", {})) != {
+                "maxInactive",
+                "maxAgeSeconds",
+                "maxTombstones",
+                "deleteRunDirs",
+            }:
+                asset_failures.append(relative(path))
+            if set(value.get("limits", {})) != {
+                "maxActiveRuns",
+                "maxOpenSessions",
+                "maxSessionRecords",
+                "maxPendingPrunes",
+                "maxConcurrentControlRequests",
+                "maxRetainedBytes",
+            }:
+                asset_failures.append(relative(path))
     if asset_failures:
         failures.append("process-manager asset 残留旧 schema: " + ", ".join(sorted(set(asset_failures))))
     return {
@@ -238,6 +265,49 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
         "template_count": len(template_names),
         "asset_launcher_types": sorted(launcher_types),
     }
+
+
+def check_process_consumers(failures: list[str]) -> dict[str, Any]:
+    paths = (
+        REPO_ROOT / "skills" / "complex-coding-planner" / "references" / "planning-workflow.md",
+        REPO_ROOT / "skills" / "complex-coding-planner" / "templates" / "execution-plan.md",
+        REPO_ROOT / "skills" / "complex-coding-executor" / "SKILL.md",
+        REPO_ROOT / "skills" / "complex-coding-executor" / "references" / "execution-workflow.md",
+        REPO_ROOT / "skills" / "electron-ui-verifier" / "SKILL.md",
+        REPO_ROOT / "skills" / "electron-ui-verifier" / "references" / "server.md",
+        REPO_ROOT / "skills" / "electron-ui-verifier" / "references" / "troubleshooting.md",
+        REPO_ROOT / "skills" / "electron-ui-verifier" / "tests" / "public_contract_support.py",
+        REPO_ROOT / "skills" / "electron-ui-verifier" / "tests" / "run_process_manager_smoke.py",
+    )
+    text = ""
+    for path in paths:
+        try:
+            text += "\n" + path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            failures.append(f"process-manager consumer 读取失败 {relative(path)}: {exc}")
+    required = (
+        "pm_manager.py ensure",
+        "pm_session.py open",
+        "pm_session.py close",
+        "--session-id",
+        "--stop-manager-if-idle",
+        "recommendedAction",
+        "不自动提权",
+    )
+    forbidden = (
+        "manager_offline",
+        "pm_health.py",
+        "pm_shutdown.py",
+        "pm_manager.py status|start",
+        "pm_manager status/start",
+    )
+    missing = [token for token in required if token not in text]
+    present = [token for token in forbidden if token in text]
+    if missing:
+        failures.append("process-manager consumers 缺少 current contract: " + ", ".join(missing))
+    if present:
+        failures.append("process-manager consumers 残留旧 contract: " + ", ".join(present))
+    return {"file_count": len(paths), "missing": missing, "forbidden": present}
 
 
 def check_process_workflow(failures: list[str]) -> dict[str, Any]:
@@ -257,6 +327,8 @@ def check_process_workflow(failures: list[str]) -> dict[str, Any]:
         "run_evals.py",
         "run_static_checks.py",
         "actions/upload-artifact@v4",
+        "${{ github.sha }}",
+        "${{ github.run_attempt }}",
         "Delegate=yes",
         "systemd-run",
         "if: always()",
@@ -305,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         "line_budgets": check_line_budgets(failures),
         "gitlab": check_gitlab_contract(failures),
         "process_manager": check_process_contract(failures),
+        "process_manager_consumers": check_process_consumers(failures),
         "process_manager_workflow": check_process_workflow(failures),
         "failures": failures,
     }

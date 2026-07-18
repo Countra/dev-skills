@@ -146,11 +146,6 @@ def _digest(value: Any) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def default_config_path(workspace: Path | None = None) -> Path:
-    root = (workspace or Path.cwd()).resolve()
-    return root / ".harness" / "process-manager" / "config.json"
-
-
 def load_manager_config(path: Path) -> ManagerConfig:
     config_path = path.resolve()
     data = _closed_object(

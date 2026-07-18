@@ -16,7 +16,7 @@ from typing import Any
 from .atomic import atomic_write_bytes, read_json_file
 from .errors import (
     IdentityError,
-    ManagerOfflineError,
+    ManagerAbsentError,
     RuntimeCorruptError,
     RuntimeRebuildRequiredError,
     StateError,
@@ -420,7 +420,7 @@ def write_manager_identity(config: ManagerConfig, adapter: PlatformAdapter, iden
 def read_manager_identity_record(config: ManagerConfig, adapter: PlatformAdapter) -> dict[str, Any]:
     path = adapter.validate_runtime_path(config.paths.manager)
     if not path.exists():
-        raise ManagerOfflineError("manager identity 不存在")
+        raise ManagerAbsentError("manager identity 不存在", recommended_action="ensure")
     adapter.verify_file(path)
     value = read_json_file(path, max_bytes=MAX_IDENTITY_BYTES)
     if not isinstance(value, dict) or value.get("schema") != "process-manager":

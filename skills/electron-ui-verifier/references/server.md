@@ -28,7 +28,9 @@ python <skill>/scripts/ev_init.py --workspace <absolute-workspace> --reset-knowl
 
 ## Process Manager
 
-按 `process-manager` skill 的统一接口管理 verifier service。manager 配置缺失时才 init；普通路径使用 manager status/start、service ready、status 和 stop，不自行判断 Windows/Linux/macOS backend。
+按 `process-manager` skill 的统一接口管理 verifier service。manager 配置缺失时才 init；普通路径使用 explicit config、`pm_manager.py ensure`、`pm_session.py open --kind validation`、service start `--session-id`、ready/status，以及 `finally pm_session.py close --stop-manager-if-idle`，不自行判断 Windows/Linux/macOS backend。
+
+同一验证流程中由 `ManagedVerifier` 启动的额外服务共享该 validation session，close 一次成组清理。预计超过 `expiresAt` 的有界操作前显式 renew，不运行 heartbeat。Electron GUI 本体不属于 verifier session；若测试主动启动 GUI，应由其独立、可证明的前台生命周期收口。
 
 接受服务启动的最小证据：
 

@@ -11,7 +11,6 @@ from .client import ManagerClient
 from .errors import (
     EnvironmentUnverifiableError,
     ManagerStaleError,
-    ManagerOfflineError,
     ManagerUnresponsiveError,
     PMError,
     RestartConfirmationRequiredError,
@@ -257,16 +256,21 @@ class ManagerStateResolver:
             status, response = self.client_factory(config, adapter, timeout=self.probe_timeout).request("GET", "/health")
         except ManagerUnresponsiveError as exc:
             retry = exc.diagnostics.get("retryAfterMs")
-            evidence["endpointReachable"] = True
             if exc.diagnostics.get("endpointState") == "busy" and isinstance(retry, int):
+                evidence["endpointReachable"] = True
                 evidence["endpointState"] = "busy"
                 evidence["instanceMatched"] = True
                 return "unresponsive", retry, None
-            evidence.update({"endpointState": "unresponsive", "instanceMatched": None})
-            return "unresponsive", None, None
-        except ManagerOfflineError:
-            evidence.update({"endpointReachable": False, "instanceMatched": None})
-            return "unresponsive", None, None
+            reachable = exc.diagnostics.get("endpointReachable")
+            evidence.update(
+                {
+                    "endpointReachable": reachable if isinstance(reachable, bool) else None,
+                    "endpointState": "unresponsive",
+                    "instanceMatched": None,
+                }
+            )
+            retry_after_ms = 250 if exc.recommended_action == "wait" else None
+            return "unresponsive", retry_after_ms, None
         except PMError:
             evidence.update({"endpointReachable": None, "instanceMatched": None})
             return "corrupt", None, None
@@ -490,11 +494,6 @@ class ManagerStateResolver:
                 instance_id=instance_id,
             )
         return self._snapshot(
-            health_state,
-            evidence,
-            operation=operation,
-            store=store,
-            instance_id=instance_id,
-            retry_after_ms=retry_after,
-            resources=resources,
+            health_state, evidence, operation=operation, store=store,
+            instance_id=instance_id, retry_after_ms=retry_after, resources=resources,
         )

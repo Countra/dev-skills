@@ -12,13 +12,17 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from helpers import workspace_directory  # noqa: E402
+from process_manager.errors import StateError  # noqa: E402
 from process_manager.launch import read_target_identity_message  # noqa: E402
+from process_manager.logs import MAX_HOST_STATE_BYTES, RESOURCE_CAPS  # noqa: E402
 from process_manager.service_host import (  # noqa: E402
     TargetController,
     WindowsConsole,
     _group_remaining_after_target,
     _log_pumps_timed_out,
     _pump,
+    _write_host_state,
 )
 
 
@@ -127,6 +131,14 @@ class WindowsConsoleTests(unittest.TestCase):
 
 
 class TargetControllerTests(unittest.TestCase):
+    def test_host_state_writer_and_resource_governor_share_closed_cap(self) -> None:
+        self.assertEqual(RESOURCE_CAPS["host"], MAX_HOST_STATE_BYTES)
+        with workspace_directory() as directory:
+            path = Path(directory) / "host-state.json"
+            with self.assertRaises(StateError):
+                _write_host_state(path, {"payload": "x" * MAX_HOST_STATE_BYTES})
+            self.assertFalse(path.exists())
+
     def test_target_identity_message_binds_capability_host_and_pid(self) -> None:
         message = {
             "command": "target_identity",

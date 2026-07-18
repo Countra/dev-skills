@@ -12,18 +12,17 @@ from process_manager.runtime_context import resolve_runtime_context
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="启动、查看或关闭 process-manager")
+    parser = argparse.ArgumentParser(description="确保、查看、重启或关闭 process-manager")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, help_text in (
         ("ensure", "幂等确保 manager ready"),
-        ("start", "启动 manager"),
         ("status", "查看 manager 状态"),
         ("restart", "重启 manager 且不恢复旧 service"),
         ("stop", "通过认证控制面关闭 manager"),
     ):
         subparser = subparsers.add_parser(name, help=help_text)
         add_context_args(subparser)
-        if name in {"ensure", "start", "restart", "stop"}:
+        if name in {"ensure", "restart", "stop"}:
             subparser.add_argument("--timeout-seconds", type=float, default=12.0)
         if name in {"restart", "stop"}:
             subparser.add_argument("--confirm-stop-owned-runs", action="store_true")
@@ -71,7 +70,6 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     operations = {
         "ensure": _ensure,
-        "start": _ensure,
         "status": _status,
         "restart": _restart,
         "stop": _stop,

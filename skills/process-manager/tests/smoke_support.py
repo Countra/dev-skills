@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -14,13 +15,14 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from process_manager.atomic import retry_windows_file_operation  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
 
 
 PUBLIC_SCRIPTS = (
     "pm_manager.py",
     "pm_init.py",
-    "pm_health.py",
+    "pm_session.py",
     "pm_validate.py",
     "pm_start.py",
     "pm_ready.py",
@@ -31,7 +33,6 @@ PUBLIC_SCRIPTS = (
     "pm_stop.py",
     "pm_restart.py",
     "pm_doctor.py",
-    "pm_shutdown.py",
 )
 PUBLIC_CONTRACT = {
     "launcherTypes": ["direct", "script"],
@@ -48,15 +49,35 @@ PUBLIC_CONTRACT = {
     "errorCodes": [
         "configuration_error",
         "validation_error",
-        "manager_offline",
+        "context_invalid",
+        "manager_absent",
+        "runtime_uninitialized",
+        "manager_starting",
+        "manager_stopping",
+        "manager_stale",
+        "manager_unresponsive",
+        "runtime_insecure",
+        "runtime_permission_denied",
+        "environment_unverifiable",
+        "runtime_corrupt",
+        "operation_conflict",
+        "operation_timeout",
         "state_conflict",
+        "resource_budget_exceeded",
+        "owned_runs_confirmation_required",
+        "restart_confirmation_required",
+        "stop_confirmation_required",
         "identity_mismatch",
         "not_found",
+        "session_not_found",
+        "session_expired",
         "state_error",
         "runtime_rebuild_required",
         "supervisor_unavailable",
+        "session_cleanup_pending",
         "unsupported_platform",
         "invalid_request",
+        "control_timeout",
         "readiness_timeout",
         "probe_limit_exceeded",
     ],
@@ -67,6 +88,10 @@ PUBLIC_CONTRACT = {
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def remove_tree(path: Path) -> None:
+    retry_windows_file_operation(lambda: shutil.rmtree(path) if path.exists() else None)
 
 
 def wait_for_file(path: Path, timeout: float) -> bool:

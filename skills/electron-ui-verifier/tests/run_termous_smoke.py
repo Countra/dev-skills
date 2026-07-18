@@ -181,6 +181,7 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
     termous_stopped = False
     try:
         checks["verifierStart"] = managed.start()
+        checks["sessionRenew"] = managed.renew_session()
         service_file = termous_service_file(managed, exe, profile, endpoint, args.port)
         termous_start = managed.start_managed_service(service_file, timeout=60)
         checks["termousStart"] = termous_start
@@ -240,13 +241,14 @@ def run_smoke(args: argparse.Namespace) -> dict[str, Any]:
             failures.append(f"隔离 Termous profile 清理失败：{exc}")
 
     cleanup = checks.get("verifierCleanup", {})
+    session_close = cleanup.get("sessionClose", {})
     cleanup_ok = (
         termous_stopped
         and checks.get("endpointClosed") is True
         and checks.get("isolatedProfileRemoved") is True
-        and cleanup.get("serviceStop", {}).get("cleanupVerified") is True
-        and cleanup.get("serviceStop", {}).get("stopResult", {}).get("ownerEmpty") is True
-        and cleanup.get("managerStop", {}).get("ownerEmpty") is True
+        and session_close.get("cleanup", {}).get("cleanupVerified") is True
+        and session_close.get("cleanup", {}).get("ownerEmpty") is True
+        and session_close.get("idleStop", {}).get("cleanup", {}).get("ownersEmpty") is True
         and cleanup.get("installImmutable", {}).get("unchanged") is True
     )
     if not cleanup_ok:

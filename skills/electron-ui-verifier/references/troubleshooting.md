@@ -4,7 +4,7 @@
 
 ## Service 不可用
 
-运行 `ev_health.py`，再检查 process-manager status 和 bounded logs。配置缺失才重新 init。不要用手写后台进程绕过 ownership。
+运行 `ev_health.py`，再检查 process-manager status 和 bounded logs。按 status 的 `recommendedAction` 选择 ensure、wait、restart 或 doctor；配置缺失才重新 init。不要用手写后台进程绕过 ownership。
 
 若复制安装可初始化但启动失败，检查 service config 的 launcher 是否指向该安装内 `ev_server.py`、cwd 是否为独立 workspace、解释器是否满足 locked requirements，以及安装目录 digest 是否因 bytecode/cache 写入发生变化。不要回退到仓库固定路径。
 
@@ -48,4 +48,4 @@ receipt 过期、已消费、run/target/action fingerprint 不匹配时，重新
 
 ## Cleanup 失败
 
-只停止本轮记录的 verifier service 和测试应用进程树。检查 process-manager `cleanupVerified`、`ownerEmpty`，以及 CDP endpoint 已关闭。不得按进程名批量终止用户已有实例。
+优先在 `finally` 关闭本轮 validation session，成组清理 verifier 与同 session 服务；persistent 或独立测试应用按各自所有权收口。检查 process-manager `cleanupVerified`、`ownerEmpty`，以及 CDP endpoint 已关闭。不得按进程名批量终止用户已有实例；外层 access denied 没有 JSON envelope 时不得猜成 ACL 问题或自动提权。

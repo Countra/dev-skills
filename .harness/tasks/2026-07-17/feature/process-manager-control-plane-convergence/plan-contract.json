@@ -1,6 +1,6 @@
 {
   "task_id": "2026-07-17-feature-process-manager-control-plane-convergence",
-  "plan_revision": 3,
+  "plan_revision": 4,
   "lifecycle_route": "managed",
   "plan_profile": "full",
   "goal": {
@@ -266,7 +266,7 @@
     {
       "id": "ART-08",
       "kind": "review",
-      "path": "artifacts/reviews/plan-review-attempt-4.json",
+      "path": "artifacts/reviews/plan-review-attempt-5.json",
       "required": true,
       "approval_included": true
     }
@@ -508,7 +508,13 @@
         "skills/process-manager/scripts/process_manager/client.py",
         "skills/process-manager/scripts/process_manager/config.py",
         "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/launch.py",
+        "skills/process-manager/scripts/process_manager/logs.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
         "skills/process-manager/scripts/process_manager/protocol.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/service_host.py",
         "skills/process-manager/scripts/pm_validate.py",
         "skills/process-manager/scripts/pm_start.py",
         "skills/process-manager/scripts/pm_ready.py",
@@ -524,6 +530,7 @@
         "skills/process-manager/SKILL.md",
         "skills/process-manager/references/**",
         "skills/process-manager/examples/**",
+        "skills/process-manager/templates/manager-config.json",
         "skills/process-manager/tests/**",
         "evals/process-manager/**",
         "skills/complex-coding-planner/**",
@@ -532,7 +539,9 @@
         "evals/complex-coding-executor/**",
         "skills/electron-ui-verifier/**",
         "evals/electron-ui-verifier/**",
-        ".github/workflows/process-manager-platforms.yml"
+        ".github/workflows/process-manager-platforms.yml",
+        ".harness/environment.md",
+        "README.md"
       ],
       "forbidden_changes": [
         "legacy health or shutdown wrapper, old schema parser or status-start fallback",

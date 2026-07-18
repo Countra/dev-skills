@@ -23,6 +23,7 @@ from process_manager.manager import ProcessManager  # noqa: E402
 from process_manager.platforms import select_platform_adapter  # noqa: E402
 from process_manager.runtime import initialize_runtime, read_manager_identity_record  # noqa: E402
 from process_manager.state import StateStore  # noqa: E402
+from public_lifecycle_smoke import execute_public_lifecycle  # noqa: E402
 from smoke_support import (  # noqa: E402
     collect_keys,
     _facade_diagnostic,
@@ -30,6 +31,7 @@ from smoke_support import (  # noqa: E402
     contract_fingerprint,
     manager_bootstrap_smoke,
     read_identities,
+    remove_tree,
     service_value,
     terminate_fixture,
     wait_for_file,
@@ -388,6 +390,9 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     secret = f"pm-smoke-secret-{uuid.uuid4().hex}"
     failures: list[str] = []
     checks: dict[str, Any] = {"publicContract": contract_fingerprint(failures)}
+    checks["publicLifecycle"] = execute_public_lifecycle(workspace / "public")
+    if not checks["publicLifecycle"]["ok"]:
+        failures.append("统一 public manager/session/service lifecycle 未闭环")
     checks["managerBootstrap"] = manager_bootstrap_smoke(workspace / "bootstrap")
     if not checks["managerBootstrap"]["ok"]:
         failures.append("统一 pm_manager bootstrap/status/stop 未闭环")
@@ -678,6 +683,28 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     }
 
 
+def cleanup_scenario_workspace(result: dict[str, Any], workspace_parent: Path) -> None:
+    value = result.get("workspace")
+    if not isinstance(value, str):
+        result.setdefault("failures", []).append("smoke result 缺少 workspace")
+        result["ok"] = False
+        return
+    workspace = Path(value).resolve()
+    parent = workspace_parent.resolve()
+    if workspace == parent or parent not in workspace.parents:
+        result.setdefault("failures", []).append("smoke workspace 超出隔离父目录")
+        result["ok"] = False
+        return
+    try:
+        if workspace.exists():
+            remove_tree(workspace)
+        result["workspaceCleanup"] = {"removed": not workspace.exists()}
+    except OSError as exc:
+        result["workspaceCleanup"] = {"removed": False, "error": str(exc)}
+        result.setdefault("failures", []).append(f"smoke workspace 清理失败: {exc}")
+        result["ok"] = False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
@@ -699,6 +726,12 @@ def main() -> int:
         )
     else:
         result = execute(args.workspace, require_native_permissions=args.require_native_permissions)
+    result["ci"] = {
+        "commitSha": os.environ.get("GITHUB_SHA"),
+        "runId": os.environ.get("GITHUB_RUN_ID"),
+        "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+    }
+    cleanup_scenario_workspace(result, args.workspace)
     write_json(args.output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

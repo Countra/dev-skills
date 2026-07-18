@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import default_config_path, load_manager_config
+from .config import load_manager_config
 from .errors import ContextInvalidError, PMError
 from .models import ManagerConfig
 from .runtime import config_digest
@@ -44,6 +44,10 @@ def _absolute_path(value: str | Path, label: str) -> Path:
 def _workspace_digest(workspace: Path) -> str:
     normalized = os.path.normcase(str(workspace.resolve()))
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _workspace_config_path(workspace: Path) -> Path:
+    return workspace / ".harness" / "process-manager" / "config.json"
 
 
 def _infer_workspace(config_path: Path) -> Path:
@@ -101,7 +105,7 @@ def resolve_runtime_context(
                 f"workspace 不存在: {workspace_root}",
                 recommended_action="provide_context",
             )
-        config_path = default_config_path(workspace_root)
+        config_path = _workspace_config_path(workspace_root)
         if config_path.exists():
             return _load_context(config_path, workspace_root)
         return RuntimeContext(

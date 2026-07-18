@@ -72,7 +72,7 @@
 核心约束：
 
 - 只管理长期后台进程，不管理测试、构建、lint、format 等 finite command。
-- config 不存在时运行 `pm_init.py`；用 `pm_manager.py status|start|stop` 统一管理 manager，不判断 OS/backend。
+- config 不存在时运行 `pm_init.py`；用 `pm_manager.py ensure|status|restart|stop` 统一管理 manager，并通过 `pm_session.py open|renew|close` 绑定本轮长期进程，不判断 OS/backend。
 - service config 只允许 current `direct`/`script` launcher，启动前先 `pm_validate.py`。
 - agent 只调用 `pm_*` 脚本，不直接调用 manager API。
 - `cwd`、executable/interpreter/script 和 `pathArgs` 必须是绝对路径；禁止 free-form shell。

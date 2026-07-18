@@ -13,6 +13,7 @@ from typing import Any
 
 from .atomic import read_json_file
 from .errors import ConfigurationError, IdentityError, SupervisorError
+from .logs import MAX_HOST_STATE_BYTES
 from .models import ServiceConfig
 from .platforms.base import PlatformAdapter, RunOwner
 
@@ -29,7 +30,7 @@ def read_managed_host_state(run: Any, adapter: PlatformAdapter) -> dict[str, Any
     if not run.host_state.exists():
         return None
     adapter.verify_file(run.host_state)
-    value = read_json_file(run.host_state, max_bytes=MAX_HOST_MESSAGE_BYTES)
+    value = read_json_file(run.host_state, max_bytes=MAX_HOST_STATE_BYTES)
     if not isinstance(value, dict) or value.get("capabilityHash") != run.capability_hash:
         raise IdentityError("host-state capability identity 不匹配")
     return value

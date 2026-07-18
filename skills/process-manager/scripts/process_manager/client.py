@@ -11,7 +11,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from .errors import ManagerOfflineError, ManagerUnresponsiveError, PMError, RuntimeCorruptError
+from .errors import ManagerUnresponsiveError, PMError, RuntimeCorruptError
 from .models import ManagerConfig
 from .platforms.base import PlatformAdapter
 from .protocol import verify_control_busy
@@ -67,7 +67,7 @@ def request_manager_shutdown(
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
-        raise ManagerOfflineError("manager control endpoint 不允许 redirect")
+        raise RuntimeCorruptError("manager control endpoint 不允许 redirect")
 
 
 class ManagerClient:
@@ -93,7 +93,7 @@ class ManagerClient:
         except PMError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise ManagerOfflineError("manager runtime identity 不可用") from exc
+            raise RuntimeCorruptError("manager runtime identity 不可验证") from exc
 
     def request(
         self,
@@ -122,12 +122,17 @@ class ManagerClient:
             response = exc
             status = int(exc.code)
         except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            raise ManagerOfflineError("manager control endpoint 不可用") from exc
+            raise ManagerUnresponsiveError(
+                "manager control endpoint 不可达",
+                diagnostics={"endpointReachable": False},
+                recommended_action="restart",
+            ) from exc
         try:
             data = response.read(MAX_RESPONSE_BYTES + 1)
         except (TimeoutError, OSError) as exc:
             raise ManagerUnresponsiveError(
                 "manager control response 读取失败",
+                diagnostics={"endpointReachable": True},
                 recommended_action="wait",
                 retryable=True,
             ) from exc

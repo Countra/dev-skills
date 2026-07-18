@@ -11,16 +11,15 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, BinaryIO
+
 from .atomic import atomic_write_bytes, retry_windows_file_operation
 from .errors import RequestError, ResourceUsageUnverifiableError, StateError
-MAX_TAIL_LINES = 10000
-MAX_TAIL_BYTES = 1024 * 1024
+
+MAX_TAIL_LINES, MAX_TAIL_BYTES, MAX_HOST_STATE_BYTES = 10000, 1024 * 1024, 64 * 1024
 RESOURCE_CAPS = {
-    "state": 16 * 1024 * 1024, "transaction": 32 * 1024 * 1024,
-    "config": 1024 * 1024,
-    "identity": 64 * 1024, "operation": 64 * 1024, "bootstrap": 64 * 1024,
-    "token": 4 * 1024, "session": 64 * 1024, "run": 1024 * 1024,
-    "host": 256 * 1024, "tombstone": 16 * 1024,
+    "state": 16 * 1024 * 1024, "transaction": 32 * 1024 * 1024, "config": 1024 * 1024,
+    "identity": 64 * 1024, "operation": 64 * 1024, "bootstrap": 64 * 1024, "tombstone": 16 * 1024,
+    "token": 4 * 1024, "session": 64 * 1024, "run": 1024 * 1024, "host": MAX_HOST_STATE_BYTES,
 }
 
 
@@ -29,11 +28,15 @@ def serialized_json(value: Any) -> bytes:
         return (json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise StateError("JSON 值无法序列化") from exc
+
+
 def write_capped_json(path: Path, value: Any, max_bytes: int) -> None:
     data = serialized_json(value)
     if len(data) > max_bytes:
         raise StateError(f"JSON 文件超过写入上限: {path.name}")
     atomic_write_bytes(path, data)
+
+
 def write_capped_bytes(path: Path, data: bytes, max_bytes: int) -> None:
     if len(data) > max_bytes:
         raise StateError(f"文件超过写入上限: {path.name}")
@@ -346,10 +349,7 @@ class RuntimeAccountant:
 
 
 def rotated_paths(path: Path, backups: int) -> list[Path]:
-    return [
-        *(path.with_name(f"{path.name}.{index}") for index in range(backups, 0, -1)),
-        path,
-    ]
+    return [*(path.with_name(f"{path.name}.{index}") for index in range(backups, 0, -1)), path]
 
 
 def _open_log(path: Path) -> BinaryIO | None:

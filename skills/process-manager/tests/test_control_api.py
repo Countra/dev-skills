@@ -20,7 +20,6 @@ from process_manager.client import ManagerClient  # noqa: E402
 from process_manager.control_api import ControlHandler, ControlServer  # noqa: E402
 from process_manager.errors import (  # noqa: E402
     ControlTimeoutError,
-    ManagerOfflineError,
     ManagerUnresponsiveError,
     RequestError,
     RuntimeCorruptError,
@@ -450,6 +449,7 @@ class ControlApiTests(unittest.TestCase):
             with self.assertRaises(ManagerUnresponsiveError) as raised:
                 client.request("GET", "/health")
             self.assertEqual(raised.exception.recommended_action, "wait")
+            self.assertIs(raised.exception.diagnostics.get("endpointReachable"), True)
             response.close.assert_called_once_with()
             oversized = mock.Mock(status=200)
             oversized.read.return_value = b"{}"

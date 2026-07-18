@@ -2,7 +2,6 @@
 
 from .config import (
     create_default_manager_config,
-    default_config_path,
     load_manager_config,
     load_service_config,
     resolve_service_environment,
@@ -11,7 +10,6 @@ from .errors import (
     ConfigurationError,
     ConflictError,
     IdentityError,
-    ManagerOfflineError,
     PMError,
     RuntimeRebuildRequiredError,
     StateError,
@@ -25,7 +23,6 @@ __all__ = [
     "ConflictError",
     "IdentityError",
     "ManagerConfig",
-    "ManagerOfflineError",
     "PMError",
     "RuntimePaths",
     "RuntimeRebuildRequiredError",
@@ -34,7 +31,6 @@ __all__ = [
     "SupervisorError",
     "UnsupportedPlatformError",
     "create_default_manager_config",
-    "default_config_path",
     "load_manager_config",
     "load_service_config",
     "resolve_service_environment",

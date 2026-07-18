@@ -16,9 +16,10 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
-from .atomic import atomic_write_json, retry_windows_file_operation
+from .atomic import retry_windows_file_operation
 from .errors import ConfigurationError
 from .launch import read_target_identity_message
+from .logs import MAX_HOST_STATE_BYTES, write_capped_json
 from .runtime import now_text
 
 
@@ -27,6 +28,10 @@ MAX_CONTROL_BYTES = 4096
 PROCESS_GROUP_SETTLE_SECONDS = 1.0
 PROCESS_GROUP_POLL_SECONDS = 0.02
 LOG_PUMP_DRAIN_SECONDS = 5.0
+
+
+def _write_host_state(path: Path, value: dict[str, Any]) -> None:
+    write_capped_json(path, value, MAX_HOST_STATE_BYTES)
 
 
 def _windows_console_supported() -> bool:
@@ -394,7 +399,7 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
         "state": "running",
         "startedAt": now_text(),
     }
-    atomic_write_json(host_state, state)
+    _write_host_state(host_state, state)
     _emit(
         {
             "event": "target_started",
@@ -450,7 +455,7 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
             "logPumpFailures": sorted(pump_failures, key=lambda value: str(value.get("stream", ""))),
         }
     )
-    atomic_write_json(host_state, state)
+    _write_host_state(host_state, state)
     _emit({"event": "target_exited", "exitCode": exit_code, "state": state["state"]})
     console.close()
     return exit_code

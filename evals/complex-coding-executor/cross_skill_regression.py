@@ -129,7 +129,12 @@ def run_reviewer_lifecycle(work_dir: Path) -> dict[str, Any]:
     }
 
 
-def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any]:
+def evaluate(
+    work_dir: Path,
+    *,
+    include_reviewer: bool = False,
+    include_process_manager: bool = False,
+) -> dict[str, Any]:
     work_dir.mkdir(parents=True, exist_ok=True)
     manager_config = work_dir / "manager.json"
     service_path = work_dir / "electron-service.json"
@@ -140,7 +145,20 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
             "workspaceRoot": str(REPO_ROOT),
             "stateRoot": str((work_dir / "runtime").resolve()),
             "control": {"host": "127.0.0.1", "port": 0, "maxRequestBytes": 65536},
-            "history": {"maxInactive": 20, "deleteRunDirs": True},
+            "history": {
+                "maxInactive": 20,
+                "maxAgeSeconds": 604800,
+                "maxTombstones": 200,
+                "deleteRunDirs": True,
+            },
+            "limits": {
+                "maxActiveRuns": 16,
+                "maxOpenSessions": 32,
+                "maxSessionRecords": 128,
+                "maxPendingPrunes": 32,
+                "maxConcurrentControlRequests": 16,
+                "maxRetainedBytes": 536870912,
+            },
             "logs": {"maxBytes": 10485760, "backups": 3},
         },
     )
@@ -205,11 +223,24 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
                 / "code-review.md",
             ]
         )
+    if include_process_manager:
+        consumer_paths.extend(
+            [
+                REPO_ROOT / "skills" / "process-manager" / "SKILL.md",
+                REPO_ROOT / "skills" / "process-manager" / "references" / "workflow.md",
+                REPO_ROOT / "skills" / "process-manager" / "references" / "service-schema.md",
+                REPO_ROOT / "skills" / "process-manager" / "references" / "security.md",
+            ]
+        )
     consumer_text = "\n".join(path.read_text(encoding="utf-8") for path in consumer_paths)
     required_terms = (
         "pm_init.py",
-        "pm_manager.py status",
-        "pm_manager.py start",
+        "pm_manager.py ensure",
+        "pm_session.py open",
+        "pm_session.py close",
+        "--session-id",
+        "--stop-manager-if-idle",
+        "recommendedAction",
         "authenticated manager identity",
         "processKey",
         "bounded logs",
@@ -232,6 +263,13 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
             "report_ref",
             "verification_gaps",
         )
+    if include_process_manager:
+        required_terms += (
+            "manager_absent",
+            "manager_unresponsive",
+            "runtime_permission_denied",
+            "environment_unverifiable",
+        )
     missing_terms = [term for term in required_terms if term not in consumer_text]
     if missing_terms:
         failures.append("consumer 规则缺失: " + ", ".join(missing_terms))
@@ -245,6 +283,10 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
         "cmd-file",
         "powershell-file",
         "default port is 18080",
+        "manager_offline",
+        "pm_health.py",
+        "pm_shutdown.py",
+        "pm_manager.py status|start",
     )
     if include_reviewer:
         forbidden_terms += (
@@ -289,6 +331,7 @@ def evaluate(work_dir: Path, *, include_reviewer: bool = False) -> dict[str, Any
         "present_forbidden_terms": present_forbidden,
         "planner_fixture_count": len(planner_ids),
         "executor_fixture_count": len(executor_ids),
+        "process_manager_included": include_process_manager,
         "reviewer_included": include_reviewer,
         "reviewer_lifecycle": reviewer_lifecycle,
         "failures": failures,
@@ -299,11 +342,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--include-process-manager", action="store_true")
     parser.add_argument("--include-reviewer", action="store_true")
     args = parser.parse_args()
     try:
         result = evaluate(
             args.work_dir.resolve(),
+            include_process_manager=args.include_process_manager,
             include_reviewer=args.include_reviewer,
         )
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:

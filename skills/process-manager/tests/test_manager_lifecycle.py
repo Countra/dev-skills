@@ -17,7 +17,6 @@ from process_manager.errors import (
     ConflictError,
     EnvironmentUnverifiableError,
     IdentityError,
-    ManagerOfflineError,
     ManagerUnresponsiveError,
     OperationConflictError,
     OperationTimeoutError,
@@ -96,16 +95,24 @@ class ReadyClient:
             raise AssertionError(f"unexpected request: {method} {path}")
 
 
-class OfflineClient(ReadyClient):
+class UnreachableClient(ReadyClient):
     def request(self, method, path):  # noqa: ANN001,ANN201
         self.assert_request(method, path)
-        raise ManagerOfflineError("fixture endpoint offline")
+        raise ManagerUnresponsiveError(
+            "fixture endpoint unreachable",
+            diagnostics={"endpointReachable": False},
+            recommended_action="restart",
+        )
 
 
 class UnresponsiveClient(ReadyClient):
     def request(self, method, path):  # noqa: ANN001,ANN201
         self.assert_request(method, path)
-        raise ManagerUnresponsiveError("fixture response timeout", recommended_action="wait")
+        raise ManagerUnresponsiveError(
+            "fixture response timeout",
+            diagnostics={"endpointReachable": True},
+            recommended_action="wait",
+        )
 
 
 class HealthErrorClient(ReadyClient):
@@ -150,7 +157,11 @@ class ManagerLifecycleTests(unittest.TestCase):
             def request(self, method, path, payload=None):  # noqa: ANN001,ANN201
                 if (method, path) == ("GET", "/health"):
                     if not control["online"]:
-                        raise ManagerOfflineError("fixture endpoint offline")
+                        raise ManagerUnresponsiveError(
+                            "fixture endpoint unreachable",
+                            diagnostics={"endpointReachable": False},
+                            recommended_action="restart",
+                        )
                     identity = read_manager_identity_record(config, adapter)
                     return 200, {
                         "ok": True,
@@ -311,16 +322,21 @@ class ManagerLifecycleTests(unittest.TestCase):
             unresponsive = ManagerStateResolver(
                 context,
                 adapter_factory=lambda *_: adapter,
-                client_factory=OfflineClient,
+                client_factory=UnreachableClient,
             ).resolve()
             self.assertEqual(unresponsive.state, "unresponsive")
+            self.assertEqual(unresponsive.recommended_action, "restart")
+            self.assertIsNone(unresponsive.retry_after_ms)
             timed_out = ManagerStateResolver(
                 context,
                 adapter_factory=lambda *_: adapter,
                 client_factory=UnresponsiveClient,
             ).resolve()
             self.assertEqual(timed_out.state, "unresponsive")
+            self.assertIs(timed_out.evidence["endpointReachable"], True)
             self.assertEqual(timed_out.evidence["endpointState"], "unresponsive")
+            self.assertEqual(timed_out.recommended_action, "wait")
+            self.assertEqual(timed_out.retry_after_ms, 250)
             adapter.identity_valid = False
             stale = ManagerStateResolver(
                 context,
@@ -625,7 +641,7 @@ class ManagerLifecycleTests(unittest.TestCase):
                 ManagerConverger(
                     context,
                     adapter_factory=lambda *_: adapter,
-                    client_factory=OfflineClient,
+                    client_factory=UnreachableClient,
                     bootstrap_factory=NoLaunchBootstrap,
                 ).ensure(timeout=0.03)
             self.assertEqual(launch_count, 0)
@@ -808,7 +824,7 @@ class ManagerLifecycleTests(unittest.TestCase):
                 ManagerConverger(
                     context,
                     adapter_factory=lambda *_: adapter,
-                    client_factory=OfflineClient,
+                    client_factory=UnreachableClient,
                     bootstrap_factory=FailedBootstrap,
                 ).ensure(timeout=1)
             failed = operation_store(context, adapter).read()
