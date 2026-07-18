@@ -16,7 +16,7 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
-from .atomic import retry_windows_file_operation
+from .atomic import open_private_binary_append, retry_windows_file_operation
 from .errors import ConfigurationError
 from .launch import read_target_identity_message
 from .logs import MAX_HOST_STATE_BYTES, write_capped_json
@@ -158,8 +158,7 @@ class RotatingBinaryLog:
         self.path = path
         self.max_bytes = max_bytes
         self.backups = backups
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle: BinaryIO = self.path.open("ab", buffering=0)
+        self._handle = open_private_binary_append(self.path)
 
     @staticmethod
     def _retry_rotation(operation: Callable[[], object]) -> None:
@@ -182,7 +181,7 @@ class RotatingBinaryLog:
             else:
                 self._retry_rotation(lambda: self.path.unlink(missing_ok=True))
         finally:
-            self._handle = self.path.open("ab", buffering=0)
+            self._handle = open_private_binary_append(self.path)
 
     def write(self, data: bytes) -> None:
         if not data:

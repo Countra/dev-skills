@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import socket
+import stat
 import sys
 import threading
 import unittest
@@ -103,6 +105,18 @@ class LogAndProbeTests(unittest.TestCase):
             log.close()
             self.assertEqual((path.with_name("service.log.1")).read_bytes(), b"12345678")
             self.assertEqual(path.read_bytes(), b"abcdefgh")
+
+    @unittest.skipUnless(hasattr(os, "fchmod") and hasattr(os, "getuid"), "仅 POSIX 验证日志 mode")
+    def test_service_log_initial_and_rotated_generations_are_private(self) -> None:
+        with workspace_directory() as directory:
+            path = Path(directory) / "service.log"
+            path.write_bytes(b"12345678")
+            os.chmod(path, 0o666)
+            log = RotatingBinaryLog(path, max_bytes=10, backups=1)
+            log.write(b"abcdefgh")
+            log.close()
+            for candidate in (path, path.with_name("service.log.1")):
+                self.assertEqual(stat.S_IMODE(candidate.stat().st_mode), 0o600)
 
     def test_log_rotation_retries_windows_sharing_violation(self) -> None:
         with workspace_directory() as directory:

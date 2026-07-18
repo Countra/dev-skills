@@ -224,8 +224,26 @@ class RuntimeSecurityTests(unittest.TestCase):
         setattr(acl, "_read_snapshot", lambda path: events.append(f"read:{path.name}") or snapshot)
         setattr(acl, "_current_sid", lambda: events.append("sid") or current_sid)
         setattr(acl, "_restricted_sids", lambda: ())
+        setattr(acl, "_token_owner_sid", lambda: events.append("owner") or current_sid)
         acl.verify_file(Path("runtime.json"))
-        self.assertEqual(events, ["validate:runtime.json:False", "read:runtime.json", "sid"])
+        self.assertEqual(events, ["validate:runtime.json:False", "read:runtime.json", "sid", "owner"])
+
+    def test_acl_accepts_token_default_owner_but_rejects_unrelated_owner(self) -> None:
+        current_sid = "S-1-5-21-1000"
+        token_owner_sid = "S-1-5-32-544"
+        snapshot = AclSnapshot(
+            token_owner_sid,
+            (AclEntry(current_sid, FILE_ALL_ACCESS, GRANT_ACCESS, 0),),
+            FILE_ALL_ACCESS,
+        )
+        validate_acl_snapshot(snapshot, current_sid, (), token_owner_sid)
+        with self.assertRaises(RuntimeInsecureError):
+            validate_acl_snapshot(
+                AclSnapshot("S-1-5-21-9999", snapshot.entries, FILE_ALL_ACCESS),
+                current_sid,
+                (),
+                token_owner_sid,
+            )
 
     @unittest.skipUnless(sys.platform.startswith("win"), "仅 Windows 验证原生 ACL 生命周期")
     def test_windows_acl_supports_current_restricted_token(self) -> None:
@@ -234,9 +252,11 @@ class RuntimeSecurityTests(unittest.TestCase):
             acl = WindowsAcl()
             acl.secure_directory(runtime)
             current_sid = acl._current_sid()
+            token_owner_sid = acl._token_owner_sid()
             restricted_sids = acl._restricted_sids()
             snapshot = acl._read_snapshot(runtime)
-            validate_acl_snapshot(snapshot, current_sid, restricted_sids)
+            validate_acl_snapshot(snapshot, current_sid, restricted_sids, token_owner_sid)
+            self.assertIn(snapshot.owner_sid, {current_sid, token_owner_sid})
             granted = {
                 entry.sid
                 for entry in snapshot.entries

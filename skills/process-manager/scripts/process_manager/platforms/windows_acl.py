@@ -35,6 +35,7 @@ ERROR_ALREADY_EXISTS = 183
 TOKEN_QUERY = 0x0008
 TOKEN_DUPLICATE = 0x0002
 TOKEN_USER_CLASS = 1
+TOKEN_OWNER_CLASS = 4
 TOKEN_RESTRICTED_SIDS_CLASS = 11
 SECURITY_IMPERSONATION = 2
 MAX_TOKEN_INFORMATION_BYTES = 64 * 1024
@@ -88,6 +89,10 @@ class TOKEN_USER(ctypes.Structure):
     _fields_ = [("User", SID_AND_ATTRIBUTES)]
 
 
+class TOKEN_OWNER(ctypes.Structure):
+    _fields_ = [("Owner", ctypes.c_void_p)]
+
+
 class TOKEN_GROUPS(ctypes.Structure):
     _fields_ = [
         ("GroupCount", wintypes.DWORD),
@@ -110,6 +115,7 @@ class WindowsAcl:
         self.advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
         self.kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         self._sid: str | None = None
+        self._owner_sid: str | None = None
         self._restricted: tuple[str, ...] | None = None
         self._configure_api()
 
@@ -224,6 +230,16 @@ class WindowsAcl:
         token_user = ctypes.cast(buffer, ctypes.POINTER(TOKEN_USER)).contents
         self._sid = self._sid_to_string(token_user.User.Sid)
         return self._sid
+
+    def _token_owner_sid(self) -> str:
+        if self._owner_sid is not None:
+            return self._owner_sid
+        buffer = self._token_information(TOKEN_OWNER_CLASS, "当前 Windows token owner 读取")
+        token_owner = ctypes.cast(buffer, ctypes.POINTER(TOKEN_OWNER)).contents
+        if not token_owner.Owner:
+            raise EnvironmentUnverifiableError("当前 Windows token 缺少默认 owner")
+        self._owner_sid = self._sid_to_string(token_owner.Owner)
+        return self._owner_sid
 
     def _restricted_sids(self) -> tuple[str, ...]:
         if self._restricted is not None:
@@ -439,6 +455,7 @@ class WindowsAcl:
             self._read_snapshot(path),
             self._current_sid(),
             self._restricted_sids(),
+            self._token_owner_sid(),
         )
 
     def _ensure_acl(self, path: Path, *, directory: bool) -> None:

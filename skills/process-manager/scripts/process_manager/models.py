@@ -66,18 +66,23 @@ def validate_windows_acl_snapshot(
     snapshot: WindowsAclSnapshot,
     current_sid: str,
     restricted_sids: tuple[str, ...] = (),
+    token_owner_sid: str | None = None,
 ) -> None:
     """验证 Windows ACL 语义，不依赖继承形态或 SDDL 文本。"""
 
-    if snapshot.owner_sid != current_sid:
-        raise RuntimeInsecureError("Windows runtime owner 不是当前用户")
+    accepted_owners = {current_sid} | ({token_owner_sid} if token_owner_sid else set())
+    if snapshot.owner_sid not in accepted_owners:
+        raise RuntimeInsecureError(
+            "Windows runtime owner 不属于当前 token",
+            diagnostics={"ownerSid": snapshot.owner_sid, "acceptedOwnerSids": sorted(accepted_owners)},
+        )
     broad = WINDOWS_BROAD_RESTRICTED_SIDS.intersection(restricted_sids)
     if broad:
         raise EnvironmentUnverifiableError(
             "当前 Windows restricting SID 过宽，无法构造私有 runtime",
             diagnostics={"restrictingSids": sorted(broad)},
         )
-    trusted = WINDOWS_TRUSTED_SIDS | {current_sid, *restricted_sids}
+    trusted = WINDOWS_TRUSTED_SIDS | accepted_owners | set(restricted_sids)
     for entry in snapshot.entries:
         if entry.access_mode in {WINDOWS_GRANT_ACCESS, WINDOWS_SET_ACCESS}:
             if entry.mask and entry.sid not in trusted:

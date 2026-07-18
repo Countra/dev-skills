@@ -6,10 +6,11 @@ import errno
 import json
 import math
 import os
+import stat
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, BinaryIO, Callable
 
 from .errors import OperationConflictError, StateError
 
@@ -43,6 +44,36 @@ def retry_windows_file_operation(operation: Callable[[], object]) -> None:
             if not retryable or attempt >= len(WINDOWS_FILE_RETRY_DELAYS):
                 raise
             time.sleep(WINDOWS_FILE_RETRY_DELAYS[attempt])
+
+
+def open_private_binary_append(path: Path) -> BinaryIO:
+    """以私有权限打开普通文件，并拒绝 POSIX 链接与跨用户 owner。"""
+
+    flags = (
+        os.O_WRONLY
+        | os.O_CREAT
+        | os.O_APPEND
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        value = os.fstat(descriptor)
+        if not stat.S_ISREG(value.st_mode):
+            raise StateError(f"私有 append 目标不是普通文件: {path.name}")
+        getuid = getattr(os, "getuid", None)
+        if getuid is not None and value.st_uid != getuid():
+            raise StateError(f"私有 append 目标 owner 不属于当前用户: {path.name}")
+        fchmod = getattr(os, "fchmod", None)
+        if fchmod is not None:
+            fchmod(descriptor, 0o600)
+        handle = os.fdopen(descriptor, "ab", buffering=0)
+        descriptor = -1
+        return handle
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def read_json_file(path: Path, *, max_bytes: int) -> Any:
