@@ -49,7 +49,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}-process-manager-evidence
+          name: ${{ runner.os }}-process-manager-evidence-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             .ci-artifacts/native-smoke.json
             .ci-artifacts/static-schema-checks.json
@@ -104,7 +104,17 @@ jobs:
           assert evidence["ok"] is True, evidence["failures"]
           assert evidence["diagnostics"]["backend"] == "cgroup-v2", evidence["diagnostics"]
           Path(".ci-artifacts/delegated/unit.json").write_text(
-              json.dumps({"unit": os.environ["UNIT_NAME"], "cleanupVerified": True}, indent=2) + "\n",
+              json.dumps(
+                  {
+                      "unit": os.environ["UNIT_NAME"],
+                      "cleanupVerified": True,
+                      "commitSha": os.environ["GITHUB_SHA"],
+                      "runId": os.environ["GITHUB_RUN_ID"],
+                      "runAttempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                  },
+                  indent=2,
+              )
+              + "\n",
               encoding="utf-8",
           )
           PY
@@ -113,7 +123,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Linux-delegated-cgroup-evidence
+          name: Linux-delegated-cgroup-evidence-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             .ci-artifacts/delegated/native-smoke.json
             .ci-artifacts/delegated/unit.json

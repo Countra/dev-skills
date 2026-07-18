@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from ..errors import (
+    EnvironmentUnverifiableError,
+    RuntimeInsecureError,
+    RuntimePermissionDeniedError,
+)
+
+
+FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 
 
 @dataclass(frozen=True)
@@ -24,6 +35,32 @@ class PlatformSelection:
             "capability": self.capability,
             "selectionReason": self.selection_reason,
         }
+
+
+@dataclass(frozen=True)
+class PersistedOwnerEvidence:
+    """从 run record 恢复 owner 所需的最小持久证据。"""
+
+    run_id: str
+    capability_hash: str
+    owner: dict[str, Any]
+    host_identity: dict[str, Any]
+    target_identity: dict[str, Any] | None
+    host_state: Path | None = None
+
+
+@dataclass(frozen=True)
+class OwnerInspection:
+    """平台中立的 owner 检查结果。"""
+
+    state: str
+    cleanup_supported: bool
+    accounting: dict[str, Any]
+    error: str | None = None
+
+    @property
+    def empty(self) -> bool:
+        return self.state == "empty"
 
 
 class ManagerLock(ABC):
@@ -91,7 +128,38 @@ class PlatformAdapter(ABC):
     def __init__(self, selection: PlatformSelection, workspace_root: Path, state_root: Path) -> None:
         self.selection = selection
         self.workspace_root = workspace_root.resolve()
-        self.state_root = state_root.resolve()
+        self.state_root = Path(os.path.abspath(state_root))
+
+    def validate_runtime_path(self, path: Path) -> Path:
+        """验证 runtime 路径的词法边界与所有现存祖先。"""
+
+        lexical = Path(os.path.abspath(path))
+        try:
+            relative = lexical.relative_to(self.workspace_root)
+        except ValueError as exc:
+            raise RuntimeInsecureError("runtime 路径越过 workspace 边界") from exc
+        cursor = self.workspace_root
+        for part in relative.parts:
+            cursor /= part
+            try:
+                value = cursor.lstat()
+            except FileNotFoundError:
+                break
+            except PermissionError as exc:
+                raise RuntimePermissionDeniedError("runtime 路径祖先访问被拒绝") from exc
+            except OSError as exc:
+                raise EnvironmentUnverifiableError("runtime 路径祖先无法验证") from exc
+            attributes = getattr(value, "st_file_attributes", 0)
+            if stat.S_ISLNK(value.st_mode) or attributes & FILE_ATTRIBUTE_REPARSE_POINT:
+                raise RuntimeInsecureError(f"runtime 路径包含链接或 reparse point: {cursor}")
+        try:
+            resolved = lexical.resolve(strict=False)
+            resolved.relative_to(self.workspace_root)
+            if resolved != self.state_root:
+                resolved.relative_to(self.state_root)
+        except (OSError, ValueError) as exc:
+            raise RuntimeInsecureError("runtime 路径越过 stateRoot 边界") from exc
+        return lexical
 
     @abstractmethod
     def secure_directory(self, path: Path) -> None:
@@ -100,6 +168,10 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def secure_file(self, path: Path) -> None:
         """验证文件仅当前用户可访问。"""
+
+    @abstractmethod
+    def verify_directory(self, path: Path) -> None:
+        """只读验证目录权限与路径类型，不自动修复。"""
 
     @abstractmethod
     def verify_file(self, path: Path) -> None:
@@ -145,6 +217,24 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def identity_matches(self, expected: dict[str, Any]) -> bool:
         """验证进程身份未被 PID 复用。"""
+
+    @abstractmethod
+    def inspect_persisted_owner(self, evidence: PersistedOwnerEvidence) -> OwnerInspection:
+        """只读检查持久 owner，不能把无法验证等同于 empty。"""
+
+    @abstractmethod
+    def signal_persisted_owner(self, evidence: PersistedOwnerEvidence, *, force: bool) -> bool:
+        """仅在 owner capability 可验证时请求清理。"""
+
+    def release_persisted_owner(self, evidence: PersistedOwnerEvidence) -> bool:
+        """owner 为空后释放可持久化的内核资源。"""
+
+        del evidence
+        return True
+
+    @abstractmethod
+    def terminate_manager(self, expected: dict[str, Any], *, timeout: float) -> bool:
+        """验证精确身份后终止 manager，并确认该身份已退出。"""
 
     def diagnostics(self) -> dict[str, str]:
         return self.selection.diagnostics()

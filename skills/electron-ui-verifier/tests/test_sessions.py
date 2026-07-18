@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +15,7 @@ from types import SimpleNamespace
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.driver import TargetCandidate  # noqa: E402
 from electron_verifier.sessions import SessionManager  # noqa: E402
 
@@ -58,7 +58,7 @@ class SessionManagerTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def test_restart_never_rehydrates_attached_claim(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             path = Path(folder) / "sessions.json"
             path.write_text(
                 json.dumps(
@@ -83,7 +83,7 @@ class SessionManagerTests(unittest.TestCase):
             self.assertEqual("stale", result["session"]["status"])
 
     def test_stale_reuse_reconnects_then_live_reuse_is_health_checked(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             driver = FakeDriver()
             manager = SessionManager(Path(folder) / "sessions.json", driver)
             asyncio.run(manager.load())
@@ -103,7 +103,7 @@ class SessionManagerTests(unittest.TestCase):
             self.assertIn("app://main/[PATH]", persisted)
 
     def test_detach_is_idempotent(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             manager = SessionManager(Path(folder) / "sessions.json", FakeDriver())
             asyncio.run(manager.load())
             first = asyncio.run(manager.detach("missing"))

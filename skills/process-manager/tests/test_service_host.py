@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 import os
 import sys
 import threading
@@ -10,12 +12,17 @@ from unittest import mock
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from helpers import workspace_directory  # noqa: E402
+from process_manager.errors import StateError  # noqa: E402
+from process_manager.launch import read_target_identity_message  # noqa: E402
+from process_manager.logs import MAX_HOST_STATE_BYTES, RESOURCE_CAPS  # noqa: E402
 from process_manager.service_host import (  # noqa: E402
     TargetController,
     WindowsConsole,
     _group_remaining_after_target,
     _log_pumps_timed_out,
     _pump,
+    _write_host_state,
 )
 
 
@@ -62,6 +69,12 @@ class FailingDestination(RecordingDestination):
         raise OSError(28, "disk full")
 
 
+class StateFailingDestination(RecordingDestination):
+    def write(self, data: bytes) -> None:
+        del data
+        raise StateError("private log target changed")
+
+
 class WindowsConsoleTests(unittest.TestCase):
     def test_pipe_pump_flushes_short_output_before_eof(self) -> None:
         read_fd, write_fd = os.pipe()
@@ -98,6 +111,15 @@ class WindowsConsoleTests(unittest.TestCase):
             [{"stream": "stdout", "errorType": "OSError", "errno": 28, "winerror": None}],
         )
 
+    def test_pipe_pump_records_private_log_state_failure(self) -> None:
+        source = io.BytesIO(b"service output")
+        failures: list[dict[str, object]] = []
+        _pump(source, StateFailingDestination(), [], failures, "stderr")
+        self.assertEqual(
+            failures,
+            [{"stream": "stderr", "errorType": "StateError", "errno": None, "winerror": None}],
+        )
+
     def test_reuses_existing_console_without_releasing_it(self) -> None:
         kernel32 = FakeKernel32(attached=True)
         with (
@@ -124,6 +146,34 @@ class WindowsConsoleTests(unittest.TestCase):
 
 
 class TargetControllerTests(unittest.TestCase):
+    def test_host_state_writer_and_resource_governor_share_closed_cap(self) -> None:
+        self.assertEqual(RESOURCE_CAPS["host"], MAX_HOST_STATE_BYTES)
+        with workspace_directory() as directory:
+            path = Path(directory) / "host-state.json"
+            with self.assertRaises(StateError):
+                _write_host_state(path, {"payload": "x" * MAX_HOST_STATE_BYTES})
+            self.assertFalse(path.exists())
+
+    def test_target_identity_message_binds_capability_host_and_pid(self) -> None:
+        message = {
+            "command": "target_identity",
+            "capabilityHash": "fixture-hash",
+            "targetIdentity": {"pid": 4321, "start": "exact"},
+            "ownerIdentity": {
+                "capabilityHash": "fixture-hash",
+                "hostPid": os.getpid(),
+                "targetProcessGroup": 4321,
+            },
+        }
+        target_identity, owner_identity = read_target_identity_message(
+            io.StringIO(json.dumps(message) + "\n"),
+            {"capabilityHash": "fixture-hash"},
+            {"pid": 4321, "pgid": 4321},
+            os.getpid(),
+        )
+        self.assertEqual(target_identity, message["targetIdentity"])
+        self.assertEqual(owner_identity, message["ownerIdentity"])
+
     def test_log_pumps_share_one_drain_deadline(self) -> None:
         clock = [0.0]
         first = mock.Mock()

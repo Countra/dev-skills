@@ -5,12 +5,12 @@ from __future__ import annotations
 
 import argparse
 
-from process_manager.cli import add_common_args, make_client, output_remote, run_cli
+from process_manager.cli import add_context_args, make_client, output_remote, run_cli
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="读取 managed process 日志")
-    add_common_args(parser)
+    add_context_args(parser)
     selector = parser.add_mutually_exclusive_group(required=True)
     selector.add_argument("--service")
     selector.add_argument("--process-key")
@@ -20,7 +20,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     def execute() -> int:
-        status, value = make_client(args.config, timeout=10).request(
+        status, value = make_client(args, timeout=10).request(
             "GET",
             "/processes/logs",
             params={

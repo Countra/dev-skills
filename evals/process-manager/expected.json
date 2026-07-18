@@ -2,6 +2,10 @@
   "required_fixture_ids": [
     "finite-command-direct",
     "manager-bootstrap",
+    "session-lifecycle",
+    "interrupted-recovery",
+    "persistent-opt-in",
+    "environment-error-boundary",
     "start-and-ready",
     "dynamic-port-log",
     "bounded-logs",
@@ -14,8 +18,14 @@
     "foreground-contract"
   ],
   "required_behavior_terms": [
-    "pm_manager.py status",
-    "pm_manager.py start",
+    "pm_manager.py ensure",
+    "pm_session.py open",
+    "pm_session.py close --stop-manager-if-idle",
+    "--session-id",
+    "--persistent",
+    "recommendedAction",
+    "无 JSON envelope",
+    "不自动提权",
     "pm_validate.py",
     "pm_ready.py",
     "cleanupVerified",
@@ -31,12 +41,17 @@
     "portRetry",
     "cmd-file",
     "powershell-file",
-    "先运行 pm_doctor.py"
+    "先运行 pm_doctor.py",
+    "pm_manager.py status/start",
+    "manager_offline",
+    "pm_health.py",
+    "pm_shutdown.py",
+    "隐藏 heartbeat"
   ],
   "required_scripts": [
     "pm_manager.py",
     "pm_init.py",
-    "pm_health.py",
+    "pm_session.py",
     "pm_validate.py",
     "pm_start.py",
     "pm_ready.py",
@@ -46,8 +61,7 @@
     "pm_prune.py",
     "pm_stop.py",
     "pm_restart.py",
-    "pm_doctor.py",
-    "pm_shutdown.py"
+    "pm_doctor.py"
   ],
   "required_template_launchers": ["direct", "script"],
   "forbidden_public_options": ["--platform", "--backend", "--systemd", "--launchd", "--job-object"]

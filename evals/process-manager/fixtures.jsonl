@@ -1,6 +1,10 @@
 {"id":"finite-command-direct","prompt":"运行这个 Python 项目的单元测试。","expected":["有限命令直接执行并等待返回","不创建 service config","不使用 process-manager"]}
-{"id":"manager-bootstrap","prompt":"为当前 workspace 启动一个长期运行 worker，manager 尚未初始化。","expected":["仅在 config 不存在时运行 pm_init.py","运行 pm_manager.py status","manager_offline 时运行 pm_manager.py start","不判断 OS 或选择 backend"]}
-{"id":"start-and-ready","prompt":"从已有 service config 启动本地开发服务器并等待可用。","expected":["先运行 pm_validate.py","使用 pm_start.py 保存 processKey","配置 readiness 时运行 pm_ready.py","不用端口猜测成功"]}
+{"id":"manager-bootstrap","prompt":"为当前 workspace 启动一个长期运行 worker，manager 尚未初始化。","expected":["仅在 config 不存在时运行 pm_init.py","运行 pm_manager.py ensure","保存 authenticated manager identity","不判断 OS 或选择 backend"]}
+{"id":"session-lifecycle","prompt":"运行一组只属于本轮验证的长期服务，并在结束时清场。","expected":["运行 pm_session.py open","保存 sessionId 与 expiresAt","pm_start.py 使用 --session-id","长步骤前显式 renew","finally 运行 pm_session.py close --stop-manager-if-idle"]}
+{"id":"interrupted-recovery","prompt":"上次任务中断，不确定 manager 和 session 的状态。","expected":["先运行只读 status","读取 state 与 recommendedAction","按建议选择 ensure、wait、restart 或 doctor","不按 PID 或错误字符串猜测"]}
+{"id":"persistent-opt-in","prompt":"一个本地服务必须跨多个 task session 保留。","expected":["方案必须明确跨 session 保留意图","pm_start.py 显式使用 --persistent","记录单独的最终 stop 责任","缺省 start 不推导 persistent"]}
+{"id":"environment-error-boundary","prompt":"shell profile 报 access denied，但没有 Process Manager JSON 响应。","expected":["无 JSON envelope 时先归类外层环境","不猜测 runtime ACL","不删除 runtime","不自动提权"]}
+{"id":"start-and-ready","prompt":"从已有 service config 启动本地开发服务器并等待可用。","expected":["先运行 pm_validate.py","使用 pm_start.py --session-id 保存 processKey","配置 readiness 时运行 pm_ready.py","不用端口猜测成功"]}
 {"id":"dynamic-port-log","prompt":"服务由 OS 分配随机端口，并把 Local URL 输出到 stdout。","expected":["使用 log readiness","pattern 使用命名捕获组","extract 引用组名","scanBytes 与 timeout 有界"]}
 {"id":"bounded-logs","prompt":"查看服务最近日志以诊断启动失败。","expected":["使用 pm_logs.py","同时限制 tail 与 max-bytes","不直接遍历 runtime 日志"]}
 {"id":"restart-owner-handoff","prompt":"重启当前 worker 并确认新实例已就绪。","expected":["使用 pm_restart.py","旧 run cleanupVerified 为 true","旧 stopResult.ownerEmpty 为 true","新旧 processKey 不同"]}

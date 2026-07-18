@@ -4,23 +4,25 @@ from __future__ import annotations
 
 import hmac
 import json
+import re
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from socketserver import TCPServer
 from typing import Any, Callable
 
-from .errors import NotFoundError, PMError, RequestError
+from .errors import ControlTimeoutError, NotFoundError, PMError, RequestError, SupervisorError
 from .manager import ProcessManager
-from .protocol import failure, success
-
+from .protocol import ControlRequestGate, failure, success
 
 MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 
 
 class ControlServer(ThreadingHTTPServer):
-    daemon_threads = True
+    daemon_threads = False
+    block_on_close = True
 
     def server_bind(self) -> None:
         TCPServer.server_bind(self)
@@ -29,16 +31,100 @@ class ControlServer(ThreadingHTTPServer):
         self.server_port = int(port)
 
     def __init__(
-        self,
-        address: tuple[str, int],
-        manager: ProcessManager,
-        token: str,
-        max_request_bytes: int,
+        self, address: tuple[str, int], manager: ProcessManager,
+        token: str, max_request_bytes: int,
     ) -> None:
-        super().__init__(address, ControlHandler)
+        super().__init__(address, ControlHandler, bind_and_activate=False)
         self.manager = manager
         self.token = token
         self.max_request_bytes = max_request_bytes
+        limits = getattr(getattr(manager, "config", None), "limits", {})
+        max_requests = int(limits.get("maxConcurrentControlRequests", 16))
+        self.request_queue_size = max_requests
+        self._request_gate = ControlRequestGate(max_requests, token, manager.instance_id)
+        setattr(manager, "_control_request_count", self._request_gate.active_count)
+        self._shutdown_lock = threading.Lock()
+        self._shutdown_requests: set[int] = set()
+        self._shutdown_thread: threading.Thread | None = None
+        self._shutdown_deadline: float | None = None
+        self.shutdown_result: dict[str, Any] | None = None
+        self.shutdown_error: BaseException | None = None
+        try:
+            self.server_bind()
+            self.server_activate()
+        except BaseException:
+            self.server_close()
+            raise
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        try:
+            acquired = self._request_gate.acquire(request)
+        except BaseException:
+            self.shutdown_request(request)
+            raise
+        if not acquired:
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._request_gate.release(request)
+            self.shutdown_request(request)
+            raise
+
+    def defer_shutdown(self, request: Any, deadline: float) -> None:
+        """把 shutdown handoff 绑定到已确认的当前请求。"""
+
+        with self._shutdown_lock:
+            self._shutdown_requests.add(id(request))
+            self._shutdown_deadline = (
+                deadline if self._shutdown_deadline is None
+                else min(self._shutdown_deadline, deadline)
+            )
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            with self._shutdown_lock:
+                handoff = id(request) in self._shutdown_requests
+                self._shutdown_requests.discard(id(request))
+            self._request_gate.release(request)
+            if handoff:
+                self.begin_shutdown()
+
+    def begin_shutdown(self) -> None:
+        """响应 flush 后只启动一个清理协调器。"""
+
+        with self._shutdown_lock:
+            if self._shutdown_thread is not None:
+                return
+
+            def coordinate() -> None:
+                try:
+                    self.shutdown()
+                    with self._shutdown_lock:
+                        deadline = self._shutdown_deadline
+                    remaining = 5.0 if deadline is None else max(0.0, deadline - time.monotonic())
+                    if not self._request_gate.drain(remaining):
+                        raise SupervisorError("control request 未在 deadline 内排空")
+                    self.shutdown_result = self.manager.shutdown()
+                except BaseException as exc:  # noqa: BLE001
+                    self.shutdown_error = exc
+
+            self._shutdown_thread = threading.Thread(
+                target=coordinate,
+                name="pm-shutdown-coordinator",
+                daemon=False,
+            )
+            self._shutdown_thread.start()
+
+    def wait_for_shutdown(self, timeout: float | None = None) -> bool:
+        with self._shutdown_lock:
+            thread = self._shutdown_thread
+        if thread is not None:
+            thread.join(timeout=timeout)
+        return thread is None or not thread.is_alive()
 
 
 class ControlHandler(BaseHTTPRequestHandler):
@@ -51,6 +137,10 @@ class ControlHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         return
 
+    def log_error(self, fmt: str, *args: Any) -> None:
+        if fmt == "Request timed out: %r":
+            self.control._request_gate.reject_timeout(self.request)  # noqa: SLF001
+
     def _operation(self) -> str:
         return urllib.parse.urlsplit(self.path).path.strip("/").replace("/", ".") or "unknown"
 
@@ -61,7 +151,7 @@ class ControlHandler(BaseHTTPRequestHandler):
         expected = f"Bearer {self.control.token}"
         return hmac.compare_digest(header.encode("utf-8"), expected.encode("utf-8"))
 
-    def _send(self, status: int, value: dict[str, Any]) -> None:
+    def _send(self, status: int, value: dict[str, Any]) -> bool:
         body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         if len(body) > MAX_RESPONSE_BYTES:
             value = failure(
@@ -71,12 +161,17 @@ class ControlHandler(BaseHTTPRequestHandler):
             )
             body = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             status = 500
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+            self.wfile.flush()
+            return True
+        except OSError:
+            return False
 
     def _deny_unless_authorized(self) -> bool:
         if self._authorized():
@@ -106,7 +201,17 @@ class ControlHandler(BaseHTTPRequestHandler):
         if length < 0 or length > self.control.max_request_bytes:
             raise RequestError("请求体超过 maxRequestBytes")
         try:
-            value = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+            raw = self.rfile.read(length) if length else b""
+        except TimeoutError as exc:
+            raise ControlTimeoutError(
+                "manager 控制请求读取超时", recommended_action="retry"
+            ) from exc
+        except OSError as exc:
+            raise RequestError("manager 控制请求读取失败") from exc
+        if len(raw) != length:
+            raise RequestError("请求体在 Content-Length 之前结束")
+        try:
+            value = json.loads(raw.decode("utf-8")) if length else {}
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise RequestError("请求体必须是 UTF-8 JSON") from exc
         if not isinstance(value, dict):
@@ -124,12 +229,8 @@ class ControlHandler(BaseHTTPRequestHandler):
         return value
 
     @staticmethod
-    def _closed_body(
-        value: dict[str, Any],
-        *,
-        allowed: set[str],
-        required: set[str] = frozenset(),
-    ) -> dict[str, Any]:
+    def _closed_body(value: dict[str, Any], *, allowed: set[str],
+                     required: set[str] = frozenset()) -> dict[str, Any]:
         unknown = sorted(set(value) - allowed)
         missing = sorted(required - set(value))
         if unknown:
@@ -179,11 +280,23 @@ class ControlHandler(BaseHTTPRequestHandler):
             raise RequestError(f"{label} 必须是 boolean")
         return value
 
+    @staticmethod
+    def _operation_id(value: Any) -> str:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{32}", value) is None:
+            raise RequestError("operationId 必须是 canonical UUID hex")
+        return value
+
+    @staticmethod
+    def _session_id(value: Any) -> str:
+        if not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{32}", value) is None:
+            raise RequestError("sessionId 必须是 canonical UUID hex")
+        return value
+
     def _handle(self, operation: str, action: Callable[[], Any]) -> bool:
         try:
             data = action()
-            self._send(200, success(operation, data, instance_id=self.control.manager.instance_id))
-            return True
+            return self._send(200, success(
+                operation, data, instance_id=self.control.manager.instance_id))
         except PMError as exc:
             self._send(
                 exc.http_status,
@@ -248,6 +361,14 @@ class ControlHandler(BaseHTTPRequestHandler):
                 )
 
             self._handle("processes.logs", logs)
+        elif path == "/sessions/status":
+            def session_status() -> Any:
+                query = self._query({"sessionId"})
+                return self.control.manager.session_status(
+                    self._session_id(self._single(query, "sessionId"))
+                )
+
+            self._handle("sessions.status", session_status)
         else:
             self._send(
                 404,
@@ -263,15 +384,29 @@ class ControlHandler(BaseHTTPRequestHandler):
             return
         path = urllib.parse.urlsplit(self.path).path
         operation = self._operation()
+        shutdown_deadline: float | None = None
 
         def action() -> Any:
+            nonlocal shutdown_deadline
             body = self._read_body()
             if path == "/processes/start":
-                self._closed_body(body, allowed={"servicePath"}, required={"servicePath"})
+                self._closed_body(
+                    body,
+                    allowed={"servicePath", "sessionId", "persistent"},
+                    required={"servicePath"},
+                )
                 service_path = body.get("servicePath")
                 if not isinstance(service_path, str) or not service_path:
                     raise RequestError("start 缺少 servicePath")
-                return self.control.manager.start(Path(service_path))
+                persistent = self._boolean(body.get("persistent", False), "persistent")
+                session_id = body.get("sessionId")
+                if session_id is not None:
+                    session_id = self._session_id(session_id)
+                return self.control.manager.start(
+                    Path(service_path),
+                    session_id=session_id,
+                    persistent=persistent,
+                )
             if path == "/processes/stop":
                 self._closed_body(body, allowed={"service", "processKey"})
                 service, process_key = self._selector(body)
@@ -286,12 +421,25 @@ class ControlHandler(BaseHTTPRequestHandler):
                     timeout_seconds=timeout,
                 )
             if path == "/processes/restart":
-                self._closed_body(body, allowed={"servicePath", "timeoutSeconds"}, required={"servicePath"})
+                self._closed_body(
+                    body,
+                    allowed={"servicePath", "timeoutSeconds", "sessionId", "persistent"},
+                    required={"servicePath"},
+                )
                 service_path = body.get("servicePath")
                 if not isinstance(service_path, str) or not service_path:
                     raise RequestError("restart 缺少 servicePath")
                 timeout = self._number(body.get("timeoutSeconds"), "timeoutSeconds", 0.1, 600)
-                return self.control.manager.restart(Path(service_path), timeout_seconds=timeout)
+                persistent = self._boolean(body.get("persistent", False), "persistent")
+                session_id = body.get("sessionId")
+                if session_id is not None:
+                    session_id = self._session_id(session_id)
+                return self.control.manager.restart(
+                    Path(service_path),
+                    timeout_seconds=timeout,
+                    session_id=session_id,
+                    persistent=persistent,
+                )
             if path == "/processes/prune":
                 self._closed_body(body, allowed={"dryRun", "maxInactive", "keepRuns"}, required={"dryRun"})
                 dry_run = self._boolean(body.get("dryRun"), "dryRun")
@@ -302,10 +450,51 @@ class ControlHandler(BaseHTTPRequestHandler):
                     dry_run=dry_run,
                     keep_runs=keep_runs,
                 )
+            if path == "/sessions/open":
+                self._closed_body(
+                    body,
+                    allowed={"kind", "ttlSeconds", "holder"},
+                    required={"kind", "ttlSeconds", "holder"},
+                )
+                kind, holder = body.get("kind"), body.get("holder")
+                if not isinstance(kind, str) or not isinstance(holder, str):
+                    raise RequestError("session kind/holder 必须是字符串")
+                ttl = self._integer(body.get("ttlSeconds"), "ttlSeconds", 60, 86400)
+                assert ttl is not None
+                return self.control.manager.open_session(kind=kind, ttl_seconds=ttl, holder=holder)
+            if path == "/sessions/renew":
+                self._closed_body(
+                    body,
+                    allowed={"sessionId", "ttlSeconds"},
+                    required={"sessionId", "ttlSeconds"},
+                )
+                ttl = self._integer(body.get("ttlSeconds"), "ttlSeconds", 60, 86400)
+                assert ttl is not None
+                return self.control.manager.renew_session(
+                    self._session_id(body.get("sessionId")),
+                    ttl_seconds=ttl,
+                )
+            if path == "/sessions/close":
+                self._closed_body(body, allowed={"sessionId"}, required={"sessionId"})
+                return self.control.manager.close_session(
+                    self._session_id(body.get("sessionId"))
+                )
             if path == "/shutdown":
-                self._closed_body(body, allowed=set())
-                return self.control.manager.shutdown()
+                self._closed_body(
+                    body,
+                    allowed={"operationId", "timeoutSeconds"},
+                    required={"operationId", "timeoutSeconds"},
+                )
+                operation_id = self._operation_id(body.get("operationId"))
+                timeout = self._number(body.get("timeoutSeconds"), "timeoutSeconds", 0.001, 3600)
+                assert timeout is not None
+                shutdown_deadline = time.monotonic() + timeout
+                return self.control.manager.accept_shutdown(
+                    operation_id=operation_id,
+                    timeout_seconds=timeout,
+                )
             raise NotFoundError("control endpoint 不存在")
 
         if self._handle(operation, action) and path == "/shutdown":
-            threading.Thread(target=self.control.shutdown, daemon=True).start()
+            assert shutdown_deadline is not None
+            self.control.defer_shutdown(self.request, shutdown_deadline)

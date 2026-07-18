@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,7 +15,7 @@ SCRIPTS = TESTS.parent / "scripts"
 sys.path.insert(0, str(TESTS))
 sys.path.insert(0, str(SCRIPTS))
 
-from _helpers import make_png  # noqa: E402
+from _helpers import TestTemporaryDirectory, make_png  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.evidence import EvidenceStore, PendingArtifact, validate_png  # noqa: E402
 
@@ -47,7 +46,7 @@ class EvidenceTests(unittest.TestCase):
             validate_png(bytes(corrupt))
 
     def test_failed_screenshot_never_enters_manifest(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             store = EvidenceStore(Path(folder))
             store.initialize("run")
             committed = store.commit(PendingArtifact("image/png", make_png(), "valid", "png"), "step-1")

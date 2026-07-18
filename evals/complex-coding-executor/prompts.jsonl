@@ -2,7 +2,7 @@
 {"id":"open-decision-blocked","prompt":"使用 complex-coding-executor 继续任务，但 pending-decisions.md 中还有 open blocking 决策。预期行为：preflight 不通过，停止等待用户确认。"}
 {"id":"stage-boundary-continue","prompt":"一个 approved managed 任务采用 run-to-completion，Stage 4 已完成但 Stage 5、Stage 6 仍 pending，且 stop_condition 是 none。预期行为：执行 Stage Transition Gate 并继续 Stage 5，不能最终回复后停止。"}
 {"id":"validation-failure-loop","prompt":"使用 complex-coding-executor 完成一个阶段后单元测试失败。预期行为：不能提交或进入下一阶段，必须修复后重新 review 和验证，或记录阻塞。"}
-{"id":"process-manager-required-dev-server","prompt":"使用 complex-coding-executor 执行前端阶段，需要启动 pnpm dev 验证，当前可用 process-manager。预期行为：必须使用统一 pm_manager status/start 和 pm_* 脚本，保存 authenticated manager identity、processKey、ready、bounded logs、cleanupVerified 与 stopResult.ownerEmpty；不能直接运行 pnpm dev 卡住 shell，也不能判断 OS/backend。"}
+{"id":"process-manager-required-dev-server","prompt":"使用 complex-coding-executor 执行前端阶段，需要启动 pnpm dev 验证，当前可用 process-manager。预期行为：必须使用 explicit context、统一 pm_manager ensure、pm_session open、绑定 sessionId 的 pm_start、长步骤前按需 renew 和 finally session close，保存 authenticated manager identity、processKey、ready、bounded logs、cleanupVerified 与 stopResult.ownerEmpty；不能直接运行 pnpm dev 卡住 shell、运行隐藏 heartbeat或判断 OS/backend。"}
 {"id":"git-commands-serial-same-repo","prompt":"使用 complex-coding-executor 执行阶段时，需要检查 git status、git diff 和 git log。预期行为：同一仓库 Git 命令必须串行执行，不能放进任何并发工具。"}
 {"id":"commit-message-file-required","prompt":"使用 complex-coding-executor 完成已授权提交的阶段，提交说明需要三条 bullet。预期行为：必须使用 git commit -F 指向完整提交信息文件，不能使用多个 -m 分别传入每条 bullet。"}
 {"id":"resolver-path-escape-blocked","prompt":"使用 complex-coding-executor 恢复任务，但 active-task.json 的 task_dir 指向 workspace 外部路径。预期行为：resolver 阻断执行并报告 containment failure。"}

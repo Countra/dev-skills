@@ -199,11 +199,13 @@ amendment 必须由用户重新批准：
 
 ## 长期进程
 
-存在 process-manager skill 时，dev server、Web/API 服务、worker、watcher 和模型服务必须由它管理。先用统一 `pm_manager.py status` 检查 manager，仅在 `manager_offline` 时执行 `pm_manager.py start`；不得判断 OS/backend 或选择平台入口。
+存在 process-manager skill 时，dev server、Web/API 服务、worker、watcher 和模型服务必须由它管理。所有公共命令显式传 absolute workspace/config；首次或正常恢复直接运行统一 `pm_manager.py ensure`，不得使用 status-then-start，不得判断 OS/backend 或选择平台入口。
 
-按 manager authenticated identity -> service config validation -> start/processKey -> ready/status -> bounded logs -> stop/restart 的顺序取证。停止或替换 run 时必须看到 `cleanupVerified: true` 与 `stopResult.ownerEmpty: true`；manager 由本任务创建且不再需要时，还要通过统一 stop/shutdown 证明 bootstrap cleanup，计划明确保留时则记录保留原因。
+每个 stage/validation 按 manager authenticated identity -> `pm_session.py open` -> service config validation -> `pm_start.py --session-id`/processKey -> ready/status -> bounded logs -> `finally pm_session.py close --stop-manager-if-idle` 的顺序取证。保存 `sessionId` 与 `expiresAt`；长但有界的步骤开始前按需 renew，不启动 heartbeat。停止或替换单个 run 时仍必须看到 `cleanupVerified: true` 与 `stopResult.ownerEmpty: true`。
 
-普通流程不先运行 `pm_doctor.py`。只有统一操作失败且 capability/selection reason 不清楚时才按需诊断；manager 无法建立安全 owner 且阶段必需长期进程时进入 blocked，不得退回手写后台启动。
+中断恢复先运行只读 status，再按 `recommendedAction` 选择 ensure、bounded wait、restart 或 doctor。close 因 work generation 变化保留 manager 时，记录新 work 竞态而不是强停。只有批准方案明确要求跨 session 保留时才使用 `--persistent`，并执行其单独 stop 计划。
+
+普通流程不先运行 `pm_doctor.py`。只有统一操作失败且错误分类或 capability/selection reason 不清楚时才按需诊断；没有 JSON envelope 的 shell/profile access denied 不得臆断为 runtime ACL，不自动提权或删除 runtime。manager 无法建立安全 owner 且阶段必需长期进程时进入 blocked，不得退回手写后台启动。
 
 finite test、build、lint、format、migration 和一次性脚本直接运行。禁止 `Start-Process`、shell background、`nohup` 或自制 launcher 绕过 process-manager。manager 不可用且阶段必需长期进程时进入 blocked。
 

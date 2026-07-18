@@ -31,7 +31,7 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 新事实影响 scope、Stage DAG、必需验证、风险、依赖或授权时写 research drift/amendment，设置 reapproval 后停止。
 - 用户批准实施不等于授权提交。只有 attestation 的 `authorizations.commit = true`，且用户批准摘要或后续消息明确要求提交，才能 `git commit`。
 - 同一仓库 Git 命令必须串行；禁止任何并发机制同时运行同仓库 Git。
-- 如果 `process-manager` skill 存在，所有服务、后台或需要挂起运行的长期进程都必须用统一 `pm_manager.py`/`pm_*` CLI 管理；记录 manager identity、config validation、processKey、ready、bounded logs 和 owner-empty cleanup，且不判断 OS/backend。finite command 直接运行。
+- 如果 `process-manager` skill 存在，所有服务、后台或需要挂起运行的长期进程都必须使用显式 context 的统一公共 CLI：先 `pm_manager.py ensure`，再 `pm_session.py open`，start 绑定 `sessionId`，长步骤前按需 renew，并在 `finally` close；记录 manager identity、session、config validation、processKey、ready、bounded logs 和 owner-empty cleanup，且不判断 OS/backend。finite command 直接运行。
 - 最终回复只能在所有 stage、required VAL、review、授权和 final checker 闭环后发送。
 
 ## 文件和脚本

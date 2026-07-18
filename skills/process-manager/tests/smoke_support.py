@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -14,13 +15,14 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
+from process_manager.atomic import retry_windows_file_operation  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
 
 
 PUBLIC_SCRIPTS = (
     "pm_manager.py",
     "pm_init.py",
-    "pm_health.py",
+    "pm_session.py",
     "pm_validate.py",
     "pm_start.py",
     "pm_ready.py",
@@ -31,7 +33,6 @@ PUBLIC_SCRIPTS = (
     "pm_stop.py",
     "pm_restart.py",
     "pm_doctor.py",
-    "pm_shutdown.py",
 )
 PUBLIC_CONTRACT = {
     "launcherTypes": ["direct", "script"],
@@ -48,15 +49,35 @@ PUBLIC_CONTRACT = {
     "errorCodes": [
         "configuration_error",
         "validation_error",
-        "manager_offline",
+        "context_invalid",
+        "manager_absent",
+        "runtime_uninitialized",
+        "manager_starting",
+        "manager_stopping",
+        "manager_stale",
+        "manager_unresponsive",
+        "runtime_insecure",
+        "runtime_permission_denied",
+        "environment_unverifiable",
+        "runtime_corrupt",
+        "operation_conflict",
+        "operation_timeout",
         "state_conflict",
+        "resource_budget_exceeded",
+        "owned_runs_confirmation_required",
+        "restart_confirmation_required",
+        "stop_confirmation_required",
         "identity_mismatch",
         "not_found",
+        "session_not_found",
+        "session_expired",
         "state_error",
         "runtime_rebuild_required",
         "supervisor_unavailable",
+        "session_cleanup_pending",
         "unsupported_platform",
         "invalid_request",
+        "control_timeout",
         "readiness_timeout",
         "probe_limit_exceeded",
     ],
@@ -67,6 +88,10 @@ PUBLIC_CONTRACT = {
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def remove_tree(path: Path) -> None:
+    retry_windows_file_operation(lambda: shutil.rmtree(path) if path.exists() else None)
 
 
 def wait_for_file(path: Path, timeout: float) -> bool:
@@ -265,59 +290,60 @@ def _facade_diagnostic(value: dict[str, Any]) -> dict[str, Any]:
 def manager_bootstrap_smoke(workspace: Path) -> dict[str, Any]:
     workspace.mkdir(parents=True, exist_ok=True)
     config = workspace / ".harness" / "process-manager" / "config.json"
+    identity_path = workspace / ".harness" / "process-manager" / "control" / "manager.json"
     init_code, initialized = _run_facade(
         [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
     )
-    start_code = status_code = stop_code = -1
-    started: dict[str, Any] = {}
+    ensure_code = status_code = stop_code = -1
+    ensured: dict[str, Any] = {}
     status: dict[str, Any] = {}
     stopped: dict[str, Any] = {}
     audit: dict[str, Any] = {}
     if init_code == 0:
-        start_code, started = _run_facade(
-            [str(SCRIPT_DIR / "pm_manager.py"), "start", "--config", str(config), "--pretty"]
+        ensure_code, ensured = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "ensure", "--config", str(config), "--pretty"]
         )
     try:
-        if start_code == 0:
+        if ensure_code == 0:
             status_code, status = _run_facade(
                 [str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config), "--pretty"]
             )
-            identity_path = workspace / ".harness" / "process-manager" / "manager.json"
             identity = json.loads(identity_path.read_text(encoding="utf-8"))
             audit = {
                 "bootstrapBackend": identity.get("bootstrapBackend"),
                 "bootstrapSelectionReason": identity.get("bootstrapSelectionReason"),
             }
     finally:
-        if start_code == 0:
+        if ensure_code == 0:
             stop_code, stopped = _run_facade(
                 [str(SCRIPT_DIR / "pm_manager.py"), "stop", "--config", str(config), "--pretty"],
                 timeout=60,
             )
     stop_data = stopped.get("data", {}) if isinstance(stopped.get("data"), dict) else {}
+    cleanup = stop_data.get("cleanup", {}) if isinstance(stop_data.get("cleanup"), dict) else {}
     ok = (
         init_code == 0
-        and start_code == 0
+        and ensure_code == 0
         and status_code == 0
         and stop_code == 0
         and initialized.get("ok") is True
-        and started.get("ok") is True
+        and ensured.get("ok") is True
         and status.get("ok") is True
         and stopped.get("ok") is True
-        and stop_data.get("managerStopped") is True
-        and stop_data.get("bootstrapCleaned") is True
-        and not (workspace / ".harness" / "process-manager" / "manager.json").exists()
+        and cleanup.get("managerStopped") is True
+        and cleanup.get("bootstrapCleaned") is True
+        and not identity_path.exists()
     )
     return {
         "ok": ok,
-        "exitCodes": {"init": init_code, "start": start_code, "status": status_code, "stop": stop_code},
-        "state": started.get("data", {}).get("state") if isinstance(started.get("data"), dict) else None,
-        "managerStopped": stop_data.get("managerStopped"),
-        "bootstrapCleaned": stop_data.get("bootstrapCleaned"),
+        "exitCodes": {"init": init_code, "ensure": ensure_code, "status": status_code, "stop": stop_code},
+        "state": ensured.get("data", {}).get("state") if isinstance(ensured.get("data"), dict) else None,
+        "managerStopped": cleanup.get("managerStopped"),
+        "bootstrapCleaned": cleanup.get("bootstrapCleaned"),
         "audit": audit,
         "responses": {
             "init": _facade_diagnostic(initialized),
-            "start": _facade_diagnostic(started),
+            "ensure": _facade_diagnostic(ensured),
             "status": _facade_diagnostic(status),
             "stop": _facade_diagnostic(stopped),
         },

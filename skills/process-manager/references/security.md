@@ -6,7 +6,8 @@
 - PID 不是所有权证明。identity mismatch、PID reuse 或旧 manager instance 记录必须失败关闭。
 - owner 无法建立时不得 spawn target；cleanup 无法证明时不得返回成功。
 - target 必须前台运行。target 退出后 owner 仍有成员时标记 `contract_violation`，强制收口并保留证据。
-- manager shutdown 和 crash path 都必须有界地回收其 owned run，不能波及 owner 外进程。
+- manager stop、restart 和 crash path 都必须有界地回收其 owned run，不能波及 owner 外进程。
+- task/validation run 必须绑定 live session；session close 或 expiry 只清理该 session ownership。`persistent` 是显式例外，不得由缺失 session 隐式推导。
 
 ## Secret
 
@@ -18,16 +19,17 @@
 ## Runtime 权限与身份
 
 - runtime 位于 workspace 内，manager config、token、manager identity、state 和 run 文件都绑定精确路径。
-- Windows 使用当前用户受限 DACL；POSIX 目录为 `0700`、文件为 `0600`，并验证 owner/mode。
+- Windows 使用当前用户语义等价的受限 DACL；POSIX 目录为 `0700`、文件为 `0600`，并验证 owner/mode。
 - 控制面只绑定 `127.0.0.1`、使用 OS 分配端口，并要求 token 与 manager instance identity 同时匹配。
 - manager identity 不匹配、损坏或旧 schema 时拒绝连接，不能按端口或 PID 猜测。
 - 原子写、锁与 backup/rebuild 用于状态恢复；不做旧 runtime 的静默迁移。
+- runtime 检查遵循 verify-first：broad allow 是 `runtime_insecure`，访问被拒是 `runtime_permission_denied`，证据不足或外层环境阻止检查是 `environment_unverifiable`。没有标准 JSON envelope 时不自动归因 ACL、不改权限、不提权。
 
 ## 网络与资源预算
 
 - control client 禁用环境代理和 redirect，避免 loopback 请求被代理转发。
 - HTTP/TCP readiness 在解析 hostname 后确认全部地址都是 loopback；HTTP redirect 也必须留在 loopback。
-- control request/response、environment、host spec、日志 tail、readiness scan、history 与 prune 都有硬上限。
+- control request/response、environment、host spec、日志 tail、readiness scan、active/session/journal 数量、history age/count、retained bytes 与 prune 都有硬上限。
 - 日志路径必须与 run identity 一致且不能是 symlink；轮转读取只访问精确的 stdout/stderr 文件与受限备份。
 - Windows 日志轮转遇到短暂 sharing violation 时只做有界退避重试；持久落盘失败时 pump 继续排空目标管道，并把失败记录为内部 `logPumpFailures` 与 `contract_violation`，不能让日志设施反向改变目标退出行为。
 - log regex 来自本地受信 service config，仍受 pattern 长度、scanBytes 和 timeout 约束；不要把不受信复杂表达式直接写入配置。
@@ -36,7 +38,8 @@
 
 - stop 先 graceful，再由已验证 owner force；任一阶段不能退化为任意 PID kill。
 - restart 只有旧 owner 确认为空后才能启动 replacement。
-- prune 默认 dry-run，只处理 inactive record。apply 先把精确 run directory 事务化移入 quarantine，再提交 state；失败时回滚或诚实报告 cleanup failure。
+- prune 默认 dry-run，只处理 eligible terminal record。apply 先把精确 run directory 事务化移入 quarantine，再提交 state；失败时回滚或诚实报告 cleanup failure。
 - `--keep-runs` 会阻止残留 process record 被 rebuild 重新发现。
+- finalizer 在 owner 未空或无法验证时保留 terminating/cleanup pending 证据，不得为了清场直接删除 active、session 或 journal。
 
 安全审查时重点验证未知错误脱敏、owner-empty 证据、权限 fail-closed、loopback DNS/redirect、日志 symlink/预算、prune rollback 与 manager crash cleanup。

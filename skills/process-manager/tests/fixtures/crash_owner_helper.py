@@ -13,7 +13,7 @@ SCRIPT_DIR = Path(__file__).resolve().parents[2] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from process_manager.config import create_default_manager_config  # noqa: E402
-from process_manager.errors import SupervisorError  # noqa: E402
+from process_manager.errors import RuntimePermissionDeniedError, SupervisorError  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
 from process_manager.platforms import select_platform_adapter  # noqa: E402
 from process_manager.runtime import initialize_runtime  # noqa: E402
@@ -30,6 +30,7 @@ def enable_permission_harness(adapter) -> None:  # noqa: ANN001
 
     adapter.secure_directory = types.MethodType(secure_directory, adapter)
     adapter.secure_file = types.MethodType(secure_file, adapter)
+    adapter.verify_directory = types.MethodType(secure_directory, adapter)
     adapter.verify_file = types.MethodType(secure_file, adapter)
 
 
@@ -46,14 +47,20 @@ def main() -> int:
     adapter = select_platform_adapter(config.workspace_root, config.state_root)
     try:
         initialize_runtime(config, adapter)
-    except SupervisorError:
+    except RuntimePermissionDeniedError:
         if adapter.selection.platform != "windows":
             raise
         enable_permission_harness(adapter)
         initialize_runtime(config, adapter)
     state = StateStore(config, adapter)
     state.load()
-    manager = ProcessManager(config, adapter, state, f"crash-{uuid.uuid4().hex}")
+    manager = ProcessManager(
+        config,
+        adapter,
+        state,
+        uuid.uuid4().hex,
+        operation_id=uuid.uuid4().hex,
+    )
     fixture = Path(__file__).resolve().with_name("process_tree_service.py")
     inherit = [
         name
@@ -85,7 +92,7 @@ def main() -> int:
         + "\n",
         encoding="utf-8",
     )
-    manager.start(service_path)
+    manager.start(service_path, persistent=True)
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline and args.identity.stat().st_size == 0:
         time.sleep(0.05)

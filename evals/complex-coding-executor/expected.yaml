@@ -14,6 +14,7 @@ process-manager-required-dev-server:
   requires_process_manager: true
   rejects_shell_background_start: true
   uses_unified_manager_bootstrap: true
+  uses_session_lease_and_finally_close: true
   requires_manager_identity_process_key_and_owner_cleanup: true
   rejects_consumer_platform_or_backend_selection: true
 git-commands-serial-same-repo:

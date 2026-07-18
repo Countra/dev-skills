@@ -15,6 +15,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "skills" / "electron-ui-verifier" / "scripts"
+SKILL_ROOT = ROOT / "skills" / "electron-ui-verifier"
 sys.path.insert(0, str(SCRIPTS))
 
 from electron_verifier.errors import VerifierError  # noqa: E402
@@ -35,6 +36,41 @@ def action_payload(request_id: str, label: str, deadline_ms: int = 5_000) -> dic
     }
 
 
+def process_manager_contract() -> dict[str, Any]:
+    paths = (
+        SKILL_ROOT / "SKILL.md",
+        SKILL_ROOT / "references" / "server.md",
+        SKILL_ROOT / "references" / "troubleshooting.md",
+        SKILL_ROOT / "tests" / "public_contract_support.py",
+        SKILL_ROOT / "tests" / "run_process_manager_smoke.py",
+    )
+    text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
+    required = (
+        "pm_manager.py ensure",
+        "pm_session.py open",
+        "pm_session.py close",
+        "--session-id",
+        "--stop-manager-if-idle",
+        "renew_session",
+        "sessionClose",
+    )
+    forbidden = (
+        "manager_offline",
+        "pm_health.py",
+        "pm_shutdown.py",
+        "manager_started",
+        '"pm_manager.py", "start"',
+    )
+    missing = [marker for marker in required if marker not in text]
+    present = [marker for marker in forbidden if marker in text]
+    return {
+        "ok": not missing and not present,
+        "files": [str(path.relative_to(ROOT).as_posix()) for path in paths],
+        "missing": missing,
+        "forbidden": present,
+    }
+
+
 async def wait_final(service: OperationService, operation_id: str) -> dict[str, Any]:
     for _ in range(1_000):
         operation = service.get(operation_id)["operation"]
@@ -44,7 +80,7 @@ async def wait_final(service: OperationService, operation_id: str) -> dict[str, 
     raise RuntimeError("operation regression 未在期限内收敛")
 
 
-async def run(work_dir: Path) -> dict[str, Any]:
+async def run(work_dir: Path, *, include_process_manager: bool = False) -> dict[str, Any]:
     if work_dir.exists():
         shutil.rmtree(work_dir)
     work_dir.mkdir(parents=True)
@@ -174,9 +210,13 @@ async def run(work_dir: Path) -> dict[str, Any]:
         "restartNeverReplays": replay_count == 0,
         "recoveryCount": len(recovered["recovered"]) == 2,
     }
+    manager_contract = process_manager_contract() if include_process_manager else None
+    if manager_contract is not None:
+        checks["processManagerConsumerContract"] = manager_contract["ok"]
     return {
         "ok": all(checks.values()),
         "checks": checks,
+        "processManager": manager_contract,
         "metrics": {
             "mutationCountAtCancel": count_at_cancel,
             "mutationCountAfterCancel": count_after_cancel,
@@ -191,8 +231,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--work-dir", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--include-process-manager", action="store_true")
     args = parser.parse_args()
-    result = asyncio.run(run(Path(args.work_dir).resolve()))
+    result = asyncio.run(
+        run(
+            Path(args.work_dir).resolve(),
+            include_process_manager=args.include_process_manager,
+        )
+    )
     write_json(Path(args.output).resolve(), result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result.get("ok") is True else 1

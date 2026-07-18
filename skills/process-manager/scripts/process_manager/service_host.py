@@ -16,8 +16,10 @@ import time
 from pathlib import Path
 from typing import Any, BinaryIO, Callable
 
-from .atomic import atomic_write_json, retry_windows_file_operation
-from .errors import ConfigurationError
+from .atomic import open_private_binary_append, retry_windows_file_operation
+from .errors import ConfigurationError, StateError
+from .launch import read_target_identity_message
+from .logs import MAX_HOST_STATE_BYTES, write_capped_json
 from .runtime import now_text
 
 
@@ -26,6 +28,10 @@ MAX_CONTROL_BYTES = 4096
 PROCESS_GROUP_SETTLE_SECONDS = 1.0
 PROCESS_GROUP_POLL_SECONDS = 0.02
 LOG_PUMP_DRAIN_SECONDS = 5.0
+
+
+def _write_host_state(path: Path, value: dict[str, Any]) -> None:
+    write_capped_json(path, value, MAX_HOST_STATE_BYTES)
 
 
 def _windows_console_supported() -> bool:
@@ -152,8 +158,7 @@ class RotatingBinaryLog:
         self.path = path
         self.max_bytes = max_bytes
         self.backups = backups
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._handle: BinaryIO = self.path.open("ab", buffering=0)
+        self._handle = open_private_binary_append(self.path)
 
     @staticmethod
     def _retry_rotation(operation: Callable[[], object]) -> None:
@@ -176,7 +181,7 @@ class RotatingBinaryLog:
             else:
                 self._retry_rotation(lambda: self.path.unlink(missing_ok=True))
         finally:
-            self._handle = self.path.open("ab", buffering=0)
+            self._handle = open_private_binary_append(self.path)
 
     def write(self, data: bytes) -> None:
         if not data:
@@ -209,13 +214,13 @@ def _pump(
                     break
                 destination.write(redactor.feed(chunk))
             destination.write(redactor.finish())
-        except OSError as exc:
+        except (OSError, StateError) as exc:
             if failures is not None:
                 failures.append(
                     {
                         "stream": stream,
                         "errorType": type(exc).__name__,
-                        "errno": exc.errno,
+                        "errno": getattr(exc, "errno", None),
                         "winerror": getattr(exc, "winerror", None),
                     }
                 )
@@ -346,6 +351,19 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     process, mode, console = _spawn_target(spec)
     owner_control = dict(spec["ownerControl"])
     controller = TargetController(process, mode, owner_control)
+    target = {"pid": process.pid, "pgid": process.pid}
+    _emit({"event": "target_spawned", "capabilityHash": spec["capabilityHash"], "target": target})
+    try:
+        target_identity, owner_identity = read_target_identity_message(
+            sys.stdin,
+            spec,
+            target,
+            os.getpid(),
+        )
+    except Exception:
+        controller.cleanup_after_manager_loss(float(spec.get("graceSeconds", 8)))
+        console.close()
+        raise
     logs = dict(spec["logs"])
     secrets = [str(value) for value in spec.get("redactValues", []) if value]
     stdout_log = RotatingBinaryLog(Path(logs["stdout"]), int(logs["maxBytes"]), int(logs["backups"]))
@@ -368,7 +386,6 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
     ]
     for thread in pumps:
         thread.start()
-    target = {"pid": process.pid, "pgid": process.pid}
     state = {
         "schema": "process-manager",
         "runId": spec["runId"],
@@ -376,11 +393,21 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
         "capabilityHash": spec["capabilityHash"],
         "hostPid": os.getpid(),
         "target": target,
+        "targetIdentity": target_identity,
+        "ownerIdentity": owner_identity,
         "state": "running",
         "startedAt": now_text(),
     }
-    atomic_write_json(host_state, state)
-    _emit({"event": "target_started", "capabilityHash": spec["capabilityHash"], "target": target})
+    _write_host_state(host_state, state)
+    _emit(
+        {
+            "event": "target_started",
+            "capabilityHash": spec["capabilityHash"],
+            "target": target,
+            "targetIdentity": target_identity,
+            "ownerIdentity": owner_identity,
+        }
+    )
 
     manager_lost = threading.Event()
 
@@ -427,7 +454,7 @@ def run_host(spec: dict[str, Any], host_state: Path) -> int:
             "logPumpFailures": sorted(pump_failures, key=lambda value: str(value.get("stream", ""))),
         }
     )
-    atomic_write_json(host_state, state)
+    _write_host_state(host_state, state)
     _emit({"event": "target_exited", "exitCode": exit_code, "state": state["state"]})
     console.close()
     return exit_code

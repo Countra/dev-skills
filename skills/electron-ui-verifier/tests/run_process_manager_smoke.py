@@ -123,6 +123,31 @@ def initialize_service(workspace: Path, install_root: Path, python_path: Path) -
     return initialized, service
 
 
+def stop_isolated_manager(config: Path) -> dict[str, Any]:
+    """确认停止隔离 smoke workspace 内仍存活的全部 owner。"""
+    stopped = run_json(
+        [
+            str(PM_SCRIPTS / "pm_manager.py"),
+            "stop",
+            "--config",
+            str(config),
+            "--confirm-stop-owned-runs",
+            "--pretty",
+        ],
+        timeout=60,
+    )
+    data = dict(stopped.get("data", {}))
+    cleanup = data.get("cleanup", {})
+    missing = [
+        field
+        for field in ("managerStopped", "bootstrapCleaned", "ownersEmpty")
+        if cleanup.get(field) is not True
+    ]
+    if missing:
+        raise RuntimeError("manager 最终清理证据缺失：" + ", ".join(missing))
+    return data
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", required=True)
@@ -138,7 +163,8 @@ def main() -> int:
     workspace.mkdir(parents=True)
     manager_config = workspace / ".harness" / "process-manager" / "config.json"
     process_key = None
-    manager_started = False
+    session_id = None
+    manager_ensured = False
     install_before: str | None = None
     checks: dict[str, Any] = {}
     failures: list[str] = []
@@ -164,14 +190,48 @@ def main() -> int:
         if service_environment.get("PYTHONDONTWRITEBYTECODE") != "1":
             failures.append("生成的 service 未禁用安装目录字节码写入")
         readiness_timeout = float(service_data["readiness"]["timeoutSeconds"])
-        run_json([str(PM_SCRIPTS / "pm_validate.py"), "--service", str(service), "--pretty"])
-        run_json([str(PM_SCRIPTS / "pm_manager.py"), "start", "--config", str(manager_config), "--pretty"])
-        manager_started = True
+        run_json(
+            [
+                str(PM_SCRIPTS / "pm_validate.py"),
+                "--config",
+                str(manager_config),
+                "--service",
+                str(service),
+                "--pretty",
+            ]
+        )
+        manager_ensured = True
+        run_json([str(PM_SCRIPTS / "pm_manager.py"), "ensure", "--config", str(manager_config), "--pretty"])
+        session = run_json(
+            [
+                str(PM_SCRIPTS / "pm_session.py"),
+                "open",
+                "--config",
+                str(manager_config),
+                "--kind",
+                "validation",
+                "--holder",
+                "electron-ui-verifier-smoke",
+                "--ttl-seconds",
+                "1800",
+                "--pretty",
+            ]
+        )
+        session_id = str(session["data"]["sessionId"])
         manager_status = run_json(
             [str(PM_SCRIPTS / "pm_manager.py"), "status", "--config", str(manager_config), "--pretty"]
         )
         started = run_json(
-            [str(PM_SCRIPTS / "pm_start.py"), "--config", str(manager_config), "--service", str(service), "--pretty"]
+            [
+                str(PM_SCRIPTS / "pm_start.py"),
+                "--config",
+                str(manager_config),
+                "--service",
+                str(service),
+                "--session-id",
+                session_id,
+                "--pretty",
+            ]
         )
         process_key = started["data"]["processKey"]
         ready = run_json(
@@ -191,6 +251,7 @@ def main() -> int:
         health = http_health(int(server_state["port"]))
         checks = {
             "manager": manager_status.get("data"),
+            "session": session.get("data"),
             "ready": ready.get("data"),
             "health": health,
             "server": server_state,
@@ -213,45 +274,47 @@ def main() -> int:
     except Exception as exc:
         failures.append(str(exc))
     finally:
-        if process_key:
+        manager_stopped = False
+        if session_id:
             try:
-                stopped = run_json(
+                closed = run_json(
                     [
-                        str(PM_SCRIPTS / "pm_stop.py"),
+                        str(PM_SCRIPTS / "pm_session.py"),
+                        "close",
                         "--config",
                         str(manager_config),
-                        "--process-key",
-                        process_key,
+                        "--session-id",
+                        session_id,
+                        "--stop-manager-if-idle",
                         "--pretty",
                     ],
                     timeout=60,
                 )
-                checks["serviceStop"] = stopped.get("data")
-                stop_data = stopped.get("data", {})
-                if stop_data.get("cleanupVerified") is not True:
-                    failures.append("verifier service cleanupVerified 不为 true")
-                if stop_data.get("stopResult", {}).get("ownerEmpty") is not True:
-                    failures.append("verifier service owner 未清空")
-            except Exception as exc:
-                failures.append(f"service stop 失败：{exc}")
-        if manager_started:
-            try:
-                stopped = run_json(
-                    [str(PM_SCRIPTS / "pm_manager.py"), "stop", "--config", str(manager_config), "--pretty"],
-                    timeout=60,
+                close_data = closed.get("data", {})
+                checks["sessionClose"] = close_data
+                cleanup = close_data.get("cleanup", {})
+                if cleanup.get("cleanupVerified") is not True:
+                    failures.append("verifier validation session cleanupVerified 不为 true")
+                if cleanup.get("ownerEmpty") is not True:
+                    failures.append("verifier validation session owner 未清空")
+                idle_stop = close_data.get("idleStop", {})
+                if close_data.get("managerRetained") is not False:
+                    failures.append("隔离 smoke 的空闲 manager 未停止")
+                manager_cleanup = idle_stop.get("cleanup", {})
+                for field in ("managerStopped", "bootstrapCleaned", "ownersEmpty"):
+                    if manager_cleanup.get(field) is not True:
+                        failures.append(f"process-manager idle stop {field} 不为 true")
+                manager_stopped = close_data.get("managerRetained") is False and all(
+                    manager_cleanup.get(field) is True
+                    for field in ("managerStopped", "bootstrapCleaned", "ownersEmpty")
                 )
-                checks["managerStop"] = stopped.get("data")
-                manager_stop = stopped.get("data", {})
-                if manager_stop.get("managerStopped") is not True:
-                    failures.append("process-manager 未停止")
-                if manager_stop.get("bootstrapCleaned") is not True:
-                    failures.append("process-manager bootstrap 未清理")
-                if manager_stop.get("ownerEmpty") is not True:
-                    failures.append("process-manager owner 未清空")
-                if manager_stop.get("cleanupVerified") is not True:
-                    failures.append("process-manager cleanupVerified 不为 true")
             except Exception as exc:
-                failures.append(f"manager stop 失败：{exc}")
+                failures.append(f"validation session close 失败：{exc}")
+        if manager_ensured and not manager_stopped:
+            try:
+                checks["managerStopFallback"] = stop_isolated_manager(manager_config)
+            except Exception as exc:
+                failures.append(f"隔离 smoke 的 manager 最终清理失败：{exc}")
         if install_root.exists() and install_before:
             try:
                 install_after = install_digest(install_root)

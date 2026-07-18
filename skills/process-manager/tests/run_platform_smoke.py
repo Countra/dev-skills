@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import types
 import uuid
 from pathlib import Path
@@ -16,17 +17,21 @@ from typing import Any
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from process_manager.config import create_default_manager_config  # noqa: E402
-from process_manager.errors import PMError, SupervisorError  # noqa: E402
+from process_manager.config import create_default_manager_config, load_manager_config  # noqa: E402
+from process_manager.errors import PMError, RuntimePermissionDeniedError, SupervisorError, ValidationError  # noqa: E402
 from process_manager.manager import ProcessManager  # noqa: E402
 from process_manager.platforms import select_platform_adapter  # noqa: E402
-from process_manager.runtime import initialize_runtime  # noqa: E402
+from process_manager.runtime import initialize_runtime, read_manager_identity_record  # noqa: E402
 from process_manager.state import StateStore  # noqa: E402
+from public_lifecycle_smoke import execute_public_lifecycle  # noqa: E402
 from smoke_support import (  # noqa: E402
     collect_keys,
+    _facade_diagnostic,
+    _run_facade,
     contract_fingerprint,
     manager_bootstrap_smoke,
     read_identities,
+    remove_tree,
     service_value,
     terminate_fixture,
     wait_for_file,
@@ -83,6 +88,7 @@ def run_manager_crash_smoke(workspace_parent: Path, adapter, secret: str) -> tup
         return True, None
     finally:
         terminate_fixture(process)
+        remove_tree(workspace)
 
 
 def enable_windows_permission_harness(adapter) -> None:  # noqa: ANN001
@@ -95,7 +101,287 @@ def enable_windows_permission_harness(adapter) -> None:  # noqa: ANN001
 
     adapter.secure_directory = types.MethodType(secure_directory, adapter)
     adapter.secure_file = types.MethodType(secure_file, adapter)
+    adapter.verify_directory = types.MethodType(secure_directory, adapter)
     adapter.verify_file = types.MethodType(secure_file, adapter)
+
+
+def execute_manager_recovery(workspace_parent: Path) -> dict[str, Any]:
+    workspace = workspace_parent.resolve() / f"manager-recovery-{uuid.uuid4().hex}"
+    workspace.mkdir(parents=True)
+    config_path = workspace / ".harness" / "process-manager" / "config.json"
+    fixture = Path(__file__).resolve().parent / "fixtures" / "process_tree_service.py"
+    identity_path = workspace / "recovery-service-identity.json"
+    failures: list[str] = []
+    checks: dict[str, Any] = {}
+    unrelated = subprocess.Popen(
+        [sys.executable, "-X", "utf8", "-B", str(fixture), "--child"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    adapter = None
+    old_identities: list[dict[str, Any]] = []
+    try:
+        init_code, initialized = _run_facade(
+            [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
+        )
+        checks["init"] = {"exitCode": init_code, **_facade_diagnostic(initialized)}
+        if init_code != 0:
+            failures.append("manager recovery init 失败")
+            return {"ok": False, "workspace": str(workspace), "checks": checks, "failures": failures}
+        config = load_manager_config(config_path)
+        adapter = select_platform_adapter(config.workspace_root, config.state_root)
+        ensure_code, ensured = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "ensure", "--config", str(config_path), "--pretty"],
+            timeout=60,
+        )
+        checks["ensure"] = {"exitCode": ensure_code, **_facade_diagnostic(ensured)}
+        service_path = write_service(
+            workspace,
+            "manager-recovery",
+            service_value(workspace, fixture, "manager-recovery", identity_path),
+        )
+        start_code, started = _run_facade(
+            [
+                str(SCRIPT_DIR / "pm_start.py"), "--config", str(config_path),
+                "--service", str(service_path), "--persistent",
+            ],
+            timeout=30,
+        )
+        process_data = started.get("data", {}) if isinstance(started.get("data"), dict) else {}
+        process_key = process_data.get("processKey")
+        checks["start"] = {
+            "exitCode": start_code,
+            "processKey": process_key,
+            **_facade_diagnostic(started),
+        }
+        if ensure_code != 0 or start_code != 0 or not isinstance(process_key, str):
+            failures.append("manager recovery service 未启动")
+            return {"ok": False, "workspace": str(workspace), "checks": checks, "failures": failures}
+        old_identities = read_identities(identity_path, adapter)
+        manager_identity = read_manager_identity_record(config, adapter)
+        exact_terminated = adapter.terminate_manager(manager_identity["identity"], timeout=10)
+        checks["managerCrash"] = {
+            "exactIdentityTerminated": exact_terminated,
+            "identityReceiptRetained": config.paths.manager.exists(),
+        }
+        restart_code, restarted = _run_facade(
+            [
+                str(SCRIPT_DIR / "pm_manager.py"),
+                "restart",
+                "--config",
+                str(config_path),
+                "--confirm-stop-owned-runs",
+                "--timeout-seconds",
+                "30",
+                "--pretty",
+            ],
+            timeout=90,
+        )
+        restart_data = restarted.get("data", {}) if isinstance(restarted.get("data"), dict) else {}
+        owner_empty = wait_for_identities_to_exit(adapter, old_identities, 10)
+        checks["restart"] = {
+            "exitCode": restart_code,
+            **_facade_diagnostic(restarted),
+            "servicesRestored": restart_data.get("servicesRestored"),
+            "stoppedRunKeys": restart_data.get("stoppedRunKeys"),
+            "ownerEmpty": owner_empty,
+        }
+        status_code, status = _run_facade(
+            [str(SCRIPT_DIR / "pm_manager.py"), "status", "--config", str(config_path), "--pretty"]
+        )
+        status_data = status.get("data", {}) if isinstance(status.get("data"), dict) else {}
+        checks["status"] = {"exitCode": status_code, "state": status_data.get("state")}
+        checks["unrelatedProcess"] = {"survived": unrelated.poll() is None}
+        if not exact_terminated:
+            failures.append("exact manager identity 未终止")
+        if restart_code != 0 or restart_data.get("servicesRestored") is not False:
+            failures.append("manager restart 未闭环或错误恢复 service")
+        if process_key not in restart_data.get("stoppedRunKeys", []):
+            failures.append("manager restart 未报告已收口 run")
+        if not owner_empty:
+            failures.append("manager crash/restart 后旧 owner 未空")
+        if status_code != 0 or status_data.get("state") != "ready":
+            failures.append("replacement manager 未 ready")
+        if unrelated.poll() is not None:
+            failures.append("manager recovery 波及无关进程")
+    finally:
+        if config_path.exists():
+            stop_code, stopped = _run_facade(
+                [str(SCRIPT_DIR / "pm_manager.py"), "stop", "--config", str(config_path), "--pretty"],
+                timeout=60,
+            )
+            checks["finalManagerStop"] = {
+                "exitCode": stop_code,
+                **_facade_diagnostic(stopped),
+            }
+            if stop_code != 0:
+                failures.append("manager recovery final stop 未闭环")
+        terminate_fixture(unrelated)
+    return {
+        "ok": not failures,
+        "workspace": str(workspace),
+        "checks": checks,
+        "failures": failures,
+    }
+
+
+def execute_session_isolation(
+    workspace_parent: Path,
+    *,
+    require_native_permissions: bool = False,
+) -> dict[str, Any]:
+    """验证真实 owner 上的 session close、expiry 与 ownership 隔离。"""
+    workspace = workspace_parent.resolve() / f"session-isolation-{uuid.uuid4().hex}"
+    workspace.mkdir(parents=True)
+    fixture = Path(__file__).resolve().parent / "fixtures" / "process_tree_service.py"
+    config_path = workspace / ".harness" / "process-manager" / "config.json"
+    init_code, initialized = _run_facade(
+        [str(SCRIPT_DIR / "pm_init.py"), "--workspace", str(workspace), "--pretty"]
+    )
+    checks: dict[str, Any] = {
+        "init": {"exitCode": init_code, **_facade_diagnostic(initialized)}
+    }
+    if init_code != 0:
+        return {
+            "ok": False,
+            "workspace": str(workspace),
+            "checks": checks,
+            "failures": ["session isolation public init 失败"],
+        }
+    config = load_manager_config(config_path)
+    adapter = select_platform_adapter(config.workspace_root, config.state_root)
+    failures: list[str] = []
+    runtime_security: dict[str, Any] = {
+        "mode": "native-public-init",
+        "required": require_native_permissions,
+        "failClosedObserved": False,
+    }
+    state = StateStore(config, adapter)
+    state.load()
+    manager = ProcessManager(
+        config,
+        adapter,
+        state,
+        uuid.uuid4().hex,
+        operation_id=uuid.uuid4().hex,
+        session_sweeper=False,
+    )
+    unrelated = subprocess.Popen(
+        [sys.executable, "-X", "utf8", "-B", str(fixture), "--child"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    unrelated_identity = adapter.process_identity(unrelated.pid)
+    tracked: dict[str, list[dict[str, Any]]] = {}
+    try:
+        service_paths: dict[str, Path] = {}
+        for name in ("session-a", "session-b", "persistent"):
+            identity_path = workspace / f"{name}-identity.json"
+            service_paths[name] = write_service(
+                workspace,
+                name,
+                service_value(workspace, fixture, name, identity_path),
+            )
+        try:
+            manager.start(service_paths["session-a"])
+        except ValidationError as exc:
+            checks["ownershipRequired"] = {"rejected": True, "code": exc.code}
+        else:
+            checks["ownershipRequired"] = {"rejected": False}
+            failures.append("未声明 ownership 的 start 未失败")
+        first = manager.open_session(kind="validation", ttl_seconds=60, holder="native-close")
+        second = manager.open_session(kind="validation", ttl_seconds=60, holder="native-expiry")
+        started_a = manager.start(service_paths["session-a"], session_id=first["sessionId"])
+        started_b = manager.start(service_paths["session-b"], session_id=second["sessionId"])
+        started_persistent = manager.start(service_paths["persistent"], persistent=True)
+        for name, started in (
+            ("session-a", started_a),
+            ("session-b", started_b),
+            ("persistent", started_persistent),
+        ):
+            manager.ready(process_key=started["processKey"])
+            tracked[name] = read_identities(workspace / f"{name}-identity.json", adapter)
+        closed = manager.close_session(first["sessionId"])
+        close_owner_empty = wait_for_identities_to_exit(adapter, tracked["session-a"], 8)
+        second_survived = all(adapter.identity_matches(item) for item in tracked["session-b"])
+        persistent_survived = all(
+            adapter.identity_matches(item) for item in tracked["persistent"]
+        )
+        checks["closeIsolation"] = {
+            "cleanupVerified": closed.get("cleanup", {}).get("cleanupVerified"),
+            "ownerEmpty": close_owner_empty,
+            "otherSessionSurvived": second_survived,
+            "persistentSurvived": persistent_survived,
+        }
+        if not all(
+            (
+                closed.get("cleanup", {}).get("cleanupVerified") is True,
+                close_owner_empty,
+                second_survived,
+                persistent_survived,
+            )
+        ):
+            failures.append("session close 未保持 owner 隔离")
+        manager._sessions._deadlines[second["sessionId"]] = time.monotonic() - 1  # noqa: SLF001
+        swept = manager._sessions.sweep_once()  # noqa: SLF001
+        expiry_owner_empty = wait_for_identities_to_exit(adapter, tracked["session-b"], 8)
+        persistent_after_expiry = all(
+            adapter.identity_matches(item) for item in tracked["persistent"]
+        )
+        checks["expiryIsolation"] = {
+            "closedSessionIds": swept.get("closedSessionIds"),
+            "ownerEmpty": expiry_owner_empty,
+            "persistentSurvived": persistent_after_expiry,
+        }
+        if (
+            second["sessionId"] not in swept.get("closedSessionIds", [])
+            or not expiry_owner_empty
+            or not persistent_after_expiry
+        ):
+            failures.append("session expiry 未保持 owner 隔离")
+        restarted = manager.restart(service_paths["persistent"], timeout_seconds=8)
+        inherited = (
+            restarted.get("previous", {}).get("ownership")
+            == restarted.get("current", {}).get("ownership")
+            == {"kind": "persistent", "sessionId": None}
+        )
+        replacement_key = restarted["current"]["processKey"]
+        replacement_identities = read_identities(
+            workspace / "persistent-identity.json",
+            adapter,
+        )
+        stopped = manager.stop(process_key=replacement_key)
+        checks["restartOwnership"] = {
+            "inherited": inherited,
+            "cleanupVerified": stopped.get("cleanupVerified"),
+            "ownerEmpty": wait_for_identities_to_exit(adapter, replacement_identities, 8),
+        }
+        if not inherited or stopped.get("cleanupVerified") is not True:
+            failures.append("service restart 未继承 ownership 或未收口 replacement")
+        checks["unrelatedProcess"] = {
+            "survived": unrelated.poll() is None
+            and adapter.identity_matches(unrelated_identity),
+        }
+        if not checks["unrelatedProcess"]["survived"]:
+            failures.append("session lifecycle 波及无关进程")
+    except Exception as exc:  # noqa: BLE001
+        failures.append(f"{type(exc).__name__}: {exc}")
+    finally:
+        try:
+            checks["managerShutdown"] = manager.shutdown()
+        except PMError as exc:
+            failures.append(f"manager shutdown: {exc.code}")
+        terminate_fixture(unrelated)
+    return {
+        "ok": not failures,
+        "workspace": str(workspace),
+        "diagnostics": adapter.diagnostics(),
+        "runtimeSecurity": runtime_security,
+        "checks": checks,
+        "failures": failures,
+    }
 
 
 def execute(workspace_parent: Path, *, require_native_permissions: bool = False) -> dict[str, Any]:
@@ -105,6 +391,9 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     secret = f"pm-smoke-secret-{uuid.uuid4().hex}"
     failures: list[str] = []
     checks: dict[str, Any] = {"publicContract": contract_fingerprint(failures)}
+    checks["publicLifecycle"] = execute_public_lifecycle(workspace / "public")
+    if not checks["publicLifecycle"]["ok"]:
+        failures.append("统一 public manager/session/service lifecycle 未闭环")
     checks["managerBootstrap"] = manager_bootstrap_smoke(workspace / "bootstrap")
     if not checks["managerBootstrap"]["ok"]:
         failures.append("统一 pm_manager bootstrap/status/stop 未闭环")
@@ -113,8 +402,8 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     runtime_security: dict[str, Any] = {"mode": "enforced", "failClosedObserved": False}
     try:
         initialize_runtime(config, adapter)
-    except SupervisorError as exc:
-        if adapter.selection.platform != "windows" or "ACL" not in str(exc):
+    except RuntimePermissionDeniedError as exc:
+        if adapter.selection.platform != "windows":
             raise
         if require_native_permissions:
             runtime_security = {
@@ -140,7 +429,13 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
         initialize_runtime(config, adapter)
     state = StateStore(config, adapter)
     state.load()
-    manager = ProcessManager(config, adapter, state, f"smoke-{uuid.uuid4().hex}")
+    manager = ProcessManager(
+        config,
+        adapter,
+        state,
+        uuid.uuid4().hex,
+        operation_id=uuid.uuid4().hex,
+    )
     unrelated = subprocess.Popen(
         [sys.executable, "-X", "utf8", "-B", str(fixture), "--child"],
         stdin=subprocess.DEVNULL,
@@ -157,7 +452,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
             "normal",
             service_value(workspace, fixture, "normal", normal_identity, secret=True),
         )
-        normal_started = manager.start(normal_path)
+        normal_started = manager.start(normal_path, persistent=True)
         normal_ready = manager.ready(process_key=normal_started["processKey"])
         old_identities = read_identities(normal_identity, adapter)
         restarted = manager.restart(normal_path, timeout_seconds=8)
@@ -197,7 +492,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
                 grace_seconds=0.2,
             ),
         )
-        force_started = manager.start(force_path)
+        force_started = manager.start(force_path, persistent=True)
         manager.ready(process_key=force_started["processKey"])
         force_identities = read_identities(force_identity, adapter)
         force_stopped = manager.stop(process_key=force_started["processKey"])
@@ -228,7 +523,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
                 },
             ),
         )
-        dynamic_started = manager.start(dynamic_path)
+        dynamic_started = manager.start(dynamic_path, persistent=True)
         dynamic_ready = manager.ready(process_key=dynamic_started["processKey"])
         manager.stop(process_key=dynamic_started["processKey"])
         checks["dynamicPort"] = dynamic_ready
@@ -254,7 +549,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
                 },
             ),
         )
-        large_started = manager.start(large_path)
+        large_started = manager.start(large_path, persistent=True)
         large_ready = manager.ready(process_key=large_started["processKey"])
         large_logs = manager.logs(process_key=large_started["processKey"], tail_lines=120, max_bytes=32768)
         large_run = Path(manager.state.get(key=large_started["processKey"])["runDir"])
@@ -275,7 +570,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
             "exit-failure",
             service_value(workspace, fixture, "exit-failure", exit_identity, mode="exit-failure"),
         )
-        exit_started = manager.start(exit_path)
+        exit_started = manager.start(exit_path, persistent=True)
         exit_terminal = wait_for_terminal(manager, exit_started["processKey"], {"exited"})
         checks["exitCode"] = {
             "status": exit_terminal.get("state"),
@@ -297,7 +592,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
                 mode="background-child",
             ),
         )
-        violation_started = manager.start(violation_path)
+        violation_started = manager.start(violation_path, persistent=True)
         violation_terminal = wait_for_terminal(
             manager,
             violation_started["processKey"],
@@ -323,7 +618,7 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
         invalid_path = write_service(workspace, "start-failure", invalid_service)
         start_failure: dict[str, Any] = {"observed": False}
         try:
-            manager.start(invalid_path)
+            manager.start(invalid_path, persistent=True)
         except (PMError, OSError) as exc:
             start_failure = {"observed": True, "errorType": type(exc).__name__}
         checks["startFailure"] = start_failure
@@ -389,14 +684,55 @@ def execute(workspace_parent: Path, *, require_native_permissions: bool = False)
     }
 
 
+def cleanup_scenario_workspace(result: dict[str, Any], workspace_parent: Path) -> None:
+    value = result.get("workspace")
+    if not isinstance(value, str):
+        result.setdefault("failures", []).append("smoke result 缺少 workspace")
+        result["ok"] = False
+        return
+    workspace = Path(value).resolve()
+    parent = workspace_parent.resolve()
+    if workspace == parent or parent not in workspace.parents:
+        result.setdefault("failures", []).append("smoke workspace 超出隔离父目录")
+        result["ok"] = False
+        return
+    try:
+        if workspace.exists():
+            remove_tree(workspace)
+        result["workspaceCleanup"] = {"removed": not workspace.exists()}
+    except OSError as exc:
+        result["workspaceCleanup"] = {"removed": False, "error": str(exc)}
+        result.setdefault("failures", []).append(f"smoke workspace 清理失败: {exc}")
+        result["ok"] = False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--scenario",
+        choices=("full", "manager-recovery", "session-isolation"),
+        default="full",
+    )
     parser.add_argument("--require-native-permissions", action="store_true")
     args = parser.parse_args()
     args.workspace.mkdir(parents=True, exist_ok=True)
-    result = execute(args.workspace, require_native_permissions=args.require_native_permissions)
+    if args.scenario == "manager-recovery":
+        result = execute_manager_recovery(args.workspace)
+    elif args.scenario == "session-isolation":
+        result = execute_session_isolation(
+            args.workspace,
+            require_native_permissions=args.require_native_permissions,
+        )
+    else:
+        result = execute(args.workspace, require_native_permissions=args.require_native_permissions)
+    result["ci"] = {
+        "commitSha": os.environ.get("GITHUB_SHA"),
+        "runId": os.environ.get("GITHUB_RUN_ID"),
+        "runAttempt": os.environ.get("GITHUB_RUN_ATTEMPT"),
+    }
+    cleanup_scenario_workspace(result, args.workspace)
     write_json(args.output, result)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["ok"] else 1

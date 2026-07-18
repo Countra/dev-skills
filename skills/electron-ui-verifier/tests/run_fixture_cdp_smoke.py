@@ -206,6 +206,7 @@ async def run_contract(work_dir: Path) -> dict[str, Any]:
     failures: list[str] = []
     try:
         lifecycle = managed.start()
+        checks["sessionRenew"] = managed.renew_session()
         fixture_playwright = await async_playwright().start()
         port = free_port()
         endpoint = f"http://127.0.0.1:{port}"
@@ -441,10 +442,11 @@ async def run_contract(work_dir: Path) -> dict[str, Any]:
         checks["cleanup"] = cleanup
         failures.extend(cleanup_failures)
     cleanup = checks.get("cleanup", {})
+    session_close = cleanup.get("sessionClose", {})
     cleanup_ok = (
-        cleanup.get("serviceStop", {}).get("cleanupVerified") is True
-        and cleanup.get("serviceStop", {}).get("stopResult", {}).get("ownerEmpty") is True
-        and cleanup.get("managerStop", {}).get("ownerEmpty") is True
+        session_close.get("cleanup", {}).get("cleanupVerified") is True
+        and session_close.get("cleanup", {}).get("ownerEmpty") is True
+        and session_close.get("idleStop", {}).get("cleanup", {}).get("ownersEmpty") is True
         and cleanup.get("installImmutable", {}).get("unchanged") is True
     )
     if not cleanup_ok:

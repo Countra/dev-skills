@@ -10,7 +10,7 @@ description: 通过本机 Playwright CDP service 验证 Electron 桌面应用 UI
 ## 核心流程
 
 1. 确认 workspace、目标 Python、Electron 可执行文件或已运行实例、loopback CDP 端口、目标 appId 和验证目标。
-2. 首次使用、配置变化或环境不确定时，从当前安装的 skill 根运行 `ev_init.py`。安装目录与 workspace 必须分离；只有 verifier service 交给 `process-manager`，Electron GUI 本体用普通前台命令启动或连接用户已有实例。
+2. 首次使用、配置变化或环境不确定时，从当前安装的 skill 根运行 `ev_init.py`。安装目录与 workspace 必须分离；用 `process-manager` ensure 并打开 validation session，verifier 与本轮额外受管服务都绑定该 `sessionId`。Electron GUI 本体用普通前台命令启动或连接用户已有实例。
 3. 多 target 不确定时先运行 `ev_probe.py`。必须用 targetId、URL、标题或显式 index 消除歧义，不能猜测目标窗口。
 4. 用 `ev_prepare.py` 创建 run。提供 `--app-id` 和 `--goal` 时，prepare 会同时返回最多 3 条紧凑知识候选或明确 `abstain`。
 5. 对 `reuse` 候选先检查 app/version/screen/state/risk 和 requiredParams。完整目标未命中时，由 agent 明确拆分 `--subgoal`，再用 `ev_suggest.py` 检索；不要依赖脚本硬编码拆解。
@@ -19,7 +19,7 @@ description: 通过本机 Playwright CDP service 验证 Electron 桌面应用 UI
 8. 所有 mutating action 都要有 postconditions。高风险动作先 `ev_risk.py preview`，由用户确认 exact fingerprint 后 `approve`，再把一次性 receipt 交给 mutation；禁止动作自签风险。
 9. 用 `ev_finalize.py --run-id` 幂等结束 run。结论只引用本轮 report 和已校验 artifact；知识候选不能替代现场证据。
 10. 只有生成 pending、用户查看后明确批准，才用 exact `bundleFingerprint` 执行 `ev_persist.py approve`。拒绝则使用 `reject`。不得直接 learn、promote 或修改 knowledge object/decision 文件。
-11. 历史清理默认只运行 `ev_prune.py preview`；`apply` 必须使用未漂移的 exact fingerprint 和 `--confirm`。停止 service 和测试应用后验证重复 detach、`cleanupVerified:true` 与 `ownerEmpty:true`。
+11. 历史清理默认只运行 `ev_prune.py preview`；`apply` 必须使用未漂移的 exact fingerprint 和 `--confirm`。在 `finally` 关闭 Process Manager validation session，让其成组清理 verifier 与本轮额外服务；再验证重复 detach、`cleanupVerified:true` 与 `ownerEmpty:true`。
 
 ## 最小命令序列
 

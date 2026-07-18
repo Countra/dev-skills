@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -17,6 +16,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.operations import FINAL_STATES, OperationService, OperationStore  # noqa: E402
 from ev_common import wait_for_operation  # noqa: E402
@@ -54,7 +54,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     async def test_request_id_is_idempotent_and_secret_is_not_persisted(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
 
             async def executor(kind, submitted, context):
@@ -79,7 +79,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             await service.shutdown()
 
     async def test_asset_submission_is_id_only_and_mutually_exclusive(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             seen = []
 
             async def executor(kind, submitted, context):
@@ -112,7 +112,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             await service.shutdown()
 
     async def test_queued_cancel_never_calls_executor(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             release = asyncio.Event()
             calls: list[str] = []
 
@@ -134,7 +134,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             await service.shutdown()
 
     async def test_running_cancel_marks_unknown_and_stops_later_mutations(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             started = asyncio.Event()
             mutation_count = 0
 
@@ -165,7 +165,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             await service.shutdown()
 
     async def test_deadline_distinguishes_known_and_unknown_outcomes(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             mutation_started = asyncio.Event()
 
             async def executor(kind, submitted, context):
@@ -188,7 +188,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
             await service.shutdown()
 
     async def test_queued_deadline_expires_without_executor_call(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             release = asyncio.Event()
             calls: list[str] = []
 
@@ -232,7 +232,7 @@ class OperationTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(request.call_count, 1)
 
     async def test_recovery_never_replays_open_operations(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             store = OperationStore(root, b"test-secret")
             queued, _ = store.create("action", payload(str(uuid.uuid4())), 5_000)

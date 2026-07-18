@@ -6,7 +6,6 @@ import os
 import shutil
 import sqlite3
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,6 +14,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.knowledge_index import KnowledgeIndex  # noqa: E402
@@ -40,7 +40,7 @@ class KnowledgeResetTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def test_fresh_init_uses_current_manifest_and_rollback_journal(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             result = KnowledgeReset(state).ensure()
             self.assertEqual("initialized", result["status"])
@@ -49,7 +49,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual("delete", verification["derived"]["journalMode"])
 
     def test_legacy_layout_requires_exact_fingerprint_and_is_retired_without_reading(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             legacy = state / "knowledge"
             legacy.mkdir(parents=True)
@@ -71,7 +71,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual(1, len(list((state / "retired").iterdir())))
 
     def test_missing_current_root_recovers_without_scanning_retired(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             reset = KnowledgeReset(state)
             reset.ensure()
@@ -84,7 +84,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual([], CanonicalStore(state).list_assets())
 
     def test_canonical_assets_rebuild_corrupt_derived_index(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)
@@ -96,7 +96,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertTrue(verification["derived"].get("quarantined"))
 
     def test_rebuild_quarantines_stale_rollback_journal(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)
@@ -111,7 +111,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual(1, len(list(store.paths["derived"].glob("index.stale-*.sqlite3-journal"))))
 
     def test_rebuild_preserves_valid_reliability_and_corruption_uses_baseline(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)
@@ -145,7 +145,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual(0, baseline["failure_count"])
 
     def test_wal_index_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             path = Path(folder) / "index.sqlite3"
             with KnowledgeIndex(path):
                 pass
@@ -158,7 +158,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertEqual("wal_not_allowed", caught.exception.code)
 
     def test_decision_survives_index_failure_and_rebuilds_without_reactivation(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)
@@ -178,7 +178,7 @@ class KnowledgeResetTests(unittest.TestCase):
             self.assertFalse(retried["decisionCreated"])
 
     def test_orphan_object_is_never_activated_or_indexed(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             state = Path(folder) / "state"
             KnowledgeReset(state).ensure()
             store = CanonicalStore(state)

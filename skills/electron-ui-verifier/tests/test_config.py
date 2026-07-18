@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -14,6 +13,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.config import ServiceConfig  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 
@@ -52,7 +52,7 @@ class ConfigTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def test_runtime_paths_must_stay_under_state_root(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             workspace = Path(folder)
             path = workspace / "config.json"
             value = config_value(workspace)

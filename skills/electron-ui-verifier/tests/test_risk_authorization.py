@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 import uuid
 from pathlib import Path
@@ -15,6 +14,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.models import ActionSpec, canonical_digest  # noqa: E402
 from electron_verifier.risk_authorization import (  # noqa: E402
@@ -45,7 +45,7 @@ class RiskAuthorizationTests(unittest.TestCase):
         }
 
     def test_preview_approval_and_consumption_are_bound_and_one_time(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             root = Path(folder)
             service = RiskAuthorizationService(root)
             action = self._action()
@@ -83,7 +83,7 @@ class RiskAuthorizationTests(unittest.TestCase):
             self.assertEqual("risk_authorization_consumed", caught.exception.code)
 
     def test_missing_or_mismatched_receipt_is_rejected(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             service = RiskAuthorizationService(Path(folder))
             action = self._action()
             risks = authorization_risks(ActionSpec.decode(action))

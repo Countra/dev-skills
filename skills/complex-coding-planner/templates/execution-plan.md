@@ -326,13 +326,16 @@ Workspace 环境来源（Workspace environment source）:
 ## 长期进程管理（Process Manager Gate）
 
 - Needs long-running process：`yes / no`
-- Manager bootstrap：统一 `pm_manager.py status|start`；不判断 OS/backend；普通流程不先运行 doctor
+- Runtime context：每个公共命令使用 explicit absolute `--workspace` 或 `--config`
+- Manager convergence：统一 `pm_manager.py ensure`；恢复时只读 status 并按 `recommendedAction` 行动；不判断 OS/backend；普通流程不先运行 doctor
+- Session lease：`pm_session.py open` 保存 `sessionId`/`expiresAt`；长步骤前按需 renew；不运行隐藏 heartbeat；`finally close --stop-manager-if-idle`
 - Managed services、stage、service config 和 readiness：
-- Required process-manager evidence：authenticated manager identity / config validation / processKey / ready / bounded logs / graceful-force stop / owner-empty cleanup
-- Completion fields：`cleanupVerified: true` / `stopResult.ownerEmpty: true` / manager shutdown or intentional retention
+- Ownership：默认 `pm_start.py --session-id <sessionId>`；只有批准的跨 session 需求才使用 `--persistent`，并规划最终 stop
+- Required process-manager evidence：authenticated manager identity / session open-renew-close / config validation / processKey / ready / bounded logs / graceful-force stop / owner-empty cleanup
+- Completion fields：session closed / `cleanupVerified: true` / `stopResult.ownerEmpty: true` / idle manager stop or generation-race retention
 - Fallback or blocker：
 
-存在 process-manager 时，服务、worker、watcher 和 dev server 必须由统一公共 CLI 管理；finite test/build/lint command 直接运行。不得用手写后台 shell 绕过 manager，不得把平台 backend 选择责任交给调用方。
+存在 process-manager 时，服务、worker、watcher 和 dev server 必须由统一公共 CLI 管理；finite test/build/lint command 直接运行。不得用手写后台 shell 绕过 manager，不得把平台 backend 选择责任交给调用方，也不得把 shell/profile access denied 无 envelope 地猜成 runtime ACL 问题。
 
 ## 验证（Validation）
 

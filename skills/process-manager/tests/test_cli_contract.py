@@ -38,7 +38,7 @@ class CliContractTests(unittest.TestCase):
     def test_all_public_scripts_have_platform_neutral_help(self) -> None:
         self.assertGreater(len(PUBLIC_SCRIPTS), 5)
         for script in PUBLIC_SCRIPTS:
-            arguments = ("start", "--help") if script.name == "pm_manager.py" else ("--help",)
+            arguments = ("ensure", "--help") if script.name == "pm_manager.py" else ("--help",)
             with self.subTest(script=script.name):
                 result = run_script(script, *arguments)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -49,23 +49,73 @@ class CliContractTests(unittest.TestCase):
 
     def test_manager_subcommands_share_one_public_contract(self) -> None:
         script = SCRIPTS_DIR / "pm_manager.py"
-        for command in ("start", "status", "stop"):
+        for command in ("ensure", "status", "restart", "stop"):
             with self.subTest(command=command):
                 result = run_script(script, command, "--help")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("--config", result.stdout)
+                self.assertIn("--workspace", result.stdout)
                 self.assertIn("--pretty", result.stdout)
                 self.assert_platform_neutral(result.stdout)
 
+    def test_removed_public_scripts_and_manager_start_are_absent(self) -> None:
+        self.assertFalse((SCRIPTS_DIR / "pm_health.py").exists())
+        self.assertFalse((SCRIPTS_DIR / "pm_shutdown.py").exists())
+        result = run_script(SCRIPTS_DIR / "pm_manager.py", "start", "--help")
+        self.assertEqual(result.returncode, 2)
+
+    def test_manager_invalid_context_is_json_and_does_not_write_runtime(self) -> None:
+        script = SCRIPTS_DIR / "pm_manager.py"
+        with workspace_directory() as directory:
+            workspace = Path(directory)
+            config = workspace / ".harness" / "process-manager" / "config.json"
+            cases = (
+                ("status",),
+                ("status", "--workspace", "."),
+                (
+                    "status",
+                    "--workspace",
+                    str(workspace),
+                    "--config",
+                    str(config),
+                ),
+            )
+            for arguments in cases:
+                with self.subTest(arguments=arguments):
+                    result = run_script(script, *arguments)
+                    self.assertEqual(result.returncode, 2, result.stderr)
+                    value = json.loads(result.stdout)
+                    self.assertFalse(value["ok"])
+                    self.assertEqual(value["error"]["code"], "context_invalid")
+                    self.assertFalse((workspace / ".harness").exists())
+
     def test_missing_config_returns_stable_json_error(self) -> None:
         with workspace_directory() as directory:
-            result = run_script(SCRIPTS_DIR / "pm_health.py", "--config", str(Path(directory) / "missing.json"))
-        self.assertEqual(result.returncode, 2, result.stderr)
+            config = Path(directory) / ".harness" / "process-manager" / "config.json"
+            result = run_script(
+                SCRIPTS_DIR / "pm_status.py",
+                "--config",
+                str(config),
+                "--service",
+                "demo",
+            )
+        self.assertEqual(result.returncode, 4, result.stderr)
         value = json.loads(result.stdout)
         self.assertEqual(value["ok"], False)
-        self.assertEqual(value["operation"], "health")
-        self.assertEqual(value["error"]["code"], "configuration_error")
+        self.assertEqual(value["operation"], "processes.status")
+        self.assertEqual(value["error"]["code"], "runtime_uninitialized")
         self.assertEqual(set(value), {"ok", "operation", "error", "meta"})
+
+    def test_start_requires_explicit_session_or_persistent_ownership(self) -> None:
+        result = run_script(
+            SCRIPTS_DIR / "pm_start.py",
+            "--config",
+            "manager.json",
+            "--service",
+            "service.json",
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--session-id --persistent", result.stderr)
 
     def test_ready_client_covers_service_timeout_when_override_is_omitted(self) -> None:
         client = mock.Mock()
@@ -77,7 +127,10 @@ class CliContractTests(unittest.TestCase):
             result = pm_ready.main(["--config", "manager.json", "--service", "demo"])
 
         self.assertEqual(0, result)
-        make_client.assert_called_once_with("manager.json", timeout=605)
+        client_args = make_client.call_args.args[0]
+        self.assertEqual(client_args.config, "manager.json")
+        self.assertIsNone(client_args.workspace)
+        self.assertEqual(make_client.call_args.kwargs, {"timeout": 605})
         client.request.assert_called_once_with(
             "POST",
             "/processes/ready",
@@ -96,7 +149,10 @@ class CliContractTests(unittest.TestCase):
             )
 
         self.assertEqual(0, result)
-        make_client.assert_called_once_with("manager.json", timeout=80.0)
+        client_args = make_client.call_args.args[0]
+        self.assertEqual(client_args.config, "manager.json")
+        self.assertIsNone(client_args.workspace)
+        self.assertEqual(make_client.call_args.kwargs, {"timeout": 80.0})
 
 
 if __name__ == "__main__":

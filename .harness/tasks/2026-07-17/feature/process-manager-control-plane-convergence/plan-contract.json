@@ -1,0 +1,783 @@
+{
+  "task_id": "2026-07-17-feature-process-manager-control-plane-convergence",
+  "plan_revision": 4,
+  "lifecycle_route": "managed",
+  "plan_profile": "full",
+  "goal": {
+    "id": "GOAL-01",
+    "summary": "将 process-manager 升级为显式 workspace、幂等收敛、可中断恢复、资源有界、三平台统一的本地控制器，使调用方能确定 manager 状态并通过 session lease 安全清理本轮进程树"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "priority": "must",
+      "summary": "所有公共命令使用显式绝对 workspace 或 config，禁止 CWD 静默选择 runtime"
+    },
+    {
+      "id": "REQ-02",
+      "priority": "must",
+      "summary": "建立纯读 closed manager state resolver，区分 absent、pending、stale、unresponsive、security、environment 与 corrupt"
+    },
+    {
+      "id": "REQ-03",
+      "priority": "must",
+      "summary": "pm_manager ensure 在持久 operation lock 和 receipt 下幂等收敛到 ready"
+    },
+    {
+      "id": "REQ-04",
+      "priority": "must",
+      "summary": "manager stop 和 restart 成为可恢复 phase operation，精确停止 owned runs、清 bootstrap 且不恢复旧 service"
+    },
+    {
+      "id": "REQ-05",
+      "priority": "must",
+      "summary": "manager loss 和 restart 先验证 native owner empty，再提交 terminal 或移除 active"
+    },
+    {
+      "id": "REQ-06",
+      "priority": "must",
+      "summary": "新增 session open、renew、status、close、lease expiry 与 finalizer，start 必须声明 session 或 persistent"
+    },
+    {
+      "id": "REQ-07",
+      "priority": "must",
+      "summary": "active run、open/heavy session、pending prune、control request、history age/count 和 retained total reservation 都有 closed cap，日志与 metadata 容量预留、automatic GC、compact tombstone、可恢复 prune journal 与 mutation admission 持续生效"
+    },
+    {
+      "id": "REQ-08",
+      "priority": "must",
+      "summary": "Windows 和 POSIX runtime security verify-first，准确区分 insecure、denied、unverifiable 和外层环境且无默认提权"
+    },
+    {
+      "id": "REQ-09",
+      "priority": "must",
+      "summary": "public contract current-only 原子迁移，删除重复 health、shutdown 和泛化 manager_offline"
+    },
+    {
+      "id": "REQ-10",
+      "priority": "must",
+      "summary": "Planner、Executor、Electron verifier 使用 ensure、session 和 finally close，finite command 直接运行"
+    },
+    {
+      "id": "REQ-11",
+      "priority": "must",
+      "summary": "unit、eval、static、native、三平台、delegated cgroup、review 与 final cleanup 形成完成门"
+    },
+    {
+      "id": "REQ-12",
+      "priority": "must",
+      "summary": "保留三平台自动选择、whole-tree owner、loopback token、secret redaction、无 arbitrary PID、no shell 和 no auto restore"
+    },
+    {
+      "id": "REQ-13",
+      "priority": "must",
+      "summary": "status 和 doctor 提供平台中立 state、action、resource summary，doctor 提供受限 native diagnostics"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01",
+      "requirement_ids": ["REQ-01"],
+      "summary": "不同 CWD 向同一 absolute workspace 或 config 调用时解析为同一 runtime，缺失、相对、冲突或 mismatch 返回 context_invalid 且不写文件"
+    },
+    {
+      "id": "AC-02",
+      "requirement_ids": ["REQ-02", "REQ-13"],
+      "summary": "status 对全部 closed manager states 返回唯一 state、证据摘要和建议动作，且 filesystem、ACL、identity 和 bootstrap 均不 mutation"
+    },
+    {
+      "id": "AC-03",
+      "requirement_ids": ["REQ-03"],
+      "summary": "已初始化 workspace 中两个调用者并发 ensure 时只产生一个 operation 和 manager instance并最终 ready，未初始化 workspace 返回 init action 且不隐式创建 config"
+    },
+    {
+      "id": "AC-04",
+      "requirement_ids": ["REQ-02", "REQ-03"],
+      "summary": "ensure 或 stop 进行中时 status 公开 checkpoint、deadline 和 retryAfter，未超期 pending 不被误判 offline 或 stale"
+    },
+    {
+      "id": "AC-05",
+      "requirement_ids": ["REQ-04"],
+      "summary": "restart 对 healthy 或 exact-unresponsive manager 完成 cleanup 和新 instance ready且不恢复 service，身份不确定不 kill，存在其它 ownership 时无显式 destructive confirmation 不执行，确认后的 work generation 变化则 fail precondition；generation 匹配时先事务化安装 intake fence，再停止已确认 work"
+    },
+    {
+      "id": "AC-06",
+      "requirement_ids": ["REQ-04"],
+      "summary": "stop 对 absent 和重复调用幂等，healthy 或 exact-unresponsive manager 都通过同一 stop phase 收敛到 absent；live ownership 未显式确认时不执行，确认后的 work generation 变化则 fail precondition；shutdown handler 只 ack 并在 response 后交给单一 coordinator，identity 不确定时不执行 destructive action，任一 owner、session、handler/thread、identity 或 bootstrap 未清时不虚假成功"
+    },
+    {
+      "id": "AC-07",
+      "requirement_ids": ["REQ-05"],
+      "summary": "manager crash 后持久 active record 先保持 terminating，owner cleanup 和 verify 后才 terminal，无法验证时保持 cleanup pending"
+    },
+    {
+      "id": "AC-08",
+      "requirement_ids": ["REQ-06"],
+      "summary": "关闭一个 session 只清理该 session runs，不影响其他 session、persistent run 或无关进程"
+    },
+    {
+      "id": "AC-09",
+      "requirement_ids": ["REQ-06"],
+      "summary": "live session 只在 current manager instance 内、monotonic/wall deadline 前显式续租；clock anomaly 或 manager instance 变化使旧 session 失效且不能 renew/start，expiry、close 或 restart 中断后继续同一 finalizer并在 owner empty 后 closed，idle shutdown 与新 work 通过 persisted work generation/intake fence 原子互斥"
+    },
+    {
+      "id": "AC-10",
+      "requirement_ids": ["REQ-06"],
+      "summary": "start 未提供 session 且未显式 persistent 时失败，service restart 继承原 ownership"
+    },
+    {
+      "id": "AC-11",
+      "requirement_ids": ["REQ-07"],
+      "summary": "history 超 age、count 或 bytes 时只事务化清理 eligible terminal run且 active/terminating 不删除，closed session 压缩为 compact tombstone，prune/cleanup evidence 可恢复且 central tombstone 有界保留"
+    },
+    {
+      "id": "AC-12",
+      "requirement_ids": ["REQ-07", "REQ-13"],
+      "summary": "active/session/journal/control-request count 或 projected total reservation 达限时执行对应有界收敛并拒绝超额 mutation；total reservation 合并 fixed actual、closed metadata capacity、manager/active/candidate rotation capacity，status 报 usedBytes、reservedBytes、limitBytes、overBudget 和 cleanupPending且控制线程不越界；饱和只接受 domain-separated、current-instance、短时有效的 HMAC-SHA256 busy evidence，建议 wait 且不得自动 restart"
+    },
+    {
+      "id": "AC-13",
+      "requirement_ids": ["REQ-08"],
+      "summary": "Windows 等价 inherited ACL 被接受，broad allow 或 rights 不足判 insecure，descriptor denied 判 permission denied，证据不足判 unverifiable，status 不改 ACL"
+    },
+    {
+      "id": "AC-14",
+      "requirement_ids": ["REQ-08", "REQ-13"],
+      "summary": "PM error 与外层 shell 或 profile access denied 分层，doctor 不硬写 supervisor ready，无 JSON envelope 时不归因 ACL、不删 runtime、不自动提权"
+    },
+    {
+      "id": "AC-15",
+      "requirement_ids": ["REQ-09", "REQ-10"],
+      "summary": "public happy path 只使用 ensure、session 和 manager stop，health、shutdown、status-start、泛化 manager_offline current refs 消失且三个 consumers 同步通过"
+    },
+    {
+      "id": "AC-16",
+      "requirement_ids": ["REQ-12"],
+      "summary": "三平台 start、stop、crash、restart、session expiry 保持 whole owned tree cleanup、unrelated process survive、backend 不泄漏、no arbitrary PID、no shell 和 no auto restore"
+    },
+    {
+      "id": "AC-17",
+      "requirement_ids": ["REQ-11"],
+      "summary": "当前 commit 的 Windows、Ubuntu、macOS matrix 与 Ubuntu delegated cgroup job 全部通过并上传匹配 commit 和 attempt 的 machine evidence"
+    },
+    {
+      "id": "AC-18",
+      "requirement_ids": ["REQ-11"],
+      "summary": "final review、cleanup 和 audit 后 required receipt passed，无 active、terminating、cleanup pending、manager、bootstrap 或 task tmp residue且 diff allowlist 合法"
+    },
+    {
+      "id": "AC-19",
+      "requirement_ids": ["REQ-04", "REQ-09", "REQ-13"],
+      "summary": "manager 启动内容由 bounded runtime fingerprint 固定；只有 operation expected、identity、authenticated health 与当前受控源码全部一致才 ready，源码漂移归 non-retryable stale/restart，摘要不可验证归 environment_unverifiable 且不触发 ACL 或任意 kill"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01",
+      "summary": "普通 public schema、commands 和 state 在 Windows、Linux、macOS 一致，平台选择只在内部与 doctor audit 暴露"
+    },
+    {
+      "id": "NFR-02",
+      "summary": "不按任意 PID 或全机枚举 cleanup，不自动恢复 service，不引入 restart loop"
+    },
+    {
+      "id": "NFR-03",
+      "summary": "当前用户、loopback、token、secret redaction、path 和 symlink 边界保持，普通使用不要求管理员"
+    },
+    {
+      "id": "NFR-04",
+      "summary": "manager operation、session close、start admission 在并发和中断下线性化且幂等"
+    },
+    {
+      "id": "NFR-05",
+      "summary": "active count、history count 和 age、retained bytes、日志和所有 wait 或 poll 具有硬上限"
+    },
+    {
+      "id": "NFR-06",
+      "summary": "error message 精确、code closed、retryable 只用于已证 transient，doctor diagnostics 脱敏"
+    },
+    {
+      "id": "NFR-07",
+      "summary": "state 和 filesystem cleanup 使用 atomic commit、quarantine、rollback 或 finalizer，owner 未空不丢证据"
+    },
+    {
+      "id": "NFR-08",
+      "summary": "status 和 sweeper 使用有界精确索引，不做全 workspace 或全机扫描，endpoint probe 使用短 timeout"
+    },
+    {
+      "id": "NFR-09",
+      "summary": "继续使用 Python 3.12 标准库与现有 native API，不新增、升级或替换第三方依赖"
+    },
+    {
+      "id": "NFR-10",
+      "summary": "current-only 原子迁移，无旧 runtime schema、legacy script、compatibility parser 或双 public contract"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": "ART-01",
+      "kind": "research",
+      "path": "artifacts/research/process-manager-reliability-research.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-02",
+      "kind": "standards",
+      "path": "artifacts/standards/process-manager-standards-index.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-03",
+      "kind": "architecture",
+      "path": "artifacts/architecture/control-plane-convergence.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-04",
+      "kind": "architecture",
+      "path": "artifacts/architecture/change-map.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-05",
+      "kind": "validation",
+      "path": "artifacts/validation/validation-strategy.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-06",
+      "kind": "other",
+      "path": "artifacts/traceability/traceability-matrix.md",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-07",
+      "kind": "other",
+      "path": "artifacts/reviews/plan-review-brief.json",
+      "required": true,
+      "approval_included": true
+    },
+    {
+      "id": "ART-08",
+      "kind": "review",
+      "path": "artifacts/reviews/plan-review-attempt-5.json",
+      "required": true,
+      "approval_included": true
+    }
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "确定性上下文、状态解析与 Ensure",
+      "depends_on": [],
+      "requirement_ids": ["REQ-01", "REQ-02", "REQ-03", "REQ-13"],
+      "acceptance_ids": ["AC-01", "AC-02", "AC-03", "AC-04"],
+      "nonfunctional_ids": ["NFR-01", "NFR-04", "NFR-05", "NFR-06", "NFR-08", "NFR-09"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-08", "VAL-13"],
+      "allowed_changes": [
+        "skills/process-manager/scripts/process_manager/runtime_context.py",
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/cli.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/models.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/atomic.py",
+        "skills/process-manager/scripts/process_manager/bootstrap.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/protocol.py",
+        "skills/process-manager/scripts/pm_init.py",
+        "skills/process-manager/scripts/pm_manager.py",
+        "skills/process-manager/tests/test_runtime_context.py",
+        "skills/process-manager/tests/test_manager_lifecycle.py",
+        "skills/process-manager/tests/**"
+      ],
+      "forbidden_changes": [
+        "service, session, resource or consumer public migration",
+        "status mutation of runtime, ACL, identity or bootstrap",
+        "CWD fallback, second manager truth source or third-party dependency"
+      ],
+      "entry_conditions": [
+        "revision 2 implementation 已获用户批准并写入 attestation",
+        "当前 Process Manager unit baseline 可重现",
+        "context、closed state、operation receipt 与 error taxonomy 已冻结"
+      ],
+      "exit_conditions": [
+        "different CWD same workspace identity 与 invalid-context no-write 通过",
+        "closed resolver state table 与 status pure-read 通过",
+        "concurrent ensure 单 operation 单 instance，未初始化 context 不隐式创建 config且无 residue",
+        "stage code-review 无 blocking 或 major finding"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-02",
+      "title": "Manager Convergence 与 Runtime Security Foundation",
+      "depends_on": ["STG-01"],
+      "requirement_ids": ["REQ-04", "REQ-05", "REQ-08", "REQ-09", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-05", "AC-06", "AC-07", "AC-13", "AC-14", "AC-16", "AC-19"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
+      "validation_ids": ["VAL-01", "VAL-02", "VAL-03", "VAL-06", "VAL-08", "VAL-10", "VAL-13"],
+      "allowed_changes": [
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/manager_start.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
+        "skills/process-manager/scripts/process_manager/resources.py",
+        "skills/process-manager/scripts/process_manager/state.py",
+        "skills/process-manager/scripts/process_manager/manager.py",
+        "skills/process-manager/scripts/process_manager/control_api.py",
+        "skills/process-manager/scripts/manager_server.py",
+        "skills/process-manager/scripts/process_manager/bootstrap.py",
+        "skills/process-manager/scripts/process_manager/service_host.py",
+        "skills/process-manager/scripts/process_manager/launch.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/models.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/runtime_fingerprint.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/platforms/base.py",
+        "skills/process-manager/scripts/process_manager/platforms/dispatcher.py",
+        "skills/process-manager/scripts/process_manager/platforms/windows_acl.py",
+        "skills/process-manager/scripts/process_manager/platforms/windows.py",
+        "skills/process-manager/scripts/process_manager/platforms/linux.py",
+        "skills/process-manager/scripts/process_manager/platforms/posix.py",
+        "skills/process-manager/scripts/process_manager/platforms/macos.py",
+        "skills/process-manager/scripts/pm_init.py",
+        "skills/process-manager/scripts/pm_doctor.py",
+        "skills/process-manager/scripts/pm_manager.py",
+        "evals/process-manager/run_static_checks.py",
+        "skills/process-manager/tests/**"
+      ],
+      "forbidden_changes": [
+        "arbitrary PID, process-name or whole-machine cleanup",
+        "service auto restore, restart loop, public platform switch or system daemon",
+        "terminal commit or active removal before owner empty",
+        "session or consumer public migration; resource behavior change beyond no-op module extraction",
+        "SDDL string equality, regex or error text as ACL truth",
+        "automatic elevation or status-time remediation",
+        "legacy identity or operation parser, weak runtime fingerprint or fingerprint mismatch as kill authority"
+      ],
+      "entry_conditions": [
+        "STG-01 resolver、ensure 与 operation receipt 已通过并审查",
+        "exact manager identity、owner capability、bootstrap evidence 与 runtime fingerprint closed schema/预算已固定",
+        "现有三平台 owner contract baseline 可重现",
+        "runtime security verify/remediate taxonomy 与 500 行生产模块预算已冻结",
+        "identity/operation schema 切换前可证明 manager、owned runs、bootstrap 和 pending operation 全空；未知旧 schema 按 stop condition 阻塞且不实现兼容 parser"
+      ],
+      "exit_conditions": [
+        "stop 和 restart 对 healthy、exact-unresponsive、runtime-stale、重复调用及 phase interruption 可恢复，shutdown ack 后只有单一 coordinator且 identity 不确定或 live ownership 未确认时不执行 destructive action",
+        "manager crash 后 persisted run 只在 owner empty 后 terminal",
+        "restart 不恢复 service、其它 ownership 无确认不停止且 unrelated process 存活",
+        "Windows ACL equivalence、insecure、denied、unverifiable 与 no-mutation 分类通过",
+        "operation expected、child startup capture、manager identity、authenticated health 与当前 source fingerprint 只有全等才 ready，drift、manifest race/escape/overflow 与 identity-health mismatch 均 fail closed",
+        "manager state/start/finalization/resource/fingerprint extraction 形成低耦合模块且生产 Python 文件不超过 500 行",
+        "stage code-review 无 blocking 或 major finding"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-03",
+      "title": "Session Lease、Ownership 与 Finalizer",
+      "depends_on": ["STG-02"],
+      "requirement_ids": ["REQ-06", "REQ-12"],
+      "acceptance_ids": ["AC-08", "AC-09", "AC-10", "AC-16"],
+      "nonfunctional_ids": ["NFR-02", "NFR-04", "NFR-07", "NFR-08", "NFR-09"],
+      "validation_ids": ["VAL-02", "VAL-04", "VAL-13", "VAL-18"],
+      "allowed_changes": [
+        "skills/process-manager/scripts/process_manager/sessions.py",
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
+        "skills/process-manager/scripts/process_manager/models.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/state.py",
+        "skills/process-manager/scripts/process_manager/manager.py",
+        "skills/process-manager/scripts/process_manager/control_api.py",
+        "skills/process-manager/scripts/manager_server.py",
+        "skills/process-manager/scripts/pm_session.py",
+        "skills/process-manager/scripts/pm_start.py",
+        "skills/process-manager/scripts/pm_restart.py",
+        "skills/process-manager/tests/test_sessions.py",
+        "skills/process-manager/tests/**"
+      ],
+      "forbidden_changes": [
+        "default persistent or start without declared ownership",
+        "second session cleanup engine instead of the owner finalizer",
+        "session closed before every owned run owner empty",
+        "secret or platform capability stored in session holder"
+      ],
+      "entry_conditions": [
+        "STG-02 owner-first finalizer、persisted reconciliation 与 restart 已通过",
+        "session schema、manager-instance binding、monotonic/wall TTL、transitions 和 index 已冻结",
+        "default validation TTL 1800 seconds 与 persistent opt-in 已确认"
+      ],
+      "exit_conditions": [
+        "多 session、persistent 与 unrelated process 隔离通过",
+        "normal close 和 expiry 只在 owner empty 后 cleanup verified",
+        "manager restart、clock forward/backward 不延长或恢复旧 session",
+        "start ownership 必填、service restart 保持 ownership且 idle-stop race 保留新 work",
+        "stage code-review 无 blocking 或 major finding"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-04",
+      "title": "Resource Governance",
+      "depends_on": ["STG-03"],
+      "requirement_ids": ["REQ-07", "REQ-12", "REQ-13"],
+      "acceptance_ids": ["AC-11", "AC-12", "AC-16"],
+      "nonfunctional_ids": ["NFR-03", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09"],
+      "validation_ids": ["VAL-02", "VAL-05", "VAL-13"],
+      "allowed_changes": [
+        "skills/process-manager/scripts/process_manager/resources.py",
+        "skills/process-manager/scripts/process_manager/sessions.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/manager_lifecycle.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/protocol.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/models.py",
+        "skills/process-manager/scripts/process_manager/state.py",
+        "skills/process-manager/scripts/process_manager/manager.py",
+        "skills/process-manager/scripts/process_manager/control_api.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/logs.py",
+        "skills/process-manager/scripts/process_manager/bootstrap.py",
+        "skills/process-manager/scripts/manager_server.py",
+        "skills/process-manager/scripts/process_manager/platforms/base.py",
+        "skills/process-manager/scripts/process_manager/platforms/windows.py",
+        "skills/process-manager/scripts/process_manager/platforms/posix.py",
+        "skills/process-manager/scripts/process_manager/platforms/linux.py",
+        "skills/process-manager/scripts/process_manager/platforms/macos.py",
+        "skills/process-manager/scripts/pm_doctor.py",
+        "skills/process-manager/scripts/pm_prune.py",
+        "skills/process-manager/scripts/pm_list.py",
+        "skills/process-manager/tests/test_resources.py",
+        "skills/process-manager/tests/**"
+      ],
+      "forbidden_changes": [
+        "automatic deletion of active or terminating runs",
+        "unbounded scan, logs, wait or poll",
+        "runtime security contract regression or duplicate ACL engine",
+        "new public busy state, unsigned, mismatched, expired or replayed busy trust, or busy-triggered automatic restart"
+      ],
+      "entry_conditions": [
+        "STG-03 ownership 与 finalizer 已稳定",
+        "resource defaults、actual/total reservation formula、metadata cap、manager/service log rotation capacity、quarantine 和 tombstone transaction 已冻结",
+        "STG-02 runtime security foundation 与 no-op resource extraction 已通过"
+      ],
+      "exit_conditions": [
+        "active/history/session/journal/request count、age、metadata、manager/service log generations、actual/total reserved bytes 与 cleanup pending 边界通过",
+        "GC 不选择 active 或 terminating且中断可由 bounded pendingPrunes 恢复，closed session 可安全压缩",
+        "resource status/doctor summary 复用既有 security evidence且不建立第二 ACL engine",
+        "domain-separated、current-instance 且未过期的 signed busy 在 public unresponsive 下只产生 bounded wait；unsigned、mismatch、expired 或 replay fail closed且不触发 auto-restart，shutdown response 后唯一 coordinator 排空 tracked control resources 后才成功",
+        "stage code-review 无 blocking 或 major finding"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-05",
+      "title": "Public Contract、消费者、Eval 与 CI 原子迁移",
+      "depends_on": ["STG-04"],
+      "requirement_ids": ["REQ-09", "REQ-10", "REQ-11", "REQ-13"],
+      "acceptance_ids": ["AC-10", "AC-14", "AC-15"],
+      "nonfunctional_ids": ["NFR-01", "NFR-06", "NFR-09", "NFR-10"],
+      "validation_ids": ["VAL-01", "VAL-07", "VAL-08", "VAL-09", "VAL-11", "VAL-12", "VAL-13"],
+      "allowed_changes": [
+        "skills/process-manager/scripts/pm_init.py",
+        "skills/process-manager/scripts/pm_manager.py",
+        "skills/process-manager/scripts/pm_session.py",
+        "skills/process-manager/scripts/process_manager/__init__.py",
+        "skills/process-manager/scripts/process_manager/runtime_context.py",
+        "skills/process-manager/scripts/process_manager/cli.py",
+        "skills/process-manager/scripts/process_manager/client.py",
+        "skills/process-manager/scripts/process_manager/config.py",
+        "skills/process-manager/scripts/process_manager/errors.py",
+        "skills/process-manager/scripts/process_manager/launch.py",
+        "skills/process-manager/scripts/process_manager/logs.py",
+        "skills/process-manager/scripts/process_manager/manager_state.py",
+        "skills/process-manager/scripts/process_manager/protocol.py",
+        "skills/process-manager/scripts/process_manager/run_finalization.py",
+        "skills/process-manager/scripts/process_manager/runtime.py",
+        "skills/process-manager/scripts/process_manager/service_host.py",
+        "skills/process-manager/scripts/pm_validate.py",
+        "skills/process-manager/scripts/pm_start.py",
+        "skills/process-manager/scripts/pm_ready.py",
+        "skills/process-manager/scripts/pm_status.py",
+        "skills/process-manager/scripts/pm_logs.py",
+        "skills/process-manager/scripts/pm_list.py",
+        "skills/process-manager/scripts/pm_prune.py",
+        "skills/process-manager/scripts/pm_stop.py",
+        "skills/process-manager/scripts/pm_restart.py",
+        "skills/process-manager/scripts/pm_doctor.py",
+        "skills/process-manager/scripts/pm_health.py",
+        "skills/process-manager/scripts/pm_shutdown.py",
+        "skills/process-manager/SKILL.md",
+        "skills/process-manager/references/**",
+        "skills/process-manager/examples/**",
+        "skills/process-manager/templates/manager-config.json",
+        "skills/process-manager/tests/**",
+        "evals/process-manager/**",
+        "skills/complex-coding-planner/**",
+        "evals/complex-coding-planner/**",
+        "skills/complex-coding-executor/**",
+        "evals/complex-coding-executor/**",
+        "skills/electron-ui-verifier/**",
+        "evals/electron-ui-verifier/**",
+        ".github/workflows/process-manager-platforms.yml",
+        ".harness/environment.md",
+        "README.md"
+      ],
+      "forbidden_changes": [
+        "legacy health or shutdown wrapper, old schema parser or status-start fallback",
+        "consumer copy of manager state machine, internal runtime reads or ACL guesses",
+        "unrelated Skill behavior, Reviewer contract or repository-wide formatting",
+        "CI secrets, remote mutation, elevation or ordinary branch filter"
+      ],
+      "entry_conditions": [
+        "STG-01 through STG-04 internal contract 全部通过",
+        "旧 public scripts、references、eval 和 consumer call sites inventory 完整",
+        "current-only deletion 与 migration 可在单 stage 原子完成"
+      ],
+      "exit_conditions": [
+        "仓库 current scope 无旧 health、shutdown、status-start、generic offline 或 ownership-less start",
+        "Process Manager 与三个 consumer unit、eval、static 全部通过",
+        "docs、help、examples 与 closed public schema 一致",
+        "stage code-review 无 blocking 或 major finding"
+      ],
+      "risk": "high",
+      "commit_expectation": "stage"
+    },
+    {
+      "id": "STG-06",
+      "title": "三平台验证、最终审查与资源清场",
+      "depends_on": ["STG-05"],
+      "requirement_ids": ["REQ-11", "REQ-12"],
+      "acceptance_ids": ["AC-16", "AC-17", "AC-18"],
+      "nonfunctional_ids": ["NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
+      "validation_ids": ["VAL-02", "VAL-07", "VAL-08", "VAL-09", "VAL-10", "VAL-11", "VAL-12", "VAL-14", "VAL-15", "VAL-16", "VAL-17", "VAL-18"],
+      "allowed_changes": [
+        "all files approved by STG-01 through STG-05 and ART-04 for directly evidenced fixes",
+        "task-local execution, validation, review and observation artifacts",
+        "minimal fixes required by final review within approved scope"
+      ],
+      "forbidden_changes": [
+        "production change without failing required validation evidence",
+        "new scope, dependency, compatibility layer or public platform interface",
+        "unauthorized external write, push or elevation",
+        "claiming hosted success without current commit evidence",
+        "deleting failure evidence or user processes to fake cleanup"
+      ],
+      "entry_conditions": [
+        "STG-05 current-only contract 与 consumers 已完成并审查",
+        "本地 required commands 可重建且工作树位于 allowlist",
+        "用户推送当前 commit 后才读取 hosted evidence"
+      ],
+      "exit_conditions": [
+        "VAL-01 through VAL-18 required evidence 当前且通过",
+        "三平台和 delegated evidence 绑定最终 commit 和 attempt",
+        "final receipt passed 且无 blocking 或 major finding",
+        "无 active、terminating、cleanup pending、manager、bootstrap 或 task tmp residue",
+        "diff allowlist、stale reference 和 diff check 通过"
+      ],
+      "risk": "high",
+      "commit_expectation": "final"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-15", "NFR-01", "NFR-06", "NFR-09", "NFR-10"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_cli_contract.py && python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/structure-syntax.json",
+      "evidence_path": "artifacts/validation/structure-syntax.json"
+    },
+    {
+      "id": "VAL-02",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-02", "AC-07", "AC-16", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_*.py",
+      "evidence_path": "artifacts/validation/process-manager-unit-tests.txt"
+    },
+    {
+      "id": "VAL-03",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-14", "NFR-02", "NFR-04", "NFR-05", "NFR-06", "NFR-08"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_manager_lifecycle.py",
+      "evidence_path": "artifacts/validation/manager-lifecycle-tests.txt"
+    },
+    {
+      "id": "VAL-04",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-08", "AC-09", "AC-10", "NFR-02", "NFR-04", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_sessions.py",
+      "evidence_path": "artifacts/validation/session-tests.txt"
+    },
+    {
+      "id": "VAL-05",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-11", "AC-12", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_resources.py",
+      "evidence_path": "artifacts/validation/resource-tests.txt"
+    },
+    {
+      "id": "VAL-06",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-13", "AC-14", "AC-16", "NFR-03", "NFR-06", "NFR-07", "NFR-09"],
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/process-manager/tests -p test_runtime_security.py",
+      "evidence_path": "artifacts/validation/runtime-security-tests.txt"
+    },
+    {
+      "id": "VAL-07",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-10", "AC-14", "AC-15", "NFR-01", "NFR-06", "NFR-09", "NFR-10"],
+      "command": "python -u -X utf8 -B evals/process-manager/run_evals.py --work-dir .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/process-manager-evals",
+      "evidence_path": "artifacts/validation/process-manager-evals/process-manager-evals.json"
+    },
+    {
+      "id": "VAL-08",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-10", "AC-14", "AC-15", "NFR-01", "NFR-03", "NFR-06", "NFR-08", "NFR-09", "NFR-10"],
+      "command": "python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/process-manager-static.json",
+      "evidence_path": "artifacts/validation/process-manager-static.json"
+    },
+    {
+      "id": "VAL-09",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-02", "AC-03", "AC-05", "AC-06", "AC-08", "AC-11", "AC-12", "AC-13", "AC-14", "AC-16", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace <task-local-absolute-workspace> --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/native-smoke.json --require-native-permissions",
+      "evidence_path": "artifacts/validation/native-smoke.json"
+    },
+    {
+      "id": "VAL-10",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-05", "AC-06", "AC-07", "AC-16", "AC-19", "NFR-02", "NFR-04", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace <task-local-absolute-workspace> --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/manager-recovery-smoke.json --scenario manager-recovery --require-native-permissions",
+      "evidence_path": "artifacts/validation/manager-recovery-smoke.json"
+    },
+    {
+      "id": "VAL-11",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-14", "AC-15", "NFR-01", "NFR-03", "NFR-06", "NFR-08", "NFR-10"],
+      "command": "python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-process-manager --work-dir .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/tmp/planner-executor --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/planner-executor-regression.json",
+      "evidence_path": "artifacts/validation/planner-executor-regression.json"
+    },
+    {
+      "id": "VAL-12",
+      "kind": "test",
+      "required": true,
+      "covers": ["AC-01", "AC-08", "AC-09", "AC-14", "AC-15", "NFR-01", "NFR-03", "NFR-06", "NFR-08", "NFR-10"],
+      "command": "python -u -X utf8 -B evals/electron-ui-verifier/run_operation_regression.py --include-process-manager --work-dir .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/tmp/electron-verifier --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/electron-verifier-regression.json",
+      "evidence_path": "artifacts/validation/electron-verifier-regression.json"
+    },
+    {
+      "id": "VAL-13",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
+      "command": "每个 STG 完成后使用 complex-coding-reviewer code-review 对 stage target、context 和 validation claims 生成正式 receipt，无 blocking 或 major finding方可完成阶段",
+      "evidence_path": "artifacts/validation/stage-review-summary.json"
+    },
+    {
+      "id": "VAL-14",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-03", "AC-07", "AC-08", "AC-09", "AC-12", "AC-13", "AC-16", "AC-17", "AC-19", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-07", "NFR-08"],
+      "command": "用户推送最终 candidate 后运行 .github/workflows/process-manager-platforms.yml 的 Windows、Ubuntu、macOS matrix，并导入匹配 commit SHA、run ID 和 attempt 的 artifacts",
+      "evidence_path": "artifacts/validation/github-platform-matrix.json"
+    },
+    {
+      "id": "VAL-15",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-07", "AC-16", "AC-17", "NFR-01", "NFR-02", "NFR-03", "NFR-07"],
+      "command": "用户推送最终 candidate 后运行 Ubuntu scoped systemd-run delegated cgroup job，并导入匹配 commit SHA、run ID 和 attempt 的 populated、kill、owner-empty 与 unit cleanup evidence",
+      "evidence_path": "artifacts/validation/github-delegated-cgroup.json"
+    },
+    {
+      "id": "VAL-16",
+      "kind": "review",
+      "required": true,
+      "covers": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17", "AC-18", "NFR-01", "NFR-02", "NFR-03", "NFR-04", "NFR-05", "NFR-06", "NFR-07", "NFR-08", "NFR-09", "NFR-10"],
+      "command": "使用 complex-coding-reviewer code-review 和 final-integration scope 对最终代码、docs、tests、eval、CI 与当前 validation evidence 生成并校验正式 receipt",
+      "evidence_path": "artifacts/validation/final-review-summary.json"
+    },
+    {
+      "id": "VAL-17",
+      "kind": "lint",
+      "required": true,
+      "covers": ["AC-18", "NFR-02", "NFR-03", "NFR-05", "NFR-07", "NFR-08", "NFR-10"],
+      "command": "关闭 task sessions 和 owned runs，必要时停止 idle manager，验证 owner、bootstrap、runtime tmp 全空；扫描旧 public refs 和 changed-path allowlist；运行 git -c diff.autoRefreshIndex=false diff --check",
+      "evidence_path": "artifacts/validation/final-cleanup-audit.json"
+    },
+    {
+      "id": "VAL-18",
+      "kind": "smoke",
+      "required": true,
+      "covers": ["AC-08", "AC-09", "AC-10", "AC-16", "NFR-02", "NFR-03", "NFR-04", "NFR-07", "NFR-08"],
+      "command": "python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace <task-local-absolute-workspace> --output .harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/artifacts/validation/session-isolation-smoke.json --scenario session-isolation --require-native-permissions",
+      "evidence_path": "artifacts/validation/session-isolation-smoke.json"
+    }
+  ],
+  "research": {
+    "mode": "online-required",
+    "evidence_artifact_ids": ["ART-01", "ART-02"],
+    "unresolved": []
+  },
+  "dependency_selection": {
+    "mode": "none",
+    "necessity_result": "not-triggered",
+    "decision_ids": [],
+    "evidence_artifact_ids": [],
+    "decisions": []
+  },
+  "approval_policy": {
+    "implementation_requires_user_approval": true,
+    "commit_requires_explicit_authorization": true,
+    "external_write_requires_explicit_authorization": true,
+    "elevated_tool_requires_explicit_authorization": true
+  },
+  "reapproval_triggers": [
+    "manager state set、operation/session schema、owner-empty 终态语义或 current-only public contract 发生实质变化",
+    "Stage DAG、required validation、allowed/forbidden scope、默认资源上限或 consumer migration 范围发生变化",
+    "需要第三方依赖、系统服务、数据库、平台公开接口、兼容层、auto service restore、外部写入或提权",
+    "需要修改 ART-04 之外的其它 Skill 公共行为，或无法在一个 stage 原子迁移三个 consumers",
+    "三平台证据证明选定 owner/security 方案不可行，需要改变平台架构而非最小修复",
+    "active task pointer 冲突、用户改动或 baseline 漂移使当前计划不能安全执行"
+  ],
+  "stop_conditions": [
+    "用户尚未批准 implementation、请求暂停或撤销授权",
+    "任一 reapproval trigger 发生",
+    "owner、runtime、identity 或 context 无法安全验证，继续操作可能误杀或删除用户资源",
+    "required validation、blocking 或 major finding、blocking verification gap 在有界修复后仍未关闭",
+    "需要未授权 dependency、external write、push、elevation 或长期进程",
+    "active task pointer 属于另一非终态任务",
+    "无法生成真实、当前、目标绑定的 hosted、review 或 cleanup evidence"
+  ]
+}

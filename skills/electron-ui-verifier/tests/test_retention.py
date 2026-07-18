@@ -7,7 +7,6 @@ import json
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -18,6 +17,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
 from electron_verifier.errors import VerifierError  # noqa: E402
 from electron_verifier.knowledge_reset import KnowledgeReset  # noqa: E402
@@ -119,7 +119,7 @@ class RetentionTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(dir=TEST_ROOT)
+        self.temporary = TestTemporaryDirectory(dir=TEST_ROOT)
         self.root = Path(self.temporary.name) / "state"
         KnowledgeReset(self.root).ensure()
 
@@ -257,7 +257,7 @@ class InstallPathTests(unittest.TestCase):
         self.assertEqual(Path(__file__).resolve().parents[1], paths.root)
 
     def test_environment_omits_unknown_install_root(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             workspace = Path(folder) / "workspace"
             workspace.mkdir()
 
@@ -266,7 +266,7 @@ class InstallPathTests(unittest.TestCase):
             self.assertNotIn("skillRoot", environment)
 
     def test_service_launcher_uses_explicit_install_root(self) -> None:
-        with tempfile.TemporaryDirectory(dir=TEST_ROOT) as folder:
+        with TestTemporaryDirectory(dir=TEST_ROOT) as folder:
             workspace = Path(folder) / "workspace"
             install_root = Path(folder) / "copied-skill"
             workspace.mkdir()

@@ -10,15 +10,15 @@ description: Manage local long-running processes through one persistent, workspa
 ## 核心流程
 
 1. 若 workspace 尚无 manager config，运行 `scripts/pm_init.py --workspace <绝对路径>`。
-2. 运行 `scripts/pm_manager.py status`；仅在 manager offline 时运行 `scripts/pm_manager.py start`。不要判断当前 OS 或选择 backend。
-3. 从 `templates/service-direct.json` 或 `templates/service-script.json` 创建封闭 service config，并运行 `scripts/pm_validate.py --service <路径>`。
-4. 运行 `scripts/pm_start.py --service <路径>`，保存返回的 `processKey`。
-5. service 配置了 readiness 时，运行 `scripts/pm_ready.py --process-key <processKey>`；不得仅凭端口猜测成功。
-6. 使用 `pm_status.py`、`pm_logs.py` 和默认的 `pm_list.py` 做有界观察。只有确需历史记录时才用 `pm_list.py --history`。
-7. 使用 `pm_stop.py` 或 `pm_restart.py` 改变生命周期；绝不按任意 PID 清理。
-8. 把 `cleanupVerified: true` 和 `stopResult.ownerEmpty: true` 作为 stop/restart 完成证据。
+2. 运行 `scripts/pm_manager.py ensure --config <绝对路径>`，幂等收敛到 ready。不要判断当前 OS 或选择 backend。
+3. 从 `templates/service-direct.json` 或 `templates/service-script.json` 创建封闭 service config，并运行带显式 `--config` 的 `scripts/pm_validate.py`。
+4. 为本轮 task/validation 运行 `scripts/pm_session.py open`，保存 `sessionId` 与 `expiresAt`。预计跨越租约期限的有界步骤前显式 `renew`，不要启动隐藏 heartbeat。
+5. 运行 `scripts/pm_start.py --session-id <sessionId> --service <路径>`，保存返回的 `processKey`。只有计划明确要求跨 session 保留时才改用 `--persistent`。
+6. service 配置了 readiness 时，运行 `scripts/pm_ready.py --process-key <processKey>`；不得仅凭端口猜测成功。使用 `pm_status.py`、`pm_logs.py` 和默认的 `pm_list.py` 做有界观察。
+7. 使用 `pm_stop.py` 或 `pm_restart.py` 改变单个 service 生命周期；绝不按任意 PID 清理。
+8. 无论成功、失败或中断恢复，都在 `finally` 运行 `pm_session.py close --stop-manager-if-idle`。把 session close、`cleanupVerified: true` 和 owner-empty 结果作为完成证据。
 
-正常流程不要先运行 `pm_doctor.py`。只有统一命令失败且 backend/capability/selection reason 不清楚时，才按需运行 doctor 并读取 `references/platform-backends.md`。
+恢复任务时先运行只读 `pm_manager.py status`，严格按 `recommendedAction` 选择 `ensure`、`restart`、`wait` 或 `doctor`。正常流程不要先运行 `pm_doctor.py`；只有统一命令失败且错误分类或 backend/capability/selection reason 不清楚时才按需诊断。
 
 ## 硬规则
 
@@ -28,20 +28,23 @@ description: Manage local long-running processes through one persistent, workspa
 - target 必须以前台进程运行；自行 daemonize、脱离 owner 或留下后台子进程属于契约违规。
 - secret 只通过 `environment.fromEnv` 注入；不要把 secret 写进 config、argv、响应或日志。日志脱敏是纵深防御，不是完整 DLP。
 - readiness、日志读取、请求体、history 与 prune 全部必须有硬上限。
+- 每个公共命令必须显式传绝对 `--workspace` 或 `--config`；不得依赖当前工作目录选择 runtime。
+- 非持久 start 必须绑定当前 manager instance 的 live session。session close、过期或 manager replacement 后，旧 session 不能续租或启动新 run。
 - HTTP/TCP readiness 只允许 loopback；动态端口使用增量 log readiness 和命名捕获组。
 - 不直接调用 control API，不读取或修改内部 token、manager identity、owner identity 和 state 文件。
+- shell/profile 的 access denied 不等于 runtime ACL 错误。没有标准 JSON envelope 时，不删 runtime、不自动提权，先区分外层环境与 Process Manager 错误。
 - 不兼容旧 launcher、旧 manager identity 或旧 runtime schema；遇到旧 runtime 应明确重建，不做静默迁移。
 
 ## 脚本
 
-- `pm_manager.py start|status|stop`：统一 manager bootstrap 与关闭入口。
+- `pm_manager.py ensure|status|restart|stop`：统一 manager 收敛、只读状态、重启与关闭入口。
 - `pm_init.py`、`pm_validate.py`：初始化 runtime 并校验封闭 schema。
+- `pm_session.py open|renew|status|close`：管理 task/validation 租约与成组清理。
 - `pm_start.py`、`pm_ready.py`、`pm_status.py`：启动、等待和查看 run。
 - `pm_logs.py`、`pm_list.py`：有界读取日志与状态。
 - `pm_stop.py`、`pm_restart.py`：graceful-then-force 生命周期。
 - `pm_prune.py`：默认 dry-run，显式 `--apply` 后修剪 inactive history。
-- `pm_health.py`、`pm_doctor.py`：轻量健康检查与按需深度诊断。
-- `pm_shutdown.py`：经认证关闭 manager 并收口其全部 owned run。
+- `pm_doctor.py`：按需输出平台中立 manager 状态与受限原生诊断。
 
 ## 按需参考
 

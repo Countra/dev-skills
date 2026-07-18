@@ -6,7 +6,6 @@ import asyncio
 import os
 import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,6 +15,7 @@ from unittest import mock
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
+from _helpers import TestTemporaryDirectory  # noqa: E402
 from electron_verifier.actions import ActionExecution  # noqa: E402
 from electron_verifier.asset_execution import AssetExecutionService  # noqa: E402
 from electron_verifier.canonical_store import CanonicalStore  # noqa: E402
@@ -58,7 +58,7 @@ class AssetExecutionTests(unittest.TestCase):
         shutil.rmtree(TEST_ROOT, ignore_errors=True)
 
     def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory(dir=TEST_ROOT)
+        self.temporary = TestTemporaryDirectory(dir=TEST_ROOT)
         self.root = Path(self.temporary.name) / "state"
         KnowledgeReset(self.root).ensure()
         self.store = CanonicalStore(self.root)
