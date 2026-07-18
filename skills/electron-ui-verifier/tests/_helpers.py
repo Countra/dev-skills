@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 class TestTemporaryDirectory:
-    """创建可被 Windows 受限测试身份继续访问的临时目录。"""
+    """创建绝对路径且可被 Windows 受限测试身份继续访问的临时目录。"""
 
     __test__ = False
 
@@ -22,12 +22,12 @@ class TestTemporaryDirectory:
         self._delegate = None
         self._finalizer = None
         self._path: Path | None = None
+        root = Path(os.path.abspath(dir if dir is not None else tempfile.gettempdir()))
+        root.mkdir(parents=True, exist_ok=True)
         if os.name != "nt":
-            self._delegate = tempfile.TemporaryDirectory(dir=dir)
+            self._delegate = tempfile.TemporaryDirectory(dir=root)
             self.name = self._delegate.name
             return
-        root = Path(dir) if dir is not None else Path(tempfile.gettempdir())
-        root.mkdir(parents=True, exist_ok=True)
         for _ in range(100):
             path = root / f"tmp{secrets.token_hex(8)}"
             try:

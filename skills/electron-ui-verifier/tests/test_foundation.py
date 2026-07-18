@@ -49,6 +49,18 @@ class AtomicIoTests(unittest.TestCase):
         self.assertFalse(path.exists())
         temporary.cleanup()
 
+    def test_test_temporary_directory_normalizes_relative_root(self) -> None:
+        relative_root = Path(".harness") / f"electron-ui-verifier-relative-root-{os.getpid()}"
+        shutil.rmtree(relative_root, ignore_errors=True)
+        temporary = TestTemporaryDirectory(dir=relative_root)
+        path = Path(temporary.name)
+        try:
+            self.assertTrue(path.is_absolute())
+            self.assertEqual(relative_root.resolve(), path.parent)
+        finally:
+            temporary.cleanup()
+            shutil.rmtree(relative_root, ignore_errors=True)
+
     def test_tests_do_not_use_restrictive_stdlib_temporary_directory(self) -> None:
         test_dir = Path(__file__).resolve().parent
         forbidden = "tempfile." + "TemporaryDirectory"
