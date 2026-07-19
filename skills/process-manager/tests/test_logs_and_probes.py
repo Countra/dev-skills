@@ -93,6 +93,18 @@ class LogAndProbeTests(unittest.TestCase):
                 self.assertTrue(scanner.scan())
             self.assertEqual(scanner.text.splitlines(), ["ready"])
 
+    def test_incremental_scanner_restarts_after_same_identity_size_regression(self) -> None:
+        with workspace_directory() as directory:
+            path = Path(directory) / "stdout.log"
+            path.write_bytes(b"x" * 128)
+            scanner = IncrementalLogScanner(path, 0, 1024)
+            self.assertTrue(scanner.scan())
+            original_identity = (path.stat().st_dev, path.stat().st_ino)
+            path.write_text("large-log-ready\n", encoding="utf-8")
+            self.assertEqual(original_identity, (path.stat().st_dev, path.stat().st_ino))
+            self.assertTrue(scanner.scan())
+            self.assertIn("large-log-ready", scanner.text)
+
     def test_log_rotation_and_secret_redaction_cross_chunk_boundary(self) -> None:
         redactor = SecretRedactor(["secret-value"])
         value = redactor.feed(b"before-secret-") + redactor.feed(b"value-after") + redactor.finish()
