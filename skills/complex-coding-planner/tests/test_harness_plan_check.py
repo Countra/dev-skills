@@ -19,7 +19,12 @@ sys.path.insert(0, str(REVIEWER_SCRIPTS_DIR))
 
 from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
+from complex_coding_reviewer.assemble import assemble_receipt  # noqa: E402
+from complex_coding_reviewer.dispatch import prepare_dispatch  # noqa: E402
+from complex_coding_reviewer.dispatch_lifecycle import finalize_dispatch  # noqa: E402
 from complex_coding_reviewer.errors import ReviewError  # noqa: E402
+from complex_coding_reviewer.io import resolve_review_ref, sha256_file  # noqa: E402
+from complex_coding_reviewer.semantic_result import RECEIPT_SEMANTIC_FIELDS  # noqa: E402
 from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
 from harness_plan_check import validate_task  # noqa: E402
 
@@ -69,6 +74,7 @@ def valid_review_receipt(
     *,
     review_id: str = "REV-PLAN-001",
     supersedes_review_id: str | None = None,
+    extra_context_entries: list[tuple[str, str]] | None = None,
 ) -> dict[str, object]:
     brief = _plan_review_brief(task_dir)
     write_json(task_dir / PLAN_REVIEW_BRIEF_PATH, brief)
@@ -81,6 +87,7 @@ def valid_review_receipt(
         for item in target["manifest"]
         if item["state"] == "present" and item["path"] != PLAN_REVIEW_BRIEF_PATH
     )
+    context_entries.extend(extra_context_entries or [])
     context = build_context_target(
         task_dir,
         root_kind="task-dir",
@@ -89,7 +96,8 @@ def valid_review_receipt(
     )
     target_paths = [str(item["path"]) for item in target["manifest"]]
     evidence_ref = PLAN_REVIEW_BRIEF_PATH
-    return {
+    semantic = {
+        "kind": "review-semantic-result",
         "review_id": review_id,
         "profile": "plan-review",
         "scope": {
@@ -97,14 +105,8 @@ def valid_review_receipt(
             "task_id": identity["task_id"],
             "plan_revision": identity["plan_revision"],
         },
-        "target": target,
-        "context": context,
-        "reviewer": {
-            "mode": "same-context",
-            "identity": "planner-integration-test",
-            "independence_claim": False,
-            "capability_limits": ["未运行目标代码。"],
-        },
+        "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "standards": [
             {
                 "id": "STD-01",
@@ -171,8 +173,85 @@ def valid_review_receipt(
         "summary": "当前 plan bundle 已完成正式方案审查。",
         "limitations": ["same-context 不构成独立审查证明。"],
         "supersedes_review_id": supersedes_review_id,
-        "reviewed_at": "2026-07-16T00:00:00+00:00",
+        "reviewed_at": "2026-07-16T00:00:02+00:00",
     }
+    review_root = task_dir / "artifacts" / "reviews"
+    target_path = review_root / "targets" / f"{review_id}.json"
+    context_path = review_root / "contexts" / f"{review_id}.json"
+    write_json(target_path, target)
+    write_json(context_path, context)
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    policy = "strict" if contract["plan_profile"] == "full" else "conditional"
+    preparation = prepare_dispatch(
+        review_id=review_id,
+        target_path=target_path,
+        context_path=context_path,
+        review_root=review_root,
+        policy=policy,
+        capability_status="available",
+        tool_family="planner-integration-test",
+        available_tools=["close_agent", "spawn_agent", "wait_agent"],
+        task_dir=task_dir,
+        prepared_at="2026-07-16T00:00:00+00:00",
+    )
+    preparation_path = review_root / "dispatches" / f"{review_id}-prepare.json"
+    write_json(preparation_path, preparation)
+    outcome = {
+        "status": "completed",
+        "agent_id": f"planner-agent-{review_id.lower()}",
+        "fork_context": False,
+        "started_at": "2026-07-16T00:00:01+00:00",
+        "completed_at": "2026-07-16T00:00:02+00:00",
+        "schema_repair_count": 0,
+        "context_expansion_requested": False,
+        "parent_judgment_included": False,
+        "recursive_delegation_allowed": False,
+        "failure": None,
+        "close": {
+            "required": True,
+            "attempted": True,
+            "status": "closed",
+            "closed_at": "2026-07-16T00:00:03+00:00",
+            "error": None,
+        },
+        "fallback": {"mode": "none", "reason_code": None, "reason": None},
+    }
+    dispatch = finalize_dispatch(
+        preparation,
+        outcome,
+        preparation_path=preparation_path,
+        review_root=review_root,
+        task_dir=task_dir,
+        finalized_at="2026-07-16T00:00:04+00:00",
+    )
+    dispatch_path = review_root / "dispatches" / f"{review_id}.json"
+    result_path = review_root / Path(
+        *preparation["inputs"]["semantic_result_ref"].split("/")
+    )
+    write_json(dispatch_path, dispatch)
+    write_json(result_path, semantic)
+    return assemble_receipt(
+        target_path=target_path,
+        context_path=context_path,
+        dispatch_path=dispatch_path,
+        semantic_result_path=result_path,
+        review_root=review_root,
+        task_dir=task_dir,
+    )
+
+
+def sync_semantic_result(receipt: dict[str, object], task_dir: Path) -> None:
+    """把 receipt 语义修改同步回子 Agent 原始结果并刷新摘要。"""
+
+    review_root = task_dir / "artifacts" / "reviews"
+    reviewer = receipt["reviewer"]
+    assert isinstance(reviewer, dict)
+    result_path = resolve_review_ref(reviewer["semantic_result_ref"], review_root)
+    semantic = json.loads(result_path.read_text(encoding="utf-8"))
+    for field in RECEIPT_SEMANTIC_FIELDS:
+        semantic[field] = receipt[field]
+    write_json(result_path, semantic)
+    reviewer["semantic_result_digest"] = sha256_file(result_path)
 
 
 def valid_contract() -> dict[str, object]:
@@ -306,6 +385,9 @@ def valid_plan(extra: str = "") -> str:
         "正式方案审查": (
             "- Profile: `plan-review`\n"
             "- Scope: `managed-plan`\n"
+            "- Coordinator: `review-coordinator`\n"
+            "- Dispatch: `complex-coding-reviewer/scripts/review_dispatch.py`\n"
+            "- Expected dispatch policy: `conditional`\n"
             "- Current receipt: `artifacts/reviews/plan-review-attempt-1.json`\n"
             "- Validator: `complex-coding-reviewer/scripts/review_validate.py`\n"
             "- Canonical result: JSON receipt only."
@@ -393,23 +475,37 @@ class PlannerBundleTest(unittest.TestCase):
     def test_valid_bundle_passes_approval(self) -> None:
         self.assertEqual(set(), self.error_codes(self.make_task()))
 
+    def test_full_profile_review_uses_strict_dispatch(self) -> None:
+        contract = valid_contract()
+        contract["plan_profile"] = "full"
+        plan = (
+            valid_plan()
+            .replace("Plan profile: lite", "Plan profile: full")
+            .replace(
+                "Expected dispatch policy: `conditional`",
+                "Expected dispatch policy: `strict`",
+            )
+        )
+        task_dir = self.make_task(contract, plan)
+        receipt_path = (
+            task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
+        )
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+        dispatch_path = resolve_review_ref(
+            receipt["reviewer"]["dispatch_ref"],
+            task_dir / "artifacts" / "reviews",
+        )
+        dispatch = json.loads(dispatch_path.read_text(encoding="utf-8"))
+        self.assertEqual("strict", dispatch["policy"])
+
     def test_plan_review_context_must_be_approval_included(self) -> None:
         task_dir = self.make_task()
         extra = task_dir / "unapproved-note.md"
         extra.write_text("unapproved context\n", encoding="utf-8")
         path = task_dir / "artifacts" / "reviews" / "plan-review-attempt-1.json"
-        receipt = json.loads(path.read_text(encoding="utf-8"))
-        context = receipt["context"]
-        entries = [
-            (item["path"], item["role"])
-            for item in context["manifest"]
-        ]
-        entries.append(("unapproved-note.md", "other"))
-        receipt["context"] = build_context_target(
+        receipt = valid_review_receipt(
             task_dir,
-            root_kind="task-dir",
-            label=context["identity"]["label"],
-            entries=entries,
+            extra_context_entries=[("unapproved-note.md", "other")],
         )
         write_json(path, receipt)
         self.assertIn(
@@ -504,6 +600,7 @@ class PlannerBundleTest(unittest.TestCase):
             "advisory": 0,
             "total": 1,
         }
+        sync_semantic_result(receipt, task_dir)
         write_json(path, receipt)
         self.assertIn("TASK_ARTIFACT_REVIEW_NOT_PASSED", self.error_codes(task_dir))
 
@@ -517,7 +614,7 @@ class PlannerBundleTest(unittest.TestCase):
         issues = validate_task(task_dir, "approval")
         invalid = [issue for issue in issues if issue.code == "TASK_ARTIFACT_REVIEW_INVALID"]
         self.assertTrue(invalid)
-        self.assertIn("REVIEW_TARGET_STALE", invalid[0].message)
+        self.assertIn("REVIEW_DISPATCH_STALE", invalid[0].message)
 
     def test_next_review_attempt_supersedes_immediate_predecessor(self) -> None:
         task_dir = self.make_task()

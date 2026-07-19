@@ -26,8 +26,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: skills/electron-ui-verifier/requirements.txt
       - name: Install locked runtime
         run: python -m pip install -r skills/electron-ui-verifier/requirements.txt
       - name: Install Chromium and Linux dependencies
@@ -62,9 +60,3 @@ jobs:
           python -u -X utf8 -B evals/electron-ui-verifier/run_retrieval_benchmark.py
           --work-dir ".harness/electron-ui-verifier-ci/${{ matrix.os }}/retrieval"
           --output ".harness/electron-ui-verifier-ci/${{ matrix.os }}/retrieval/result.json"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: electron-ui-verifier-${{ matrix.os }}
-          path: .harness/electron-ui-verifier-ci/${{ matrix.os }}/
-          if-no-files-found: warn

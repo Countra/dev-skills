@@ -38,7 +38,7 @@
       "category": "known-defect",
       "mutation": "major-forced-pass",
       "expected_valid": false,
-      "expected_code": "REVIEW_CONTRACT_VERDICT_MISMATCH"
+      "expected_code": "REVIEW_RESULT_INVALID"
     },
     {
       "id": "plan-missing-lens",
@@ -46,7 +46,7 @@
       "category": "known-defect",
       "mutation": "missing-lens",
       "expected_valid": false,
-      "expected_code": "REVIEW_PROFILE_LENSES_INCOMPLETE"
+      "expected_code": "REVIEW_RESULT_INVALID"
     },
     {
       "id": "code-count-drift",
@@ -54,7 +54,7 @@
       "category": "known-defect",
       "mutation": "count-drift",
       "expected_valid": false,
-      "expected_code": "REVIEW_CONTRACT_COUNT_MISMATCH"
+      "expected_code": "REVIEW_RESULT_INVALID"
     },
     {
       "id": "plan-false-independence",
@@ -70,7 +70,7 @@
       "category": "known-defect",
       "mutation": "stale-target",
       "expected_valid": false,
-      "expected_code": "REVIEW_TARGET_STALE"
+      "expected_code": "REVIEW_DISPATCH_STALE"
     },
     {
       "id": "code-stale-context",
@@ -78,7 +78,7 @@
       "category": "known-defect",
       "mutation": "stale-context",
       "expected_valid": false,
-      "expected_code": "REVIEW_CONTEXT_STALE"
+      "expected_code": "REVIEW_DISPATCH_STALE"
     },
     {
       "id": "code-unbound-lens-evidence",
@@ -86,7 +86,7 @@
       "category": "known-defect",
       "mutation": "unbound-lens-evidence",
       "expected_valid": false,
-      "expected_code": "REVIEW_COVERAGE_EVIDENCE_INVALID"
+      "expected_code": "REVIEW_RESULT_INVALID"
     },
     {
       "id": "code-unknown-root-field",

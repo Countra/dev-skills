@@ -16,15 +16,19 @@ EXECUTOR_SCRIPTS = (
     / "complex-coding-executor"
     / "scripts"
 )
+EVALS_ROOT = Path(__file__).resolve().parents[1]
 REVIEWER_SCRIPTS = (
     Path(__file__).resolve().parents[2]
     / "skills"
     / "complex-coding-reviewer"
     / "scripts"
 )
+if str(EVALS_ROOT) not in sys.path:
+    sys.path.insert(0, str(EVALS_ROOT))
 if str(REVIEWER_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(REVIEWER_SCRIPTS))
 
+from review_fixture import assemble_fixture_receipt  # noqa: E402
 from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.contract import CODE_LENSES  # noqa: E402
 
@@ -255,18 +259,13 @@ def create_review_evidence(
         entries=context_entries,
     )
     target_paths = [str(item["path"]) for item in target["manifest"]]
-    receipt = {
+    semantic = {
+        "kind": "review-semantic-result",
         "review_id": review_id,
         "profile": "code-review",
         "scope": scope,
-        "target": target,
-        "context": context,
-        "reviewer": {
-            "mode": "same-context",
-            "identity": "deterministic-executor-eval",
-            "independence_claim": False,
-            "capability_limits": ["未执行目标代码或调用 Agent。"],
-        },
+        "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "standards": [
             {
                 "id": "STD-01",
@@ -333,8 +332,26 @@ def create_review_evidence(
         "summary": "确定性 fixture 的当前目标通过 code-review 契约。",
         "limitations": ["该回执只验证生命周期集成，不冒充人工语义审查。"],
         "supersedes_review_id": None,
-        "reviewed_at": "2026-07-16T00:00:00+00:00",
+        "reviewed_at": "2026-07-16T00:00:02+00:00",
     }
+    if scope["kind"] == "final-integration":
+        dispatch_policy = "strict"
+    else:
+        dispatch_policy = (
+            "strict"
+            if stages[scope["stage_id"]].get("risk") == "high"
+            else "conditional"
+        )
+    review_root = task_dir / "artifacts" / "reviews"
+    receipt = assemble_fixture_receipt(
+        root=workspace,
+        review_root=review_root,
+        target=target,
+        context=context,
+        semantic=semantic,
+        policy=dispatch_policy,
+        delegated=True,
+    )
     report_ref = f"artifacts/reviews/{filename}.json"
     report = task_dir / report_ref
     report.parent.mkdir(parents=True, exist_ok=True)
@@ -349,6 +366,9 @@ def create_review_evidence(
         "scope": scope,
         "target_digest": target["digest"],
         "context_digest": context["digest"],
+        "reviewer_mode": receipt["reviewer"]["mode"],
+        "independence_claim": receipt["reviewer"]["independence_claim"],
+        "dispatch_id": receipt["reviewer"]["dispatch_id"],
         "verdict": "passed",
         "report_ref": report_ref,
         "open_counts": receipt["open_counts"],

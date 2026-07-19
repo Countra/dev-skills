@@ -393,10 +393,14 @@ Changelog 计划（Changelog plan）:
 - Producer：`complex-coding-planner` 负责生成和修复 plan bundle，不生成正式 verdict
 - Profile：`plan-review`
 - Scope：`managed-plan`
+- Coordinator：`review-coordinator`；不执行语义审查，只派发、等待、持久化、校验并关闭 Agent
+- Expected dispatch policy：`strict`（full）/ `conditional`（lite、standard）
+- Dispatch helper：`complex-coding-reviewer/scripts/review_dispatch.py`
 - Review brief：`artifacts/reviews/plan-review-brief.json`，必须 approval-included 并声明当前 requirements/constraints/claims/risk focus
 - Current receipt：`artifacts/reviews/plan-review-attempt-1.json`
 - Validator：`complex-coding-reviewer/scripts/review_validate.py`
-- Canonical result：只读取上述 JSON receipt；approval checker 重建 target/context 并校验 coverage、gaps 与 lineage，计划正文不复制 verdict 或 finding 状态
+- Supporting artifacts：target/context、dispatch 与 raw semantic result 由 canonical receipt 通过 ref/digest 间接绑定，不进入本计划 Artifact Index
+- Canonical result：只读取上述 JSON receipt；approval checker 重建 target/context 并校验 policy、Agent lifecycle、supporting artifact digest、coverage、gaps 与 lineage，计划正文不复制 verdict 或 finding 状态
 - Retry：修复目标后保留旧文件，把 contract 指向递增 attempt，并通过 `supersedes_review_id` 连接前序 receipt
 
 ## 生产者就绪门禁（Producer Readiness Gate）

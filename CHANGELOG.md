@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-07-18
+
+### Breaking: Reviewer 独立子 Agent 审查
+
+- `complex-coding-reviewer` 切换为 `review-coordinator` 与单个 `delegated-reviewer` 的职责模型；宿主能力可用时 formal review
+  必须显式使用 `fork_context=false` 派发，子 Agent 不得递归派发或修改目标。
+- 新增 closed preparation/final dispatch、raw semantic result 和 assembler；canonical receipt 通过 ref/raw SHA-256 绑定
+  supporting artifacts，并验证 Agent ID、关闭状态、双 digest、policy 和 provenance。
+- full plan、high-risk stage 与 final-integration 使用 strict；其它正式审查使用 conditional，工具可用时仍必须委派，
+  strict 能力缺失或 Agent 未关闭时 fail closed。
+- Planner/Executor 只冻结输入、传递 expected policy 并消费 validated receipt；`review_recorded` 新增 reviewer mode、
+  independence claim 与 dispatch ID，不再由调用方生成正式 verdict。
+- helper 与 CI 保持 `agent_calls=0`，不调用 `codex exec`、模型 API 或后台服务；用户 observation workflow 单独验证每次恰好
+  一个 Agent、无递归、receipt 通过和最终关闭。
+- semantic corpus 新增 framing bias、目标内 prompt injection 与父子结论污染案例；当前契约一次性切换，不保留旧 schema
+  或双读写兼容层。
+- Agent-bound review package 增加 512 KiB 原始文件与声明内容双预算；大目标省略可选 package 后仍按完整
+  target/context 审查，避免把完整文件与大 diff 一次性注入子 Agent。
+- dispatch 新增由 policy 与冻结 `requested_risk_focus` 派生的等待预算等级；普通审查保持 15 分钟上限，
+  strict 或显式风险焦点审查默认 30 分钟，并可在当前任务剩余预算内按冻结目标规模显式延长，且不改变 dispatch policy
+  或 verdict。
+- 审查加固阶段进一步封闭 Agent-bound package 内容、显式 gate policy、重试不可降级、schema repair 能力与完整时间线；
+  allowlist prompt 同时绑定实际需要的 workspace/task-dir 根路径，省略 package 时不再依赖当前目录猜测。
+- allowlist prompt 与 preparation/final dispatch 共同冻结 Reviewer Skill SHA-256，并固定 prompt 角色、只读边界、输入
+  allowlist 与输出契约的优先级；Skill 漂移稳定进入 stale 生命周期，仍可封存 Agent 关闭证据。
+- coordinator 将 Agent 等待拆成不超过 60 秒的可观察轮询，保持单一总 timeout；宿主恢复后遇到 `not_found` 时停止
+  重复查询并封存未关闭失败，避免长审查表现为无响应或被误判为 ACL 问题。
+- Agent-bound prompt 明确禁止 delegated reviewer 运行测试、构建、目标程序、网络请求或有副作用命令，使
+  `tests-not-run-by-reviewer` capability limit 与冻结证据只读模型保持一致。
+
 ## 2026-07-16
 
 ### Breaking: Planner、Reviewer、Executor 审查职责重构

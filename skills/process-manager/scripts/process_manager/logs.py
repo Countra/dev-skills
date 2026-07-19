@@ -481,7 +481,8 @@ class IncrementalLogScanner:
                         continue
                     current_identities.add(identity)
                     size = int(stat.st_size)
-                    offset = min(self._offsets.get(identity, 0), size)
+                    offset = self._offsets.get(identity, 0)
+                    offset = 0 if size < offset else offset
                     take = min(size - offset, remaining)
                     if take > 0:
                         handle.seek(offset)
@@ -494,7 +495,5 @@ class IncrementalLogScanner:
                     self._offsets[identity] = offset
             except OSError as exc:
                 raise StateError("readiness 日志读取失败") from exc
-        self._offsets = {
-            identity: offset for identity, offset in self._offsets.items() if identity in current_identities
-        }
+        self._offsets = {identity: offset for identity, offset in self._offsets.items() if identity in current_identities}
         return appended

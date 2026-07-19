@@ -60,7 +60,7 @@ class CiContractTest(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, self.lower)
 
-    def test_permissions_and_evidence_are_bounded(self) -> None:
+    def test_permissions_are_read_only_and_evidence_is_ephemeral(self) -> None:
         self.assertIn("permissions:\n  contents: read", self.text)
         self.assertIn("planner-evals.json", self.text)
         self.assertIn("reviewer-evals.json", self.text)
@@ -70,8 +70,14 @@ class CiContractTest(unittest.TestCase):
         self.assertIn("reviewer-static.json", self.text)
         self.assertIn("executor-evals.json", self.text)
         self.assertIn("cross-review.json", self.text)
-        self.assertIn("planner-reviewer-executor-evidence", self.text)
-        self.assertIn("if-no-files-found: error", self.text)
+        for forbidden in (
+            "actions/upload-artifact",
+            "actions/download-artifact",
+            "actions/cache",
+            "cache:",
+            "retention-days:",
+        ):
+            self.assertNotIn(forbidden, self.lower)
 
     def test_installer_auto_discovers_reviewer(self) -> None:
         installer = (REPO_ROOT / "skill.sh").read_text(encoding="utf-8")

@@ -14,13 +14,28 @@ from .context import (
     verify_context_freshness,
 )
 from .errors import ReviewError
-from .io import read_bytes, resolve_relative_file, resolve_root
+from .io import load_json_object, read_bytes, resolve_relative_file, resolve_root
 from .target import validate_target_shape, verify_target_freshness
 
 
 MAX_PACKAGE_FILES = 128
 MAX_PACKAGE_BYTES = 4 * 1024 * 1024
+MAX_DISPATCH_PACKAGE_BYTES = 512 * 1024
 GIT_TIMEOUT_SECONDS = 30
+PACKAGE_FIELDS = {
+    "target_digest",
+    "context_digest",
+    "generated_at",
+    "limits",
+    "path_count",
+    "byte_count",
+    "truncated",
+    "entries",
+    "git",
+}
+LIMIT_FIELDS = {"max_files", "max_bytes", "max_dispatch_bytes"}
+ENTRY_FIELDS = {"source", "path", "role", "state", "encoding", "content"}
+GIT_FIELDS = {"commits", "stat", "diff"}
 
 
 def _root(
@@ -156,6 +171,192 @@ def _git_view(target: dict[str, Any], repository: Path) -> dict[str, str] | None
     }
 
 
+def _closed(value: Any, fields: set[str], path: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "值必须是 object。", path=path)
+    unknown = sorted(set(value) - fields)
+    missing = sorted(fields - set(value))
+    if unknown or missing:
+        raise ReviewError(
+            "REVIEW_PACKAGE_INVALID",
+            f"package 封闭字段不匹配：unknown={unknown}, missing={missing}",
+            path=path,
+        )
+    return value
+
+
+def _package_timestamp(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "generated_at 必须是非空 RFC3339。")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "generated_at 必须是 RFC3339。") from exc
+    if parsed.tzinfo is None:
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "generated_at 必须包含时区。")
+    return value
+
+
+def _validate_package_shape(
+    package: Any,
+    *,
+    target: dict[str, Any],
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    value = _closed(package, PACKAGE_FIELDS, "$.package")
+    if (
+        value["target_digest"] != target["digest"]
+        or value["context_digest"] != context["digest"]
+    ):
+        raise ReviewError("REVIEW_PACKAGE_STALE", "package 未绑定当前 target/context。")
+    _package_timestamp(value["generated_at"])
+    limits = _closed(value["limits"], LIMIT_FIELDS, "$.package.limits")
+    expected_limits = {
+        "max_files": MAX_PACKAGE_FILES,
+        "max_bytes": MAX_PACKAGE_BYTES,
+        "max_dispatch_bytes": MAX_DISPATCH_PACKAGE_BYTES,
+    }
+    if limits != expected_limits:
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "package limits 与当前契约不一致。")
+    path_count = value["path_count"]
+    byte_count = value["byte_count"]
+    if (
+        isinstance(path_count, bool)
+        or not isinstance(path_count, int)
+        or path_count < 0
+        or isinstance(byte_count, bool)
+        or not isinstance(byte_count, int)
+        or byte_count < 0
+        or value["truncated"] is not False
+    ):
+        raise ReviewError(
+            "REVIEW_PACKAGE_INVALID",
+            "path_count/byte_count 必须是非负整数且 truncated=false。",
+        )
+    entries = value["entries"]
+    if not isinstance(entries, list) or path_count != len(entries):
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "path_count 与 entries 数量不一致。")
+    expected_entries = {
+        (source, item["path"]): item
+        for source, manifest in (
+            ("target", target["manifest"]),
+            ("context", context["manifest"]),
+        )
+        for item in manifest
+    }
+    actual_keys: set[tuple[str, str]] = set()
+    for index, raw in enumerate(entries):
+        item = _closed(raw, ENTRY_FIELDS, f"$.package.entries[{index}]")
+        source = item["source"]
+        path = item["path"]
+        if source not in {"target", "context"} or not isinstance(path, str):
+            raise ReviewError("REVIEW_PACKAGE_INVALID", "package entry source/path 无效。")
+        key = (source, path)
+        if key in actual_keys or key not in expected_entries:
+            raise ReviewError("REVIEW_PACKAGE_INVALID", "package entry 重复或不属于冻结 manifest。")
+        actual_keys.add(key)
+        expected = expected_entries[key]
+        if item["role"] != expected["role"] or item["state"] != expected["state"]:
+            raise ReviewError("REVIEW_PACKAGE_INVALID", "package entry role/state 与 manifest 不一致。")
+        if item["state"] == "deleted":
+            if item["encoding"] is not None or item["content"] is not None:
+                raise ReviewError("REVIEW_PACKAGE_INVALID", "deleted package entry 不得包含内容。")
+            continue
+        if item["encoding"] == "utf-8-line-numbered":
+            if not isinstance(item["content"], str):
+                raise ReviewError("REVIEW_PACKAGE_INVALID", "UTF-8 package entry 必须包含文本。")
+        elif item["encoding"] in {"binary", "redacted-sensitive-path"}:
+            if item["content"] is not None:
+                raise ReviewError("REVIEW_PACKAGE_INVALID", "binary/redacted entry 不得包含文本。")
+        else:
+            raise ReviewError("REVIEW_PACKAGE_INVALID", "package entry encoding 无效。")
+    if actual_keys != set(expected_entries):
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "package entries 未完整覆盖冻结 manifest。")
+    git = value["git"]
+    if target["kind"] in {"git-diff", "commit-range"}:
+        git_view = _closed(git, GIT_FIELDS, "$.package.git")
+        if not all(isinstance(git_view[field], str) for field in GIT_FIELDS):
+            raise ReviewError("REVIEW_PACKAGE_INVALID", "package git 视图必须是字符串。")
+    elif git is not None:
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "非 Git target 不得包含 git 阅读视图。")
+    source_bytes = sum(
+        int(item["size"])
+        for manifest in (target["manifest"], context["manifest"])
+        for item in manifest
+        if item["state"] == "present"
+    )
+    git_bytes = (
+        sum(len(git[field].encode("utf-8")) for field in GIT_FIELDS)
+        if isinstance(git, dict)
+        else 0
+    )
+    if byte_count != source_bytes + git_bytes:
+        raise ReviewError("REVIEW_PACKAGE_INVALID", "package byte_count 与冻结内容不一致。")
+    return value
+
+
+def load_dispatch_package(
+    path: Path,
+    *,
+    target: dict[str, Any],
+    context: dict[str, Any],
+    workspace: Path | None,
+    task_dir: Path | None,
+    check_freshness: bool,
+) -> dict[str, Any]:
+    """读取 Agent package，并执行闭合结构、预算与内容重放校验。"""
+
+    try:
+        artifact_size = path.stat().st_size
+    except OSError as exc:
+        raise ReviewError(
+            "REVIEW_PACKAGE_INVALID",
+            f"无法读取 review package 元数据：{exc}",
+            path=str(path),
+        ) from exc
+    if artifact_size > MAX_DISPATCH_PACKAGE_BYTES:
+        raise ReviewError(
+            "REVIEW_PACKAGE_LIMIT_EXCEEDED",
+            "Agent 派发 package 超过 512 KiB；请省略 --package 或拆分审查目标。",
+            path=str(path),
+        )
+    package = load_json_object(path, code="REVIEW_PACKAGE_INVALID")
+    byte_count = package.get("byte_count")
+    if (
+        isinstance(byte_count, bool)
+        or not isinstance(byte_count, int)
+        or byte_count < 0
+        or package.get("truncated") is not False
+    ):
+        raise ReviewError(
+            "REVIEW_PACKAGE_INVALID",
+            "Agent 派发 package 必须声明非负 byte_count 且 truncated=false。",
+            path=str(path),
+        )
+    if byte_count > MAX_DISPATCH_PACKAGE_BYTES:
+        raise ReviewError(
+            "REVIEW_PACKAGE_LIMIT_EXCEEDED",
+            "Agent 派发 package 的声明内容超过 512 KiB；请省略 --package 或拆分审查目标。",
+            path=str(path),
+        )
+    checked = _validate_package_shape(package, target=target, context=context)
+    if check_freshness:
+        expected = build_review_package(
+            target,
+            context,
+            workspace=workspace,
+            task_dir=task_dir,
+            generated_at=checked["generated_at"],
+        )
+        if checked != expected:
+            raise ReviewError(
+                "REVIEW_PACKAGE_INVALID",
+                "package 内容不是由当前冻结 target/context 确定性生成。",
+                path=str(path),
+            )
+    return checked
+
+
 def build_review_package(
     target: dict[str, Any],
     context: dict[str, Any],
@@ -216,6 +417,7 @@ def build_review_package(
         "limits": {
             "max_files": MAX_PACKAGE_FILES,
             "max_bytes": MAX_PACKAGE_BYTES,
+            "max_dispatch_bytes": MAX_DISPATCH_PACKAGE_BYTES,
         },
         "path_count": len(entries),
         "byte_count": total_bytes + git_bytes,

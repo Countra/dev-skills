@@ -49,13 +49,23 @@
 1. `stage_started` 的 attempt 必须逐次递增，依赖 stage 必须完成。
 2. `validation_recorded` 只能引用该 stage 声明的 VAL，必须携带 current attempt/target、command、exit code、claim source/boundary；只有 `observed + passed + exit_code=0` 可以建立通过门禁，`reported`/`not-run` 不可以。
 3. passed validation 必须引用真实 task-local evidence 文件；`RUN_STATE_VALIDATION_TARGET_MISMATCH` 表示验证和 stage receipt 不是同一 target/attempt，需在最终修改后重跑。
-4. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、双 digest、coverage/gap/lineage 摘要、`stage_id`、`attempt` 与 Reviewer 公共 validator 结果必须精确一致。
-5. `REVIEW_TARGET_STALE` 或 `REVIEW_CONTEXT_STALE` 表示 receipt 后目标或 brief/standards/validation context 已变化；修复后必须生成新 target/context/receipt，不得只改 ledger 摘要。
+4. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、双 digest、
+   `reviewer_mode`、`independence_claim`、`dispatch_id`、coverage/gap/lineage 摘要、`stage_id`、`attempt` 与 Reviewer 公共
+   validator 结果必须精确一致。
+5. `REVIEW_DISPATCH_STALE` 表示 receipt 后目标或 brief/standards/validation context 已变化；修复后必须生成新
+   target/context/dispatch/result/receipt，不得只改 ledger 摘要。
 6. `RUN_STATE_REVIEW_EVIDENCE_MISSING`、`REPORT_INVALID` 或 `PAYLOAD_MISMATCH` 分别表示 evidence ref 未绑定、路径越界/缺失或 compact payload 不是由 receipt 派生。
 7. `RUN_STATE_REVIEW_REQUIREMENTS_MISMATCH`、`CONSTRAINTS_MISMATCH` 或 `VALIDATION_CONTEXT_MISSING` 表示 managed brief/context 没有精确消费 contract 与当前验证证据，需重建 brief/context。
 8. `RUN_STATE_REVIEW_SCOPE_MISMATCH` 还可能表示 target paths 没有精确覆盖 canonical `allowed_changes`，或 final commit 后仍在使用 working-tree target；重新按 contract 生成完整 target，不要只改 receipt 摘要。
 9. validation failure/not-run 会撤销当前 stage review；failed review 不建立通过门禁。required VAL 和当前 attempt 的 `stage-delta` receipt 未通过时不能追加 `stage_completed`。
 10. 当前 stage 完成后运行 `--mode transition`；仍有 remaining stages 时继续，不把阶段边界当最终停止点。
+
+Dispatch 专项诊断：
+
+- `REVIEW_DISPATCH_REQUIRED_UNAVAILABLE`：high-risk stage 或 final 的 strict Agent 工具不可用，任务 blocked，不能同上下文放行。
+- `REVIEW_DISPATCH_AGENT_UNCLOSED`：保留 candidate evidence 并恢复关闭；未 closed 前不能记录 passed review。
+- `REVIEW_DISPATCH_PROVENANCE_MISMATCH`：检查 dispatch/result ref、raw digest、Agent ID 和 compact provenance，不编辑旧 receipt。
+- `REVIEW_RESULT_INVALID`：只有纯 schema 错误允许原 Agent 修正一次；语义失败或第二次失败创建新 attempt/blocked。
 
 ## Dependency Execution Gate
 

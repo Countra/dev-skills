@@ -8,6 +8,7 @@ from pathlib import Path
 
 from complex_coding_reviewer.cli import require_review_root, run_cli
 from complex_coding_reviewer.contract import validate_receipt
+from complex_coding_reviewer.errors import ReviewError
 from complex_coding_reviewer.io import load_json_object, resolve_review_artifact, write_new_text
 from complex_coding_reviewer.render import render_receipt
 
@@ -18,20 +19,31 @@ def main() -> int:
     parser.add_argument("--workspace", type=Path)
     parser.add_argument("--task-dir", type=Path)
     parser.add_argument("--supersedes", type=Path)
+    parser.add_argument(
+        "--expected-dispatch-policy",
+        choices=("strict", "conditional", "disabled"),
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--review-root", type=Path, required=True)
     args = parser.parse_args()
 
     def handler() -> dict[str, object]:
         require_review_root(args.output, args.review_root)
+        if args.expected_dispatch_policy is None:
+            raise ReviewError(
+                "REVIEW_DISPATCH_POLICY_VIOLATION",
+                "渲染前的正式校验必须显式传入 --expected-dispatch-policy。",
+            )
         receipt = load_json_object(resolve_review_artifact(args.receipt, args.review_root))
         previous = None
         if args.supersedes:
             previous = load_json_object(resolve_review_artifact(args.supersedes, args.review_root))
         summary = validate_receipt(
             receipt,
+            review_root=args.review_root,
             workspace=args.workspace,
             task_dir=args.task_dir,
+            expected_dispatch_policy=args.expected_dispatch_policy,
             previous_receipt=previous,
         )
         output = write_new_text(

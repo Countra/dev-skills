@@ -19,7 +19,8 @@
 - `Dependency Selection Gate` 先判断依赖是否必要，再按 existing stack、标准库/官方方案、生态主流候选和受控专用例外逐级比较；稳定版本、采用规模、更新新鲜度、维护活跃度和采用趋势是正式证据，不能用单一热度指标代替项目适配与 hard gates。
 - `Standards Discovery Gate` 必须识别语言、技术栈、框架、API 类型和架构风险，收集官方/一手或高质量规范来源并形成 standards index。
 - `Development Quality Gate` 必须覆盖代码标准、静态质量、架构边界、设计模式取舍、低耦合高内聚和验证映射。
-- 审批前由 `complex-coding-reviewer` 的 `plan-review` profile 对不可变 plan bundle 生成 target-bound canonical JSON receipt；Planner 只消费通过的回执。
+- 审批前由 `complex-coding-reviewer` coordinator 按 profile 派生 policy：full=`strict`、lite/standard=`conditional`，显式派发
+  一个隔离 Reviewer 子 Agent并生成 dispatch-bound canonical JSON receipt；Planner 只消费通过的回执。
 - `Readiness Gate` 只表示方案可提交审批，不表示可以自动实现。
 - 用户批准前不得进入实现阶段。
 - `.harness/active-task.json` 只保存 task pointer；计划中不保存 lifecycle、current stage 或 progress 镜像。
@@ -35,13 +36,22 @@
 
 - Reviewer 独占正式 review verdict；Planner 负责方案生产与 readiness，Executor 负责实现、验证、修复和 ledger 状态。
 - target 支持 managed plan、显式文件、working tree 和 commit range；独立 context manifest 只纳入适用要求、规范和验证证据，任一 digest 变化都会让旧回执 stale。
-- canonical JSON receipt 记录 profile、scope、双 digest、standards、完整 lenses、requirement/risk/path coverage、evidence-bound strengths、带 category/origin 的 findings、verification gaps、provenance、verdict、限制和 supersedes lineage；Markdown 仅为派生视图。
+- 主代理作为 `review-coordinator` 只负责冻结输入、探测 Agent 工具、派发、分段等待、持久化、校验和关闭；一个
+  `fork_context=false` 的 `delegated-reviewer` 完成全部语义审查，且不得递归派发、修改文件、运行测试/目标程序或访问网络。
+- 单次 Agent 等待不超过 60 秒并持续报告进度，所有轮询共享 preparation 的单一总 timeout，不得重新计时。
+- canonical JSON receipt 记录 profile、scope、双 digest、standards、完整 lenses、requirement/risk/path coverage、
+  evidence-bound strengths、带 category/origin 的 findings、verification gaps、verdict、限制和 supersedes lineage，并通过
+  raw SHA-256 绑定 final dispatch 与原始 semantic result；Markdown 仅为派生视图。
 - `plan-review` 与 `code-review` 不混用清单；stage 使用 `stage-delta`，最终提交后使用 execution baseline 到当前 HEAD 的 `final-integration` commit range。
 - `plan-review` 检查完整性、一致性、范围和可实施性；`code-review` 先做 spec compliance，再按风险 screen 条件化加载安全隐私、并发完整性、性能资源、API/数据兼容、UI/可访问性/国际化和删除依赖 playbook。
 - superseding receipt 必须逐项交代前序 finding；blocking/major finding 或关键 verification gap 未关闭时不能通过。
-- deterministic contract、same-context semantic smoke 和用户 fresh-context observation 分层报告；same-context 必须声明非独立，未由用户运行的 fresh-context 保持 `not_observed`。
-- Reviewer 只读目标，不运行 Agent、模型、网络、目标程序、测试或 Git write；公共 CLI 只使用 Python 标准库，当前契约不提供旧 receipt/payload 的兼容读写。
-- 用户可运行 `python -u -X utf8 -B evals/complex-coding-reviewer/run_observation_packet.py --prepare-dir .harness/observations/reviewer` 生成不可执行工作包，再在独立任务中按包内步骤观察并通过 Skill Evaluation Lab 导入结果；Skill 本身不会启动其它 Agent。
+- full plan、high-risk stage 和 final-integration 使用 `strict`；其它正式审查使用 `conditional`。conditional 在工具可用时仍
+  必须委派，只有确认 unavailable/disabled 时才允许 same-context 回退并声明非独立。
+- deterministic contract、same-context semantic smoke 和用户 delegated-review observation 分层报告；CI 固定
+  `agent_calls=0`，未由用户运行的真实 delegated review 保持 `not_observed`。
+- Reviewer 目标只读；只有 coordinator 可通过宿主 Agent 工具派发一个子 Agent。公共 Python CLI 不运行 Agent、模型、网络、
+  目标程序、测试或 Git write，只使用标准库，当前契约不提供旧 receipt/payload 的兼容读写。
+- 用户可运行 `python -u -X utf8 -B evals/complex-coding-reviewer/run_observation_packet.py --prepare-dir .harness/observations/reviewer` 生成不可执行工作包，再在独立任务中观察正式 Skill 是否恰好派发一个子 Agent，并通过 Skill Evaluation Lab 导入结果；packet 脚本本身不会启动 Agent。
 
 ### complex-coding-executor
 
@@ -56,7 +66,8 @@
 - `dependency_selection.mode=none` 时依赖门禁直接返回 `not-applicable`；其它模式精确核对批准的包、来源、选择类别、版本策略和 manifest，并按 critical-runtime/runtime/dev-build 的 30/60/90 天上限要求 task-local runtime receipt。
 - 每个开始、attempt、validation、review、stage completion、block、amendment 和 commit 都先追加合法 event，再原子刷新 snapshot。
 - 实施中发现计划未覆盖的外部事实、API/依赖变化或关键不确定项时，进入 `Research Drift Gate`，补证据或触发 `Plan Amendment Gate`。
-- 每个阶段落实 standards index、代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据，再交给 Reviewer 的 `code-review/stage-delta` 生成正式 verdict。
+- 每个阶段落实 standards index、代码标准、静态质量、架构边界、模式取舍、耦合/内聚和验证证据，再按 stage risk 将
+  `strict|conditional` 交给 Reviewer coordinator；最终集成固定 strict。
 - validation/review failure 会撤销旧通过证据；ledger 合法而 snapshot 缺失/滞后时才能 reconcile。
 - scope、DAG、required validation、风险或授权变化时归档上一 revision，重新批准并用新 ledger 首事件连接旧 hash。
 - 阶段完成不是停止条件；只有所有 stage、验证、阶段回执、提交后的 `final-integration` 回执、授权、pointer closure 和 final checker 闭环后才能交付。

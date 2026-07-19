@@ -49,19 +49,3 @@ jobs:
           python -u -X utf8 -B evals/skill-evaluation-lab/run_evals.py
           --suite static
           --work-dir .ci-artifacts/skill-evaluation-lab/static
-
-      - name: Upload static evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os }}-skill-evaluation-lab-evidence
-          path: |
-            .ci-artifacts/skill-evaluation-lab/inventory/inventory-evals.json
-            .ci-artifacts/skill-evaluation-lab/static/static-self-evals.json
-            .ci-artifacts/skill-evaluation-lab/static/static-evidence.json
-            .ci-artifacts/skill-evaluation-lab/static/imported-observation.json
-            .ci-artifacts/skill-evaluation-lab/static/report.json
-            .ci-artifacts/skill-evaluation-lab/static/report.md
-            .ci-artifacts/skill-evaluation-lab/static/packet/packet.json
-          if-no-files-found: error
-          retention-days: 14

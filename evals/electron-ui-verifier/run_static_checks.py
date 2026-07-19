@@ -257,11 +257,20 @@ def main() -> int:
         "run_fixture_cdp_smoke.py",
         "run_portability_retention.py",
         "run_retrieval_benchmark.py",
-        "actions/upload-artifact@v4",
         ".harness/electron-ui-verifier-ci",
     )
     if not matrix_text or any(marker not in matrix_text for marker in required_matrix):
         failures.append("三平台 Electron fixture workflow 缺失或触发范围不完整")
+    persistence_markers = (
+        "actions/upload-artifact",
+        "actions/download-artifact",
+        "actions/cache",
+        "cache:",
+        "retention-days:",
+    )
+    present_persistence = [marker for marker in persistence_markers if marker in matrix_text]
+    if present_persistence:
+        failures.append(f"Electron workflow 不得持久化 artifact 或 cache：{present_persistence}")
     if "runner.temp" in matrix_text:
         failures.append("Electron workflow 仍把受管 fixture/eval 输出写到仓库外 runner.temp")
     fixture_path = SKILL / "tests" / "run_fixture_cdp_smoke.py"

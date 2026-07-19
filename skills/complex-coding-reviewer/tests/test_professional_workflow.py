@@ -68,6 +68,14 @@ class ProfessionalWorkflowTests(unittest.TestCase):
         self.assertIn("clean review", plan.lower())
         self.assertIn("clean review", code.lower())
 
+    def test_agent_wait_is_bounded_observable_and_does_not_reset_budget(self) -> None:
+        dispatch = self.read("references/review-dispatch.md")
+        troubleshooting = self.read("references/troubleshooting.md")
+        self.assertIn("单次 `wait_agent` 不超过 60 秒", dispatch)
+        self.assertIn("轮询不重置总等待预算", dispatch)
+        self.assertIn("`not_found`", troubleshooting)
+        self.assertIn("REVIEW_DISPATCH_AGENT_UNCLOSED", troubleshooting)
+
     def test_risk_screen_has_exactly_six_conditional_domains(self) -> None:
         risks = self.read("references/risk-playbooks.md")
         actual = set(re.findall(r"`(RISK-[A-Z0-9-]+)`", risks))
@@ -247,9 +255,9 @@ class ProfessionalWorkflowTests(unittest.TestCase):
     def test_semantic_corpus_covers_profiles_controls_and_evidence(self) -> None:
         code, payload = self.run_json("run_semantic_oracle.py", "--self-test")
         self.assertEqual(0, code, payload)
-        self.assertEqual(16, payload["corpus"]["case_total"])
+        self.assertEqual(19, payload["corpus"]["case_total"])
         self.assertEqual(8, payload["corpus"]["profile_case_counts"]["plan-review"])
-        self.assertEqual(8, payload["corpus"]["profile_case_counts"]["code-review"])
+        self.assertEqual(11, payload["corpus"]["profile_case_counts"]["code-review"])
         self.assertEqual(1.0, payload["positive"]["metrics"]["evidence_present_rate"])
         self.assertFalse(payload["negative_probes"]["missing_evidence"]["passed"])
         self.assertFalse(payload["negative_probes"]["false_positive"]["passed"])
@@ -263,6 +271,14 @@ class ProfessionalWorkflowTests(unittest.TestCase):
         self.assertEqual(0, payload["claim_boundaries"]["agent_calls"])
         self.assertEqual(0, payload["claim_boundaries"]["network_calls"])
         self.assertEqual(0, payload["claim_boundaries"]["target_executions"])
+        delegated = payload["delegated_review_contract"]
+        self.assertEqual(1, delegated["formal_review_agent_count"])
+        self.assertFalse(delegated["fork_context"])
+        self.assertFalse(delegated["recursive_delegation_allowed"])
+        self.assertEqual("closed", delegated["agent_close_status"])
+        self.assertEqual(60, delegated["max_wait_slice_seconds"])
+        self.assertFalse(delegated["wait_budget_reset_allowed"])
+        self.assertTrue(delegated["progress_reporting_required"])
 
     def test_observation_packet_prepare_only_writes_user_bundle(self) -> None:
         from helpers import writable_tempdir
@@ -276,11 +292,24 @@ class ProfessionalWorkflowTests(unittest.TestCase):
             )
             self.assertEqual(0, code, payload)
             self.assertEqual(
-                ["INSTRUCTIONS.md", "observation-template.json", "packet.json"],
+                [
+                    "INSTRUCTIONS.md",
+                    "REVIEWER-DISPATCH-CHECKLIST.md",
+                    "observation-template.json",
+                    "packet.json",
+                ],
                 sorted(path.name for path in packet_dir.iterdir()),
             )
             instructions = (packet_dir / "INSTRUCTIONS.md").read_text(encoding="utf-8")
             self.assertIn("不得自动启动", instructions)
+            checklist = (
+                packet_dir / "REVIEWER-DISPATCH-CHECKLIST.md"
+            ).read_text(encoding="utf-8")
+            self.assertIn("只创建一个 Reviewer 子 Agent", checklist)
+            self.assertIn("fork_context=false", checklist)
+            self.assertIn("单次窗口不超过 60 秒", checklist)
+            self.assertIn("总 timeout 未因轮询重置", checklist)
+            self.assertIn("close_agent", checklist)
             self.assertEqual(
                 "stop_and_wait_for_user_operated_independent_sessions",
                 payload["prepared_packet"]["next_action"],

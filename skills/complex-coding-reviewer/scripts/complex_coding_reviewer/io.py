@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -20,6 +21,19 @@ def canonical_json_bytes(value: Any) -> bytes:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def sha256_file(path: Path) -> str:
+    """计算审查制品原始字节的 SHA-256。"""
+
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError as exc:
+        raise ReviewError(
+            "REVIEW_OUTPUT_UNREADABLE",
+            f"无法读取审查制品以计算摘要：{exc}",
+            path=str(path),
+        ) from exc
 
 
 def load_json_object(path: Path, *, code: str = "REVIEW_CONTRACT_UNREADABLE") -> dict[str, Any]:
@@ -53,6 +67,12 @@ def resolve_root(path: Path, *, label: str) -> Path:
 
 
 def normalize_relative_path(value: str) -> str:
+    if not isinstance(value, str):
+        raise ReviewError(
+            "REVIEW_TARGET_PATH_INVALID",
+            "目标路径必须是字符串。",
+            path=repr(value),
+        )
     try:
         value.encode("utf-8")
     except UnicodeEncodeError as exc:
@@ -197,6 +217,41 @@ def resolve_review_artifact(path: Path, review_root: Path) -> Path:
     if not resolved.is_file():
         raise ReviewError("REVIEW_OUTPUT_UNREADABLE", "审查产物必须是普通文件。", path=str(path))
     return resolved
+
+
+def review_artifact_ref(path: Path, review_root: Path) -> str:
+    """返回 review root 内制品的 canonical 相对引用。"""
+
+    root = resolve_root(review_root, label="review root")
+    resolved = resolve_review_artifact(path, root)
+    return resolved.relative_to(root).as_posix()
+
+
+def normalize_review_ref(value: str) -> str:
+    """校验并规范化 review root 内的相对制品引用。"""
+
+    if not isinstance(value, str):
+        raise ReviewError(
+            "REVIEW_DISPATCH_POLICY_VIOLATION",
+            "审查制品引用必须是字符串。",
+            path=repr(value),
+        )
+    normalized = normalize_relative_path(value)
+    if normalized != value:
+        raise ReviewError(
+            "REVIEW_OUTPUT_PATH_ESCAPE",
+            "审查制品引用必须使用 canonical 正斜杠相对路径。",
+            path=value,
+        )
+    return normalized
+
+
+def resolve_review_ref(value: str, review_root: Path) -> Path:
+    """解析 review root 内已存在的相对制品引用。"""
+
+    root = resolve_root(review_root, label="review root")
+    normalized = normalize_review_ref(value)
+    return resolve_review_artifact(root / Path(*normalized.split("/")), root)
 
 
 def write_new_bytes(output: Path, data: bytes, *, review_root: Path | None = None) -> Path:

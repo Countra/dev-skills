@@ -77,6 +77,9 @@ def review_payload(
         },
         "strength_count": 0,
         "summary": "review contract validated",
+        "reviewer_mode": "external-agent",
+        "independence_claim": True,
+        "dispatch_id": "REV-CODE-001-DISPATCH-1",
     }
 
 

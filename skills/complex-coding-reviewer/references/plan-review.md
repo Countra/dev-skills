@@ -37,7 +37,8 @@ Planner 自述的完成状态、依赖理由和风险降级都只是 claim。即
 - 每个正向 lens summary 应说明检查了什么和依据；不能只写“完整”“合理”或“looks good”。
 - 无法验证的要求记录为 verification gap，说明需要的证据、责任方和是否阻断批准。
 - clean review 仍要说明审查范围、关键正向证据、未覆盖面和残余风险。
-- full/high-risk 任务优先 fresh-context、external-agent 或 human；same-context 可作为真实披露的降级证据。
+- full managed plan 使用 `strict` dispatch，必须由一个 `fork_context=false` 的 delegated reviewer 子 Agent 完成；工具不可用
+  时 blocked，不允许 same-context 降级。lite/standard 使用 `conditional`，但工具可用时仍必须委派。
 
 ## Verdict
 

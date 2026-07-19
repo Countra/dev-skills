@@ -43,6 +43,7 @@ def validate_review_artifact(
     artifact_path: Path,
     task_dir: Path,
     attempt: int,
+    dispatch_policy: str,
     approval_context_paths: set[str],
     issue_path: str,
     issues: list[ValidationIssue],
@@ -75,6 +76,8 @@ def validate_review_artifact(
         "plan-review",
         "--expected-scope",
         "managed-plan",
+        "--expected-dispatch-policy",
+        dispatch_policy,
     ]
     if attempt > 1:
         predecessor = review_root / f"plan-review-attempt-{attempt - 1}.json"
@@ -311,10 +314,16 @@ def validate_artifacts(
         elif kind == "review" and review_attempt is not None:
             review_validations.append((artifact_path, review_attempt, f"{path}.path"))
     for artifact_path, review_attempt, issue_path in review_validations:
+        dispatch_policy = (
+            "strict"
+            if contract.get("plan_profile") == "full"
+            else "conditional"
+        )
         validate_review_artifact(
             artifact_path,
             task_dir,
             review_attempt,
+            dispatch_policy,
             approval_context_paths,
             issue_path,
             issues,
