@@ -23,7 +23,10 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、验证、正式审查、修复与 exit。
 - standards index、`Standards Discovery Gate` 和 `Development Quality Gate` 是实现与验证输入；正式 verdict 必须使用 `complex-coding-reviewer` 的 `code-review` profile，Executor 不复制审查 rubric，也不自行声明通过。
 - `validation_recorded` 只接受绑定当前 attempt/target 的 closed provenance payload；只有 observed 且 exit code 0 的 task-local evidence 可以建立 passed gate，reported/not-run 只能作为受限 claim。
-- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；stage 使用 `stage-delta` scope，任务完成前另需当前 `final-integration` scope。target 或 context 变化后旧 receipt stale，brief 必须精确覆盖 contract scope 并引用当前 validation evidence。
+- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；high-risk stage 与
+  `final-integration` 使用 `strict` dispatch，low/medium-risk stage 使用 `conditional`。Executor 只冻结输入、调用 Reviewer
+  coordinator 并消费结果，不生成 Agent prompt、provenance 或 verdict。target/context 变化后旧 receipt stale，brief 必须精确
+  覆盖 contract scope 并引用当前 validation evidence。
 - contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
 - 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
 - stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。
@@ -43,7 +46,8 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 执行状态检查: `scripts/harness_exec_check.py`
 - 任务解析: `scripts/harness_task_resolver.py`
 - 依赖执行检查: `scripts/harness_dependency_check.py`
-- 审查回执门禁: `scripts/harness_review.py`、`../complex-coding-reviewer/scripts/review_validate.py`
+- 审查回执门禁: `scripts/harness_review.py`、`../complex-coding-reviewer/scripts/review_dispatch.py`、
+  `../complex-coding-reviewer/scripts/review_validate.py`
 - 计划证明: `scripts/harness_attest_plan.py`
 - 进度 ledger: `scripts/harness_ledger_append.py`、`scripts/harness_ledger_summary.py`
 
@@ -51,7 +55,8 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 
 - 不修改批准后的 plan、contract 或 approved artifacts。
 - 不跳过 review、验证、Stage Transition Gate 或 Resume Summary。
-- 不在 Executor 中维护正式 code-review checklist、伪造独立审查，或用 stage receipt 替代 final receipt。
+- 不在 Executor 中维护正式 code-review checklist、重复实现 dispatch、代替 delegated reviewer 生成 verdict、伪造独立审查，
+  或用 stage receipt 替代 final receipt。
 - 不保留旧契约分支、active 状态镜像或 Markdown 状态解析。
 - 不把阶段完成、阶段提交完成或恢复点完成当作最终停止条件。
 - 不自动 stash、reset、rebase、覆盖用户改动或删除未知文件。

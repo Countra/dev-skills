@@ -83,6 +83,9 @@ REVIEW_RECORD_FIELDS = {
     "lineage_summary",
     "strength_count",
     "summary",
+    "reviewer_mode",
+    "independence_claim",
+    "dispatch_id",
 }
 REVIEW_COUNT_FIELDS = {"blocking", "major", "minor", "advisory", "total"}
 REVIEW_GAP_COUNT_FIELDS = {"blocking", "major", "minor", "total"}
@@ -215,13 +218,29 @@ def validate_review_record(
         stage_id=stage_id,
         attempt=attempt,
     )
-    for field in ("review_id", "report_ref", "summary"):
+    for field in ("review_id", "report_ref", "summary", "dispatch_id"):
         value = payload.get(field)
         _require_review(
             isinstance(value, str) and bool(value.strip()),
             "RUN_STATE_REVIEW_PAYLOAD_INVALID",
             f"review payload.{field} 必须是非空字符串。",
         )
+    _require_review(
+        payload.get("reviewer_mode") in {"same-context", "external-agent"},
+        "RUN_STATE_REVIEW_PROVENANCE_INVALID",
+        "review payload.reviewer_mode 无效。",
+    )
+    _require_review(
+        isinstance(payload.get("independence_claim"), bool),
+        "RUN_STATE_REVIEW_PROVENANCE_INVALID",
+        "review payload.independence_claim 必须是 boolean。",
+    )
+    _require_review(
+        payload.get("reviewer_mode") != "same-context"
+        or payload.get("independence_claim") is False,
+        "RUN_STATE_REVIEW_PROVENANCE_INVALID",
+        "same-context review 不能声明独立性。",
+    )
     report_ref_text = str(payload["report_ref"])
     report_ref = Path(report_ref_text)
     _require_review(

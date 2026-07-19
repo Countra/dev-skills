@@ -135,7 +135,20 @@ def validate_review_handoff(
         if isinstance(artifacts, list)
         else []
     )
-    expected = ["plan-review", "managed-plan", "review_validate.py", *review_paths]
+    dispatch_policy = (
+        "strict"
+        if contract.get("plan_profile") == "full"
+        else "conditional"
+    )
+    expected = [
+        "plan-review",
+        "managed-plan",
+        "review-coordinator",
+        "review_dispatch.py",
+        "review_validate.py",
+        dispatch_policy,
+        *review_paths,
+    ]
     missing = [value for value in expected if value not in gate_text]
     if missing:
         add_issue(

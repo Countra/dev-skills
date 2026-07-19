@@ -1,4 +1,5 @@
 {
+  "kind": "review-semantic-result",
   "review_id": "REV-REPLACE-ME",
   "profile": "plan-review",
   "scope": {
@@ -6,32 +7,8 @@
     "task_id": "REPLACE-ME",
     "plan_revision": 1
   },
-  "target": {
-    "kind": "plan-bundle",
-    "identity": {
-      "task_id": "REPLACE-ME",
-      "plan_revision": 1
-    },
-    "digest_algorithm": "sha256",
-    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
-    "manifest": []
-  },
-  "context": {
-    "kind": "review-context",
-    "identity": {
-      "root": "task-dir",
-      "label": "REPLACE-ME"
-    },
-    "digest_algorithm": "sha256",
-    "digest": "0000000000000000000000000000000000000000000000000000000000000000",
-    "manifest": []
-  },
-  "reviewer": {
-    "mode": "same-context",
-    "identity": "REPLACE-ME",
-    "independence_claim": false,
-    "capability_limits": []
-  },
+  "target_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "context_digest": "0000000000000000000000000000000000000000000000000000000000000000",
   "standards": [],
   "coverage": {
     "target_paths": [],

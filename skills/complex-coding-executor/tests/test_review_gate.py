@@ -4,7 +4,6 @@ import json
 import subprocess
 import sys
 import unittest
-from copy import deepcopy
 from pathlib import Path
 
 from helpers import WritableTemporaryDirectory
@@ -21,11 +20,18 @@ sys.path.insert(0, str(REVIEWER_SCRIPTS))
 
 from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.contract import CODE_LENSES  # noqa: E402
+from complex_coding_reviewer.assemble import assemble_receipt  # noqa: E402
+from complex_coding_reviewer.dispatch import prepare_dispatch  # noqa: E402
+from complex_coding_reviewer.dispatch_lifecycle import finalize_dispatch  # noqa: E402
 from complex_coding_reviewer.target import (  # noqa: E402
     build_commit_range_target,
     build_working_tree_target,
 )
-from harness_review import ReviewGateError, validate_review_gate  # noqa: E402
+from harness_review import (  # noqa: E402
+    ReviewGateError,
+    _expected_dispatch_policy,
+    validate_review_gate,
+)
 from harness_task_bundle import resolve_task_bundle  # noqa: E402
 
 
@@ -85,6 +91,7 @@ class ReviewGateTest(unittest.TestCase):
                         "depends_on": [],
                         "validation_ids": [],
                         "allowed_changes": ["src/**"],
+                        "risk": "low",
                     }
                 ],
                 "validations": [],
@@ -97,9 +104,20 @@ class ReviewGateTest(unittest.TestCase):
         bundle,
         target: dict[str, object],
         scope: dict[str, object],
+        *,
+        review_id: str | None = None,
+        supersedes_review_id: str | None = None,
     ) -> dict[str, object]:
+        if review_id is None:
+            review_id = (
+                "REV-CODE-FINAL-001"
+                if scope["kind"] == "final-integration"
+                else f"REV-CODE-{scope['stage_id']}-A{scope['attempt']}"
+            )
         task_relative = bundle.task_dir.relative_to(bundle.workspace).as_posix()
-        brief_relative = f"{task_relative}/artifacts/reviews/review-brief.json"
+        brief_relative = (
+            f"{task_relative}/artifacts/reviews/briefs/{review_id}.json"
+        )
         plan_relative = bundle.plan_path.relative_to(bundle.workspace).as_posix()
         contract_relative = bundle.contract_path.relative_to(bundle.workspace).as_posix()
         stages = {
@@ -152,18 +170,13 @@ class ReviewGateTest(unittest.TestCase):
             ],
         )
         target_paths = [str(item["path"]) for item in target["manifest"]]
-        return {
-            "review_id": "REV-CODE-GATE-001",
+        semantic = {
+            "kind": "review-semantic-result",
+            "review_id": review_id,
             "profile": "code-review",
             "scope": scope,
-            "target": target,
-            "context": context,
-            "reviewer": {
-                "mode": "same-context",
-                "identity": "executor-unit-test",
-                "independence_claim": False,
-                "capability_limits": ["未执行目标代码。"],
-            },
+            "target_digest": target["digest"],
+            "context_digest": context["digest"],
             "standards": [
                 {
                     "id": "STD-01",
@@ -229,9 +242,78 @@ class ReviewGateTest(unittest.TestCase):
             },
             "summary": "当前代码目标通过正式审查。",
             "limitations": ["未执行目标代码。"],
-            "supersedes_review_id": None,
-            "reviewed_at": "2026-07-16T00:00:00+00:00",
+            "supersedes_review_id": supersedes_review_id,
+            "reviewed_at": "2026-07-16T00:00:02+00:00",
         }
+        review_root = bundle.task_dir / "artifacts" / "reviews"
+        target_path = review_root / "targets" / f"{review_id}.json"
+        context_path = review_root / "contexts" / f"{review_id}.json"
+        write_json(target_path, target)
+        write_json(context_path, context)
+        if scope["kind"] == "final-integration":
+            dispatch_policy = "strict"
+        else:
+            stage = stages[scope["stage_id"]]
+            dispatch_policy = "strict" if stage.get("risk") == "high" else "conditional"
+        preparation = prepare_dispatch(
+            review_id=review_id,
+            target_path=target_path,
+            context_path=context_path,
+            review_root=review_root,
+            policy=dispatch_policy,
+            capability_status="available",
+            tool_family="executor-unit-test-host",
+            available_tools=["close_agent", "spawn_agent", "wait_agent"],
+            workspace=bundle.workspace,
+            task_dir=bundle.task_dir,
+            prepared_at="2026-07-16T00:00:00+00:00",
+        )
+        preparation_path = review_root / "dispatches" / f"{review_id}-prepare.json"
+        write_json(preparation_path, preparation)
+        outcome = {
+            "status": "completed",
+            "agent_id": f"agent-{review_id.lower()}",
+            "fork_context": False,
+            "started_at": "2026-07-16T00:00:01+00:00",
+            "completed_at": "2026-07-16T00:00:02+00:00",
+            "schema_repair_count": 0,
+            "context_expansion_requested": False,
+            "parent_judgment_included": False,
+            "recursive_delegation_allowed": False,
+            "failure": None,
+            "close": {
+                "required": True,
+                "attempted": True,
+                "status": "closed",
+                "closed_at": "2026-07-16T00:00:03+00:00",
+                "error": None,
+            },
+            "fallback": {"mode": "none", "reason_code": None, "reason": None},
+        }
+        dispatch = finalize_dispatch(
+            preparation,
+            outcome,
+            preparation_path=preparation_path,
+            review_root=review_root,
+            workspace=bundle.workspace,
+            task_dir=bundle.task_dir,
+            finalized_at="2026-07-16T00:00:04+00:00",
+        )
+        dispatch_path = review_root / "dispatches" / f"{review_id}.json"
+        result_path = review_root / Path(
+            *preparation["inputs"]["semantic_result_ref"].split("/")
+        )
+        write_json(dispatch_path, dispatch)
+        write_json(result_path, semantic)
+        return assemble_receipt(
+            target_path=target_path,
+            context_path=context_path,
+            dispatch_path=dispatch_path,
+            semantic_result_path=result_path,
+            review_root=review_root,
+            workspace=bundle.workspace,
+            task_dir=bundle.task_dir,
+        )
 
     def compact(self, receipt: dict[str, object], report_ref: str) -> dict[str, object]:
         target = receipt["target"]
@@ -262,6 +344,9 @@ class ReviewGateTest(unittest.TestCase):
             },
             "strength_count": len(receipt["strengths"]),
             "summary": receipt["summary"],
+            "reviewer_mode": receipt["reviewer"]["mode"],
+            "independence_claim": receipt["reviewer"]["independence_claim"],
+            "dispatch_id": receipt["reviewer"]["dispatch_id"],
         }
 
     def write_receipt(self, bundle, receipt: dict[str, object], name: str):
@@ -291,6 +376,34 @@ class ReviewGateTest(unittest.TestCase):
         )
         self.assertEqual(compact, result)
 
+    def test_dispatch_policy_is_derived_from_risk_and_final_scope(self) -> None:
+        bundle, _ = self.make_bundle()
+        self.assertEqual(
+            "conditional",
+            _expected_dispatch_policy(
+                bundle,
+                scope_kind="stage-delta",
+                stage_id="STG-01",
+            ),
+        )
+        bundle.contract["stages"][0]["risk"] = "high"
+        self.assertEqual(
+            "strict",
+            _expected_dispatch_policy(
+                bundle,
+                scope_kind="stage-delta",
+                stage_id="STG-01",
+            ),
+        )
+        self.assertEqual(
+            "strict",
+            _expected_dispatch_policy(
+                bundle,
+                scope_kind="final-integration",
+                stage_id=None,
+            ),
+        )
+
     def test_source_change_makes_stage_receipt_stale(self) -> None:
         bundle, source = self.make_bundle()
         target = build_working_tree_target(
@@ -306,7 +419,7 @@ class ReviewGateTest(unittest.TestCase):
         )
         compact = self.write_receipt(bundle, receipt, "stage-01.json")
         source.write_text("answer = 43\n", encoding="utf-8")
-        with self.assertRaisesRegex(ReviewGateError, "REVIEW_TARGET_STALE"):
+        with self.assertRaisesRegex(ReviewGateError, "REVIEW_DISPATCH_STALE"):
             validate_review_gate(
                 bundle,
                 compact,
@@ -335,7 +448,7 @@ class ReviewGateTest(unittest.TestCase):
             brief_path.read_text(encoding="utf-8") + "\n",
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ReviewGateError, "REVIEW_CONTEXT_STALE"):
+        with self.assertRaisesRegex(ReviewGateError, "REVIEW_DISPATCH_STALE"):
             validate_review_gate(
                 bundle,
                 compact,
@@ -372,7 +485,7 @@ class ReviewGateTest(unittest.TestCase):
         compact = self.write_receipt(bundle, receipt, "wrong-requirements-stage.json")
         with self.assertRaisesRegex(
             ReviewGateError,
-            "RUN_STATE_REVIEW_REQUIREMENTS_MISMATCH",
+            "REVIEW_DISPATCH_STALE",
         ):
             validate_review_gate(
                 bundle,
@@ -494,6 +607,7 @@ class ReviewGateTest(unittest.TestCase):
         bundle, _ = self.make_bundle()
         target = build_working_tree_target(
             bundle.workspace,
+            excludes=[".harness/**"],
             stage_id="STG-01",
             attempt=1,
         )
@@ -520,6 +634,7 @@ class ReviewGateTest(unittest.TestCase):
                 "depends_on": ["STG-01"],
                 "validation_ids": [],
                 "allowed_changes": ["docs/**"],
+                "risk": "medium",
             }
         )
         bundle.contract["stages"].append(
@@ -533,6 +648,7 @@ class ReviewGateTest(unittest.TestCase):
                     "task-local execution, validation, review and observation artifacts",
                     "minimal fixes required by final review within approved scope",
                 ],
+                "risk": "medium",
             }
         )
         target = build_working_tree_target(
@@ -755,9 +871,19 @@ class ReviewGateTest(unittest.TestCase):
             {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
         )
         self.write_receipt(bundle, first, "stage-01-attempt-1.json")
-        second = deepcopy(first)
-        second["review_id"] = "REV-CODE-GATE-002"
-        second["supersedes_review_id"] = "REV-CODE-GATE-001"
+        review_root = bundle.task_dir / "artifacts" / "reviews"
+        for index in range(300):
+            write_json(
+                review_root / "dispatches" / f"supporting-{index:03d}.json",
+                {"kind": "supporting-fixture"},
+            )
+        second = self.receipt(
+            bundle,
+            target,
+            {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+            review_id="REV-CODE-GATE-002",
+            supersedes_review_id=first["review_id"],
+        )
         compact = self.write_receipt(bundle, second, "stage-01-attempt-2.json")
         self.assertEqual(
             compact,
@@ -800,6 +926,9 @@ class ReviewGateTest(unittest.TestCase):
             },
             "strength_count": 0,
             "summary": "review passed",
+            "reviewer_mode": "external-agent",
+            "independence_claim": True,
+            "dispatch_id": "REV-CODE-GATE-001-DISPATCH-1",
         }
         with self.assertRaisesRegex(ReviewGateError, "RUN_STATE_REVIEW_REPORT_INVALID"):
             validate_review_gate(bundle, payload, stage_id=None, attempt=None)

@@ -28,6 +28,27 @@ def render(value: dict[str, Any]) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
 
 
+def dispatch_checklist() -> str:
+    return """# Reviewer Dispatch Observation Checklist
+
+本工作包只能由用户在独立 Codex 会话中操作；脚本不会启动 Agent、模型或目标程序。
+
+对每个正式 `plan-review` 或 `code-review` case：
+
+1. 记录 coordinator 是否显式创建且只创建一个 Reviewer 子 Agent。
+2. 确认 `fork_context=false`，子 Agent 未继续派发下一层 Agent。
+3. 确认 `wait_agent` 单次窗口不超过 60 秒、每个未终态窗口均回报进度，且总 timeout 未因轮询重置。
+4. 确认 prompt 未包含父代理 findings、预期 verdict 或实现者 framing。
+5. 记录 immutable dispatch、semantic result 与 canonical receipt 路径及摘要。
+6. 运行 `review_validate.py`，记录 expected dispatch policy 与校验结果。
+7. 确认 `close_agent` 已执行且 final dispatch 的 close status 为 `closed`。
+
+对 trigger near-miss case，记录没有创建 Reviewer 子 Agent、没有生成 receipt。
+
+宿主工具调用无法由静态文件独立证明。观察者必须同时保留宿主活动记录和 dispatch/receipt，并在导入结果中披露缺失证据。
+"""
+
+
 def validation_report(
     workspace: Path,
     suite: dict[str, Any],
@@ -67,6 +88,18 @@ def validation_report(
             "deterministic_contract": "separate_evidence",
             "same_context_semantic": "separate_evidence",
             "fresh_context_semantic": "not_observed",
+        },
+        "delegated_review_contract": {
+            "formal_review_agent_count": 1,
+            "fork_context": False,
+            "recursive_delegation_allowed": False,
+            "parent_judgment_included": False,
+            "receipt_validation_required": True,
+            "agent_close_status": "closed",
+            "max_wait_slice_seconds": 60,
+            "wait_budget_reset_allowed": False,
+            "progress_reporting_required": True,
+            "host_activity_evidence_required": True,
         },
         "claim_boundaries": {
             "agent_calls": 0,
@@ -123,7 +156,11 @@ def main() -> int:
                 label="observation packet directory",
                 source_roots=source_roots,
             )
-            report["prepared_packet"] = write_packet(packet_dir, packet)
+            prepared = write_packet(packet_dir, packet)
+            checklist = packet_dir / "REVIEWER-DISPATCH-CHECKLIST.md"
+            checklist.write_text(dispatch_checklist(), encoding="utf-8")
+            prepared["dispatch_checklist"] = checklist.name
+            report["prepared_packet"] = prepared
         write_report(workspace, args.output, report, source_roots=source_roots)
     except (OSError, UnicodeError, json.JSONDecodeError, LabError, ValueError) as exc:
         error = {

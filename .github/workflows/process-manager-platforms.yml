@@ -45,18 +45,6 @@ jobs:
       - name: Run native lifecycle smoke
         run: python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace "${{ runner.temp }}/dev-skills-process-manager-${{ github.run_id }}-${{ github.run_attempt }}" --output .ci-artifacts/native-smoke.json --require-native-permissions
 
-      - name: Upload platform evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ runner.os }}-process-manager-evidence-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            .ci-artifacts/native-smoke.json
-            .ci-artifacts/static-schema-checks.json
-            .ci-artifacts/evals/process-manager-evals.json
-          if-no-files-found: error
-          retention-days: 14
-
   delegated-cgroup:
     name: ubuntu-latest delegated cgroup lifecycle
     runs-on: ubuntu-latest
@@ -118,14 +106,3 @@ jobs:
               encoding="utf-8",
           )
           PY
-
-      - name: Upload delegated cgroup evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Linux-delegated-cgroup-evidence-${{ github.sha }}-${{ github.run_attempt }}
-          path: |
-            .ci-artifacts/delegated/native-smoke.json
-            .ci-artifacts/delegated/unit.json
-          if-no-files-found: error
-          retention-days: 14

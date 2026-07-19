@@ -326,12 +326,9 @@ def check_process_workflow(failures: list[str]) -> dict[str, Any]:
         "run_platform_smoke.py",
         "run_evals.py",
         "run_static_checks.py",
-        "actions/upload-artifact@v4",
-        "${{ github.sha }}",
         "${{ github.run_attempt }}",
         "Delegate=yes",
         "systemd-run",
-        "if: always()",
     )
     missing = [token for token in required if token not in text]
     if missing:
@@ -352,6 +349,11 @@ def check_process_workflow(failures: list[str]) -> dict[str, Any]:
         "taskkill",
         "TerminateProcess",
         "path: .ci-artifacts/",
+        "actions/upload-artifact",
+        "actions/download-artifact",
+        "actions/cache",
+        "cache:",
+        "retention-days:",
     )
     present_forbidden = [token for token in forbidden if token in text]
     if present_forbidden:

@@ -67,20 +67,3 @@ jobs:
 
       - name: Run Planner Reviewer Executor joint regression
         run: python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer --work-dir .ci-artifacts/planner-reviewer-executor/cross-review-work --output .ci-artifacts/planner-reviewer-executor/cross-review.json
-
-      - name: Upload deterministic evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.os }}-planner-reviewer-executor-evidence
-          path: |
-            .ci-artifacts/planner-reviewer-executor/planner-evals.json
-            .ci-artifacts/planner-reviewer-executor/reviewer-evals.json
-            .ci-artifacts/planner-reviewer-executor/reviewer-oracle-self-test.json
-            .ci-artifacts/planner-reviewer-executor/reviewer-static-contract.json
-            .ci-artifacts/planner-reviewer-executor/observation-packet-validation.json
-            .ci-artifacts/planner-reviewer-executor/reviewer-static.json
-            .ci-artifacts/planner-reviewer-executor/executor-evals.json
-            .ci-artifacts/planner-reviewer-executor/cross-review.json
-          if-no-files-found: error
-          retention-days: 14

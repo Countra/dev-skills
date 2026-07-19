@@ -91,6 +91,9 @@ def stage_review_payload() -> dict[str, object]:
         },
         "strength_count": 0,
         "summary": "review passed",
+        "reviewer_mode": "external-agent",
+        "independence_claim": True,
+        "dispatch_id": "REV-CODE-001-DISPATCH-1",
     }
 
 

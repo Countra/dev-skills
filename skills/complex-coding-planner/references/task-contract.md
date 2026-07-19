@@ -22,7 +22,8 @@
 - 只定义一套当前契约，不设置契约版本字段或多协议兼容模式。
 - `execution-plan.md` 面向人类审批，`plan-contract.json` 面向确定性校验。
 - 批准意图与执行进度分离，任何可变运行数据都不进入批准哈希集合。
-- planner 是批准意图的 producer，reviewer 是正式 review receipt 的唯一 writer，executor 是运行状态和执行证据的唯一 writer。
+- planner 是批准意图的 producer，Reviewer coordinator 是 review artifacts 的唯一 writer，delegated reviewer 是正式语义
+  verdict 的唯一 producer，executor 是运行状态和执行证据的唯一 writer。
 - 历史任务不迁移。缺少当前必需文件或字段时返回结构错误，不返回版本错误。
 
 ## 任务制品
@@ -39,6 +40,10 @@ task-dir/
     reviews/
       plan-review-brief.json
       plan-review-attempt-N.json
+      targets/
+      contexts/
+      dispatches/
+      results/
 ```
 
 必需关系：
@@ -59,7 +64,8 @@ task-dir/
 | `plan-contract.json` | planner | none | ID、Stage DAG、验证、artifact 和授权策略 |
 | approved non-review artifacts | planner | none | research、standards、architecture、dependency、traceability |
 | plan-review brief | planner | none | profile、scope、requirements、constraints、claims 和 risk focus |
-| plan-review receipt | reviewer | none | target/context、coverage、strengths、findings、gaps、lineage 和 verdict |
+| plan-review dispatch/result | reviewer coordinator / delegated reviewer | none | policy、Agent lifecycle、冻结输入与原始语义结果 |
+| plan-review receipt | reviewer coordinator assembler | none | supporting artifact 绑定、coverage、strengths、findings、gaps、lineage 和 verdict |
 | `attestation.json` | approval gate | amendment gate | 批准摘要、授权和不可变哈希集合 |
 | `run-state.json` | executor | executor | 当前 lifecycle、stage、stop、next 和 event 游标 |
 | `ledger.jsonl` | executor | append-only executor | 事件、attempt、验证、review、Git 和证据引用 |
@@ -94,9 +100,16 @@ task-dir/
 
 每个 managed plan 必须有且只有一个当前 `review` artifact，路径为 `artifacts/reviews/plan-review-attempt-N.json`，并同时设置 `required=true`、`approval_included=true`。历史 attempts 保留在同目录但不进入当前 artifact index；attempt 大于 1 时必须保留紧邻前序文件并用 `supersedes_review_id` 连接。review artifact 不参与它所证明的 plan-bundle digest，receipt 自身单独进入批准哈希集合，避免自引用。
 
+receipt 引用的 target/context、preparation/final dispatch 与 raw semantic result 位于同一 review root 的 supporting 子目录。
+它们不作为独立 plan artifacts 索引，而由 receipt 的 ref/raw SHA-256 间接绑定；dispatch 不反向引用 receipt，避免循环哈希。
+
 review brief 使用 `kind=other`、`required=true`、`approval_included=true`，并进入 plan target/context；它声明 GOAL/REQ/AC/NFR、STG/VAL 约束、claim refs 与 risk focus，但不携带 verdict。plan-review context 只能引用 `execution-plan.md`、`plan-contract.json` 和 approval-included non-review artifacts。
 
-planner approval 通过 `complex-coding-reviewer/scripts/review_validate.py` 校验当前 receipt，固定期望 `profile=plan-review`、`scope=managed-plan`，并重建 plan-bundle target 与 context。只有 canonical schema、provenance、coverage、strengths、findings、gaps、lineage、supersedes 与双 freshness 全部有效且 verdict 为 `passed` 时才通过；Markdown 文本不承载正式 verdict。
+planner approval 通过 `complex-coding-reviewer/scripts/review_validate.py` 校验当前 receipt，固定期望
+`profile=plan-review`、`scope=managed-plan`，并按 plan profile 派生 expected dispatch policy：full=`strict`，
+lite/standard=`conditional`。只有 supporting artifact digest、policy/Agent lifecycle、canonical schema、provenance、coverage、
+strengths、findings、gaps、lineage、supersedes 与双 freshness 全部有效且 verdict 为 `passed` 时才通过；Markdown 文本不承载
+正式 verdict。
 
 每个 validation 包含 `id`、`kind`、`required`、`covers`、`command` 和 `evidence_path`。`command` 可以是确定性 CLI，也可以是具名工具流程，但不能伪造尚未执行的结果。
 
@@ -165,7 +178,7 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 | --- | --- | --- |
 | `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、1-3 stages、focused plan-review |
 | `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、traceability、2-5 stages、plan-review |
-| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、完整追踪、3-7 stages、恢复与切换证据、优先更强 provenance 的 plan-review |
+| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、完整追踪、3-7 stages、恢复与切换证据、strict delegated plan-review |
 
 目标未稳定或存在高影响未知时先进入 `discovery-first`，只产出发现和阻塞决策；不得伪造 ready-for-approval contract。
 
@@ -204,7 +217,15 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 - plan：`research_drift`、`amendment_requested`、`amendment_approved`。
 - operation：`commit_recorded`、`note`、`heartbeat`。
 
-关键 payload：`validation_recorded` 是 closed object，包含 `validation_id`、`result`、`command`、`claim_source`、`stage_attempt`、`target_digest`、`exit_code`、`summary`、`claim_boundary`；只有 `observed`、exit code 0 且绑定当前 attempt/target 的记录可以 passed，并必须引用 task-local evidence 文件。`review_recorded` 只保存由 Reviewer 公共 validator 精确派生的 compact receipt：`result`、`review_id`、`profile`、`scope`、`target_digest`、`context_digest`、`verdict`、`report_ref`、`open_counts`、`gap_counts`、`coverage_summary`、`lineage_summary`、`strength_count`、`summary`。stage review 使用绑定当前 `stage_id`/`attempt` 的 `stage-delta`，task final review 使用不绑定 stage 的 `final-integration`，完整 canonical receipt 位于 `artifacts/reviews/**` 并必须出现在 `evidence_refs`。`attempt_failed` 需要 `reason`、`impact`、`next_strategy`；`research_drift` 需要 `reason`、`source`、`impact`；`resumed` 需要 `resolution`；`aborted` 需要 `reason`。
+关键 payload：`validation_recorded` 是 closed object，包含 `validation_id`、`result`、`command`、`claim_source`、
+`stage_attempt`、`target_digest`、`exit_code`、`summary`、`claim_boundary`；只有 `observed`、exit code 0 且绑定当前
+attempt/target 的记录可以 passed，并必须引用 task-local evidence 文件。`review_recorded` 只保存由 Reviewer 公共 validator
+精确派生的 compact receipt：`result`、`review_id`、`profile`、`scope`、`target_digest`、`context_digest`、
+`reviewer_mode`、`independence_claim`、`dispatch_id`、`verdict`、`report_ref`、`open_counts`、`gap_counts`、
+`coverage_summary`、`lineage_summary`、`strength_count`、`summary`。stage review 使用绑定当前 `stage_id`/`attempt` 的
+`stage-delta`，task final review 使用不绑定 stage 的 `final-integration`，完整 canonical receipt 位于
+`artifacts/reviews/**` 并必须出现在 `evidence_refs`。`attempt_failed` 需要 `reason`、`impact`、`next_strategy`；
+`research_drift` 需要 `reason`、`source`、`impact`；`resumed` 需要 `resolution`；`aborted` 需要 `reason`。
 
 `seq` 从 1 连续递增，`event_id` 唯一，stage attempt 单调递增。validation result 为 `passed`、`failed` 或 `not-run`，claim source 为 `observed`、`reported` 或 `not-run`；reported/not-run 不建立 passed gate。失败或未运行会撤销该 attempt 已记录的相关通过证据。stage 完成时所有已通过 validation 的 target/attempt 必须与 stage receipt 一致。大日志保存为 artifact，ledger 只保存摘要和 task-dir 内真实文件的相对引用。未授权的 `commit_recorded` 必须在 append 前拒绝；已授权事件必须在 `completed` 前记录 repository 和 7-64 位十六进制 commit hash。`stage` expectation 逐 stage 记录对应 `stage_id`，`final` expectation 在所有 stage 完成后记录无 stage_id 的事件。
 

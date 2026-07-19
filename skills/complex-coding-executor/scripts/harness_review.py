@@ -19,6 +19,15 @@ from harness_task_bundle import TaskBundle
 MAX_REVIEW_BYTES = 1024 * 1024
 MAX_REVIEW_FILES = 256
 VALIDATOR_TIMEOUT_SECONDS = 30
+SUPPORTING_REVIEW_DIRS = {
+    "briefs",
+    "contexts",
+    "dispatches",
+    "outcomes",
+    "packages",
+    "results",
+    "targets",
+}
 
 
 def reviewer_validator_path() -> Path:
@@ -132,24 +141,30 @@ def _find_predecessor(
     matches: list[Path] = []
     scanned = 0
     for candidate in root.rglob("*.json"):
+        try:
+            resolved = candidate.resolve(strict=True)
+            relative = resolved.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        if relative.parts and relative.parts[0] in SUPPORTING_REVIEW_DIRS:
+            continue
         scanned += 1
         if scanned > MAX_REVIEW_FILES:
             raise ReviewGateError(
                 "RUN_STATE_REVIEW_SEARCH_LIMIT",
-                f"review root 的 JSON 文件超过有界上限 {MAX_REVIEW_FILES}。",
+                f"review root 的 canonical receipt 候选超过有界上限 {MAX_REVIEW_FILES}。",
             )
-        try:
-            resolved = candidate.resolve(strict=True)
-            resolved.relative_to(root)
-        except (OSError, ValueError):
-            continue
         if resolved == current or not resolved.is_file():
             continue
         try:
             value = _read_json_object(resolved)
         except ReviewGateError:
             continue
-        if value.get("review_id") == supersedes_review_id:
+        if (
+            value.get("review_id") == supersedes_review_id
+            and value.get("kind") is None
+            and all(field in value for field in ("target", "context", "reviewer"))
+        ):
             matches.append(resolved)
     if len(matches) != 1:
         raise ReviewGateError(
@@ -169,6 +184,7 @@ def _run_validator(
     stage_id: str | None,
     attempt: int | None,
     predecessor: Path | None,
+    dispatch_policy: str,
 ) -> dict[str, Any]:
     validator = reviewer_validator_path()
     if not validator.is_file():
@@ -195,6 +211,8 @@ def _run_validator(
         "code-review",
         "--expected-scope",
         scope_kind,
+        "--expected-dispatch-policy",
+        dispatch_policy,
     ]
     if stage_id is not None and attempt is not None:
         command.extend(
@@ -246,6 +264,39 @@ def _run_validator(
     return result
 
 
+def _expected_dispatch_policy(
+    bundle: TaskBundle,
+    *,
+    scope_kind: str,
+    stage_id: str | None,
+) -> str:
+    if scope_kind == "final-integration":
+        return "strict"
+    if scope_kind != "stage-delta" or stage_id is None:
+        raise ReviewGateError(
+            "RUN_STATE_REVIEW_SCOPE_INVALID",
+            "无法为未知 review scope 推导 dispatch policy。",
+        )
+    stage = next(
+        (
+            item
+            for item in bundle.contract.get("stages", [])
+            if isinstance(item, dict) and item.get("id") == stage_id
+        ),
+        None,
+    )
+    if not isinstance(stage, dict) or stage.get("risk") not in {
+        "low",
+        "medium",
+        "high",
+    }:
+        raise ReviewGateError(
+            "RUN_STATE_REVIEW_RISK_INVALID",
+            f"stage {stage_id} 缺少合法 risk，无法推导 dispatch policy。",
+        )
+    return "strict" if stage["risk"] == "high" else "conditional"
+
+
 def validate_review_gate(
     bundle: TaskBundle,
     payload: dict[str, Any],
@@ -290,6 +341,11 @@ def validate_review_gate(
             "supersedes_review_id 必须是字符串或 null。",
         )
     predecessor = _find_predecessor(root, report, supersedes)
+    dispatch_policy = _expected_dispatch_policy(
+        bundle,
+        scope_kind=scope_kind,
+        stage_id=stage_id,
+    )
     result = _run_validator(
         bundle,
         report,
@@ -298,6 +354,7 @@ def validate_review_gate(
         stage_id=stage_id,
         attempt=attempt,
         predecessor=predecessor,
+        dispatch_policy=dispatch_policy,
     )
     try:
         events = read_events(bundle.ledger_path)
@@ -326,6 +383,9 @@ def validate_review_gate(
         "lineage_summary": result.get("lineage_summary"),
         "strength_count": result.get("strength_count"),
         "summary": result.get("summary"),
+        "reviewer_mode": result.get("reviewer_mode"),
+        "independence_claim": result.get("independence_claim"),
+        "dispatch_id": result.get("dispatch_id"),
     }
     if compact != expected:
         raise ReviewGateError(

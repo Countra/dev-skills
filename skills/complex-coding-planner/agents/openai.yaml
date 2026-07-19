@@ -1,4 +1,4 @@
 interface:
   display_name: "Complex Coding Planner"
   short_description: "为复杂编码任务生成风险自适应、可审批且可验证的持久规划"
-  default_prompt: "Use $complex-coding-planner to research this complex coding task, produce the task bundle, and hand it to $complex-coding-reviewer for the required plan-review receipt before approval."
+  default_prompt: "Use $complex-coding-planner to research this complex coding task, produce the task bundle, freeze the plan-review inputs, and hand them to the $complex-coding-reviewer coordinator with the profile-derived dispatch policy before approval."

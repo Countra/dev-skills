@@ -12,16 +12,19 @@ import shutil
 import stat
 import sys
 import uuid
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+EVALS_ROOT = REPO_ROOT / "evals"
 SCRIPT_ROOT = REPO_ROOT / "skills" / "complex-coding-reviewer" / "scripts"
+if str(EVALS_ROOT) not in sys.path:
+    sys.path.insert(0, str(EVALS_ROOT))
 if str(SCRIPT_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPT_ROOT))
 
+from review_fixture import assemble_fixture_receipt, sync_fixture_semantic
 from complex_coding_reviewer.contract import (
     CODE_LENSES,
     PLAN_LENSES,
@@ -210,7 +213,8 @@ def repository_contract_checks() -> list[dict[str, Any]]:
         "requirement/risk/path coverage",
         "verification gaps",
         "spec compliance",
-        "fresh-context",
+        "delegated-review",
+        "dispatch-bound",
         "`not_observed`",
         "--prepare-dir",
         "current checker",
@@ -388,18 +392,13 @@ def receipt(target: dict[str, Any], profile: str, root: Path) -> dict[str, Any]:
         entries=context_entries,
     )
     target_paths = [str(item["path"]) for item in target["manifest"]]
-    return {
+    semantic = {
+        "kind": "review-semantic-result",
         "review_id": review_id,
         "profile": profile,
         "scope": scope,
-        "target": deepcopy(target),
-        "context": context,
-        "reviewer": {
-            "mode": "same-context",
-            "identity": "deterministic-eval",
-            "independence_claim": False,
-            "capability_limits": ["fixture 只验证 contract，不声明真实审查质量。"],
-        },
+        "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "standards": [],
         "coverage": {
             "target_paths": [
@@ -446,6 +445,15 @@ def receipt(target: dict[str, Any], profile: str, root: Path) -> dict[str, Any]:
         "supersedes_review_id": None,
         "reviewed_at": "2026-07-16T00:00:00+00:00",
     }
+    return assemble_fixture_receipt(
+        root=root,
+        review_root=root / "reviews",
+        target=target,
+        context=context,
+        semantic=semantic,
+        policy="conditional",
+        delegated=False,
+    )
 
 
 def seeded_finding(severity: str, evidence_path: str) -> dict[str, Any]:
@@ -538,14 +546,17 @@ def evaluate_case(case: dict[str, Any], parent: Path) -> dict[str, Any]:
         target = create_plan_target(root) if case["profile"] == "plan-review" else create_code_target(root)
         value = receipt(target, case["profile"], root)
         apply_mutation(value, case["mutation"], root)
+        sync_fixture_semantic(value, root / "reviews")
         actual_valid = True
         actual_code = None
         actual_verdict = None
         try:
             result = validate_receipt(
                 value,
+                review_root=root / "reviews",
                 workspace=root if case["profile"] == "code-review" else None,
                 task_dir=root if case["profile"] == "plan-review" else None,
+                expected_dispatch_policy="conditional",
             )
             actual_verdict = result["verdict"]
         except ReviewError as exc:
@@ -586,6 +597,8 @@ def static_contract_report() -> dict[str, Any]:
         "calibration": SKILL_ROOT / "references" / "review-calibration.md",
         "risks": SKILL_ROOT / "references" / "risk-playbooks.md",
         "contract": SKILL_ROOT / "references" / "review-contract.md",
+        "dispatch": SKILL_ROOT / "references" / "review-dispatch.md",
+        "troubleshooting": SKILL_ROOT / "references" / "troubleshooting.md",
     }
     semantic_assets = {
         "oracle": Path(__file__).with_name("run_semantic_oracle.py"),
@@ -623,6 +636,8 @@ def static_contract_report() -> dict[str, Any]:
         "references/review-calibration.md",
         "references/risk-playbooks.md",
         "references/review-contract.md",
+        "references/review-dispatch.md",
+        "references/troubleshooting.md",
     }
     missing_links = sorted(link for link in skill_links if link not in texts["skill"])
     checks.append(
@@ -635,6 +650,10 @@ def static_contract_report() -> dict[str, Any]:
     runtime_paths = [
         semantic_assets["oracle"],
         semantic_assets["observation_runner"],
+        SKILL_ROOT / "scripts" / "review_dispatch.py",
+        SKILL_ROOT / "scripts" / "review_assemble.py",
+        SKILL_ROOT / "scripts" / "review_validate.py",
+        SKILL_ROOT / "scripts" / "review_render.py",
     ]
     runtime_violations = (
         runtime_entry_violations(runtime_paths)
@@ -670,6 +689,8 @@ def static_contract_report() -> dict[str, Any]:
                     '"deterministic_contract": "separate_evidence"',
                     '"same_context_semantic": "separate_evidence"',
                     '"fresh_context_semantic": "not_observed"',
+                    '"formal_review_agent_count": 1',
+                    '"agent_close_status": "closed"',
                 )
             ),
             "detail": "三层证据必须独立报告，fresh-context 默认未观察。",
@@ -699,12 +720,78 @@ def static_contract_report() -> dict[str, Any]:
                 "detail": "code-review 必须先验证需求符合性。",
             },
             {
-                "id": "read-only-no-agent",
+                "id": "coordinator-agent-boundary",
                 "passed": all(
                     value in texts["skill"]
-                    for value in ("只审查显式目标", "不得修改计划", "不运行 `codex exec`")
+                    for value in (
+                        "只审查显式目标",
+                        "review-coordinator",
+                        "delegated-reviewer",
+                        "不得调用 `codex exec`",
+                        "agent_calls=0",
+                    )
                 ),
-                "detail": "Reviewer 只读且不自动运行 Agent/目标。",
+                "detail": "只有 coordinator 使用宿主 Agent 工具，脚本与 delegated reviewer 保持边界。",
+            },
+            {
+                "id": "dispatch-policy-and-lifecycle",
+                "passed": all(
+                    value in texts["dispatch"]
+                    for value in (
+                        "`strict`",
+                        "`conditional`",
+                        "`disabled`",
+                        "fork_context=false",
+                        "close_agent",
+                        "send_input",
+                        "可创建一次 attempt=2",
+                    )
+                ),
+                "detail": "dispatch reference 必须覆盖策略、隔离、关闭和有界重试。",
+            },
+            {
+                "id": "dispatch-package-budget",
+                "passed": (
+                    "512 KiB" in texts["dispatch"]
+                    and "省略 `--package`" in texts["dispatch"]
+                    and "package 超限不等于正式 target 必须拆分" in texts["workflow"]
+                ),
+                "detail": "Agent-bound package 必须有独立硬预算，超限时保留完整 target。",
+            },
+            {
+                "id": "dispatch-timeout-class",
+                "passed": all(
+                    value in texts["dispatch"]
+                    for value in (
+                        "`timeout_class=standard`",
+                        "`timeout_class=high-risk`",
+                        "`requested_risk_focus`",
+                        "不改变 policy 或 verdict",
+                        "单次 `wait_agent` 不超过 60 秒",
+                        "轮询不重置总等待预算",
+                    )
+                ),
+                "detail": "等待预算必须从冻结风险声明派生、分段可观察，且不能改变派发策略或结论。",
+            },
+            {
+                "id": "dispatch-provenance-hardening",
+                "passed": all(
+                    value in texts["dispatch"]
+                    for value in (
+                        "`workspace_root`",
+                        "`task_dir_root`",
+                        "Reviewer Skill 路径与 SHA-256",
+                        "优先于 Reviewer Skill",
+                        "不能把",
+                        "不得运行测试、构建、目标程序、网络请求",
+                        "same-context fallback",
+                        "显式传入 expected policy",
+                        "`prepared_at <= started_at",
+                    )
+                )
+                and "预先冻结 `send_input`" in texts["contract"]
+                and "确定性重建全部内容" in texts["contract"],
+                "detail": "Skill 摘要、根路径、package、repair、重试、policy 与时间线必须形成封闭 provenance。",
             },
             {
                 "id": "full-rereview",

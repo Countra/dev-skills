@@ -33,19 +33,23 @@ class CiContractTests(unittest.TestCase):
         for forbidden in ("--suite offline", "--live", "--model", "--authorize", "se_run.py"):
             self.assertNotIn(forbidden, self.lower)
 
-    def test_uploads_current_bounded_evidence_paths(self) -> None:
-        expected = (
-            "inventory/inventory-evals.json",
-            "static/static-self-evals.json",
-            "static/static-evidence.json",
-            "static/imported-observation.json",
-            "static/report.json",
-            "static/report.md",
-            "static/packet/packet.json",
+    def test_keeps_generated_evidence_ephemeral(self) -> None:
+        self.assertIn(
+            "--work-dir .ci-artifacts/skill-evaluation-lab/inventory",
+            self.text,
         )
-        for path in expected:
-            self.assertIn(path, self.text)
-        self.assertIn("if-no-files-found: error", self.text)
+        self.assertIn(
+            "--work-dir .ci-artifacts/skill-evaluation-lab/static",
+            self.text,
+        )
+        for forbidden in (
+            "actions/upload-artifact",
+            "actions/download-artifact",
+            "actions/cache",
+            "cache:",
+            "retention-days:",
+        ):
+            self.assertNotIn(forbidden, self.lower)
 
 
 if __name__ == "__main__":

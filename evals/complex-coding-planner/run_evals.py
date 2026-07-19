@@ -16,9 +16,12 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+EVALS_ROOT = REPO_ROOT / "evals"
 REVIEWER_SCRIPTS = REPO_ROOT / "skills" / "complex-coding-reviewer" / "scripts"
+sys.path.insert(0, str(EVALS_ROOT))
 sys.path.insert(0, str(REVIEWER_SCRIPTS))
 
+from review_fixture import assemble_fixture_receipt, sync_fixture_semantic  # noqa: E402
 from complex_coding_reviewer.contract import PLAN_LENSES  # noqa: E402
 from complex_coding_reviewer.context import RISK_IDS, build_context_target  # noqa: E402
 from complex_coding_reviewer.target import build_plan_bundle_target  # noqa: E402
@@ -90,6 +93,9 @@ STATIC_GATE_BODIES = {
     "正式方案审查": (
         "- Profile: `plan-review`\n"
         "- Scope: `managed-plan`\n"
+        "- Coordinator: `review-coordinator`\n"
+        "- Dispatch: `complex-coding-reviewer/scripts/review_dispatch.py`\n"
+        "- Expected dispatch policy: `conditional`\n"
         "- Current receipt: `artifacts/reviews/plan-review-attempt-1.json`\n"
         "- Validator: `complex-coding-reviewer/scripts/review_validate.py`\n"
         "- Canonical result: JSON receipt only."
@@ -259,6 +265,14 @@ def build_plan(contract: dict[str, Any]) -> str:
             body = "### 方案 A\nMinimal\n\n### 方案 B\nStructured"
         elif heading == "实施计划":
             body = "\n\n".join(render_stage(stage) for stage in contract["stages"])
+        elif heading == "正式方案审查":
+            dispatch_policy = (
+                "strict" if contract["plan_profile"] == "full" else "conditional"
+            )
+            body = STATIC_GATE_BODIES[heading].replace(
+                "`conditional`",
+                f"`{dispatch_policy}`",
+            )
         elif heading == "Artifact Index":
             body = " ".join(item["id"] for item in contract["artifacts"]) or "none"
         elif heading == "方案批准":
@@ -309,7 +323,8 @@ def review_receipt(task_dir: Path) -> dict[str, Any]:
         entries=context_entries,
     )
     target_paths = [str(item["path"]) for item in target["manifest"]]
-    return {
+    semantic = {
+        "kind": "review-semantic-result",
         "review_id": "REV-PLAN-001",
         "profile": "plan-review",
         "scope": {
@@ -317,14 +332,8 @@ def review_receipt(task_dir: Path) -> dict[str, Any]:
             "task_id": identity["task_id"],
             "plan_revision": identity["plan_revision"],
         },
-        "target": target,
-        "context": context,
-        "reviewer": {
-            "mode": "same-context",
-            "identity": "planner-deterministic-eval",
-            "independence_claim": False,
-            "capability_limits": ["未运行 Agent 或目标代码。"],
-        },
+        "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "standards": [
             {
                 "id": "STD-01",
@@ -391,8 +400,18 @@ def review_receipt(task_dir: Path) -> dict[str, Any]:
         "summary": "fixture plan bundle 已完成正式方案审查。",
         "limitations": ["这是确定性契约 fixture，不代表 fresh-context 语义观察。"],
         "supersedes_review_id": None,
-        "reviewed_at": "2026-07-16T00:00:00+00:00",
+        "reviewed_at": "2026-07-16T00:00:02+00:00",
     }
+    policy = "strict" if contract["plan_profile"] == "full" else "conditional"
+    return assemble_fixture_receipt(
+        root=task_dir,
+        review_root=task_dir / "artifacts" / "reviews",
+        target=target,
+        context=context,
+        semantic=semantic,
+        policy=policy,
+        delegated=True,
+    )
 
 
 def add_open_major(receipt: dict[str, Any]) -> None:
@@ -518,6 +537,7 @@ def write_current_review(
         receipt["profile"] = "code-review"
     elif mutation == "review-open-major":
         add_open_major(receipt)
+        sync_fixture_semantic(receipt, task_dir / "artifacts" / "reviews")
     write_json(path, receipt)
     if mutation == "review-stale-target":
         plan_path = task_dir / "execution-plan.md"

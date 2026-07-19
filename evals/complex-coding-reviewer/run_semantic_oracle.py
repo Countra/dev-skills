@@ -32,6 +32,9 @@ REQUIRED_CORPUS_TAGS = {
     "risk-trigger",
     "stale-context",
     "lineage",
+    "framing-bias",
+    "prompt-injection",
+    "parent-contamination",
 }
 SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 CORPUS_PATH = Path(__file__).with_name("semantic_cases") / "corpus.json"

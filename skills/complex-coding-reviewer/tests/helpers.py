@@ -9,7 +9,6 @@ import stat
 import sys
 import uuid
 from contextlib import contextmanager
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +22,11 @@ if str(SCRIPT_ROOT) not in sys.path:
 
 from complex_coding_reviewer.contract import CODE_LENSES, PLAN_LENSES
 from complex_coding_reviewer.context import RISK_IDS, build_context_target
+from complex_coding_reviewer.assemble import assemble_receipt
+from complex_coding_reviewer.dispatch import prepare_dispatch
+from complex_coding_reviewer.dispatch_lifecycle import finalize_dispatch
+from complex_coding_reviewer.io import resolve_review_ref, sha256_file
+from complex_coding_reviewer.semantic_result import RECEIPT_SEMANTIC_FIELDS
 from complex_coding_reviewer.target import (
     build_file_manifest_target,
     build_plan_bundle_target,
@@ -106,6 +110,10 @@ def receipt_for_target(
     root: Path,
     profile: str = "code-review",
     scope: dict[str, Any] | None = None,
+    review_id: str | None = None,
+    supersedes_review_id: str | None = None,
+    policy: str = "conditional",
+    delegated: bool = False,
 ) -> dict[str, Any]:
     if profile == "plan-review":
         scope = scope or {
@@ -113,14 +121,14 @@ def receipt_for_target(
             "task_id": target["identity"]["task_id"],
             "plan_revision": target["identity"]["plan_revision"],
         }
-        review_id = "REV-PLAN-001"
+        review_id = review_id or "REV-PLAN-001"
     else:
         scope = scope or {"kind": "standalone"}
-        review_id = "REV-CODE-001"
+        review_id = review_id or "REV-CODE-001"
     brief_relative = (
-        "artifacts/review-brief.json"
+        f"artifacts/review-brief-{review_id}.json"
         if profile == "plan-review"
-        else "review-brief.json"
+        else f"review-brief-{review_id}.json"
     )
     brief = {
         "profile": profile,
@@ -147,18 +155,13 @@ def receipt_for_target(
     )
     target_paths = [item["path"] for item in target["manifest"]]
     evidence_ref = brief_relative
-    return {
+    semantic = {
+        "kind": "review-semantic-result",
         "review_id": review_id,
         "profile": profile,
         "scope": scope,
-        "target": deepcopy(target),
-        "context": context,
-        "reviewer": {
-            "mode": "same-context",
-            "identity": "unit-test-reviewer",
-            "independence_claim": False,
-            "capability_limits": ["未执行目标代码。"],
-        },
+        "target_digest": target["digest"],
+        "context_digest": context["digest"],
         "standards": [
             {
                 "id": "STD-01",
@@ -215,9 +218,117 @@ def receipt_for_target(
         },
         "summary": "目标已完成正式审查，未发现阻断问题。",
         "limitations": ["未运行测试，仅消费已有证据。"],
-        "supersedes_review_id": None,
-        "reviewed_at": "2026-07-16T00:00:00+00:00",
+        "supersedes_review_id": supersedes_review_id,
+        "reviewed_at": "2026-07-16T00:00:02+00:00",
     }
+    review_root = root / "reviews"
+    target_path = review_root / "targets" / f"{review_id}.json"
+    context_path = review_root / "contexts" / f"{review_id}.json"
+    write_json(target_path, target)
+    write_json(context_path, context)
+    available_tools = (
+        ["close_agent", "spawn_agent", "wait_agent"]
+        if delegated
+        else []
+    )
+    preparation = prepare_dispatch(
+        review_id=review_id,
+        target_path=target_path,
+        context_path=context_path,
+        review_root=review_root,
+        policy=policy,
+        capability_status="available" if delegated else "unavailable",
+        tool_family="unit-test-host",
+        available_tools=available_tools,
+        workspace=root if profile == "code-review" else None,
+        task_dir=root if profile == "plan-review" else None,
+        prepared_at="2026-07-16T00:00:00+00:00",
+    )
+    preparation_path = review_root / "dispatches" / f"{review_id}-prepare.json"
+    write_json(preparation_path, preparation)
+    if delegated:
+        outcome = {
+            "status": "completed",
+            "agent_id": "unit-agent-001",
+            "fork_context": False,
+            "started_at": "2026-07-16T00:00:01+00:00",
+            "completed_at": "2026-07-16T00:00:02+00:00",
+            "schema_repair_count": 0,
+            "context_expansion_requested": False,
+            "parent_judgment_included": False,
+            "recursive_delegation_allowed": False,
+            "failure": None,
+            "close": {
+                "required": True,
+                "attempted": True,
+                "status": "closed",
+                "closed_at": "2026-07-16T00:00:03+00:00",
+                "error": None,
+            },
+            "fallback": {"mode": "none", "reason_code": None, "reason": None},
+        }
+    else:
+        outcome = {
+            "status": "fallback",
+            "agent_id": None,
+            "fork_context": None,
+            "started_at": None,
+            "completed_at": "2026-07-16T00:00:02+00:00",
+            "schema_repair_count": 0,
+            "context_expansion_requested": False,
+            "parent_judgment_included": False,
+            "recursive_delegation_allowed": False,
+            "failure": None,
+            "close": {
+                "required": False,
+                "attempted": False,
+                "status": "not-required",
+                "closed_at": None,
+                "error": None,
+            },
+            "fallback": {
+                "mode": "same-context",
+                "reason_code": "REVIEW_HOST_TOOLS_UNAVAILABLE",
+                "reason": "单元测试宿主不提供 Agent 工具。",
+            },
+        }
+    dispatch = finalize_dispatch(
+        preparation,
+        outcome,
+        preparation_path=preparation_path,
+        review_root=review_root,
+        workspace=root if profile == "code-review" else None,
+        task_dir=root if profile == "plan-review" else None,
+        finalized_at="2026-07-16T00:00:04+00:00",
+    )
+    dispatch_path = review_root / "dispatches" / f"{review_id}.json"
+    result_path = review_root / Path(*preparation["inputs"]["semantic_result_ref"].split("/"))
+    write_json(dispatch_path, dispatch)
+    write_json(result_path, semantic)
+    return assemble_receipt(
+        target_path=target_path,
+        context_path=context_path,
+        dispatch_path=dispatch_path,
+        semantic_result_path=result_path,
+        review_root=review_root,
+        workspace=root if profile == "code-review" else None,
+        task_dir=root if profile == "plan-review" else None,
+    )
+
+
+def sync_semantic_result(receipt: dict[str, Any], root: Path) -> None:
+    """把测试对 receipt 语义层的修改同步到原始 result 与摘要。"""
+
+    review_root = root / "reviews"
+    result_path = resolve_review_ref(
+        receipt["reviewer"]["semantic_result_ref"],
+        review_root,
+    )
+    semantic = json.loads(result_path.read_text(encoding="utf-8"))
+    for field in RECEIPT_SEMANTIC_FIELDS:
+        semantic[field] = receipt[field]
+    write_json(result_path, semantic)
+    receipt["reviewer"]["semantic_result_digest"] = sha256_file(result_path)
 
 
 def finding(
