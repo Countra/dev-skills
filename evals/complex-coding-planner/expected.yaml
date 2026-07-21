@@ -1,6 +1,15 @@
 direct-small-fix:
   classification: direct
   creates_task_state: false
+  does_not_route_by_tool_count: true
+compact-managed-plan:
+  preserves_contract_and_stable_ids: true
+  accepts_combined_semantic_sections: true
+  warns_without_blocking_on_soft_line_budget: true
+bounded-research:
+  searches_only_decision_changing_unknowns: true
+  stops_when_new_evidence_no_longer_changes_decisions: true
+  prefers_project_and_primary_sources: true
 managed-plan-approval:
   classification: managed
   requires_execution_plan: true
@@ -26,6 +35,7 @@ managed-plan-requires-task-contract:
 planning-loop-records-findings:
   records_findings_to_plan_or_artifacts: true
   rereads_plan_before_major_decision: true
+  limits_automatic_semantic_revisions_to_two: true
 plan-amendment-required-after-approval:
   requires_plan_amendment_gate: true
   requires_reapproval_before_continue: true

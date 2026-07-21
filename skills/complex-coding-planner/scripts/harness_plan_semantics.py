@@ -25,6 +25,15 @@ GATE_RESULTS = {
     ),
 }
 
+GATE_BOUNDARY_LABELS = {
+    "Research result",
+    "Dependency selection result",
+    "Standards result",
+    "Development quality result",
+    "Quality result",
+    "Readiness result",
+}
+
 
 def plan_section(plan: str, name: str) -> str:
     match = re.search(rf"^##\s+.*{re.escape(name)}.*$", plan, re.MULTILINE)
@@ -43,6 +52,35 @@ def controlled_value(text: str, label: str) -> str:
         re.IGNORECASE,
     )
     return match.group(1).strip().lower() if match else ""
+
+
+def scoped_gate_text(text: str, result_label: str) -> str:
+    """把组合章节中的门禁证据限制在当前 result 与下一语义边界之间。"""
+
+    lines = text.splitlines()
+    start = next(
+        (
+            index
+            for index, line in enumerate(lines)
+            if result_label.lower() in line.lower()
+        ),
+        None,
+    )
+    if start is None:
+        return text
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line.lstrip().startswith("### "):
+            end = index
+            break
+        if any(
+            label != result_label and label.lower() in line.lower()
+            for label in GATE_BOUNDARY_LABELS
+        ):
+            end = index
+            break
+    return "\n".join(lines[start:end])
 
 
 def substantive_gate_lines(text: str, result_label: str) -> list[str]:
@@ -102,7 +140,10 @@ def validate_gate_semantics(plan: str, issues: list[ValidationIssue]) -> None:
                 f"{gate} 缺少受控通过结果。",
                 f"填写 {result_label} 的受控值并保留证据。",
             )
-        substantive = substantive_gate_lines(gate_text, result_label)
+        substantive = substantive_gate_lines(
+            scoped_gate_text(gate_text, result_label),
+            result_label,
+        )
         if (
             len(substantive) < 3
             or not has_evidence_anchor(substantive)

@@ -274,8 +274,22 @@ def validate_contract(
     }
     for index, item in enumerate(validations):
         path = f"$.validations[{index}]"
-        fields = {"id", "kind", "required", "covers", "command", "evidence_path"}
-        if not check_closed_object(item, path, fields, issues):
+        fields = {
+            "id",
+            "kind",
+            "required",
+            "covers",
+            "command",
+            "evidence_path",
+            "timeout_seconds",
+        }
+        if not check_closed_object(
+            item,
+            path,
+            fields,
+            issues,
+            required=fields - {"timeout_seconds"},
+        ):
             continue
         if item.get("kind") not in validation_kinds:
             invalid_value(
@@ -306,6 +320,18 @@ def validate_contract(
         check_relative_path(
             item.get("evidence_path"), f"{path}.evidence_path", task_dir, issues
         )
+        timeout_seconds = item.get("timeout_seconds")
+        if timeout_seconds is not None and (
+            not isinstance(timeout_seconds, int)
+            or isinstance(timeout_seconds, bool)
+            or timeout_seconds < 1
+        ):
+            invalid_value(
+                issues,
+                f"{path}.timeout_seconds",
+                "timeout_seconds 必须是正整数。",
+                "省略该字段以使用 kind 默认值，或填写大于 0 的秒数。",
+            )
     for index, refs in stage_validation_refs.items():
         check_references(
             refs, validation_ids, f"$.stages[{index}].validation_ids", issues

@@ -52,6 +52,12 @@ REQUIRED_PLAN_SECTIONS = [
     "Executor Handoff",
 ]
 
+PLAN_LINE_SOFT_BUDGETS = {
+    "lite": 200,
+    "standard": 350,
+    "full": 600,
+}
+
 FORBIDDEN_LEGACY_REVIEW_SECTIONS = [
     "规划自查",
     "Plan Self-Review",
@@ -217,6 +223,17 @@ def validate_plan(
     profile = contract.get("plan_profile")
     if isinstance(profile, str) and profile not in summary:
         add_issue(issues, "TASK_PLAN_CONTRACT_DRIFT", "$plan.规划摘要", "Plan profile 与 contract 不一致。", "同步 profile。")
+    line_budget = PLAN_LINE_SOFT_BUDGETS.get(str(profile))
+    line_count = len(plan.splitlines())
+    if line_budget is not None and line_count > line_budget:
+        add_issue(
+            issues,
+            "TASK_PLAN_SOFT_BUDGET_EXCEEDED",
+            "$plan",
+            f"{profile} 计划共 {line_count} 行，超过建议的 {line_budget} 行。",
+            "合并语义相关章节，并删除已由 plan-contract.json 完整表达的重复字段；该告警不阻断批准。",
+            level="warning",
+        )
     revision = contract.get("plan_revision")
     if isinstance(revision, int) and not re.search(
         rf"Plan revision[^\n]*\b{revision}\b",

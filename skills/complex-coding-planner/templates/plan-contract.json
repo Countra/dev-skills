@@ -62,7 +62,8 @@
       "required": true,
       "covers": ["AC-01"],
       "command": "<deterministic command or tool>",
-      "evidence_path": "artifacts/validation/<evidence-file>"
+      "evidence_path": "artifacts/validation/<evidence-file>",
+      "timeout_seconds": 300
     }
   ],
   "research": {

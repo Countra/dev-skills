@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -429,6 +430,37 @@ def valid_plan(extra: str = "") -> str:
     return "\n\n".join(sections) + "\n"
 
 
+def compact_plan() -> str:
+    plan = valid_plan()
+    groups = [
+        (["问题定义", "需求与验收"], "问题定义与需求与验收"),
+        (
+            ["调研门禁", "依赖选型门禁", "规范发现门禁", "开发质量门禁"],
+            "调研门禁、依赖选型门禁、规范发现门禁与开发质量门禁",
+        ),
+        (
+            ["上下文", "候选方案", "决策", "影响面矩阵"],
+            "上下文、候选方案、决策与影响面矩阵",
+        ),
+        (
+            ["环境", "Git 上下文", "工具", "长期进程管理"],
+            "环境、Git、工具与长期进程",
+        ),
+        (["验证", "文档"], "验证与文档"),
+        (["文件写入策略"], "文件写入策略与问题覆盖"),
+        (["方案质量门禁", "正式方案审查"], "方案质量门禁与正式方案审查"),
+        (
+            ["就绪门禁", "方案批准", "方案变更门禁"],
+            "就绪门禁、方案批准与方案变更门禁",
+        ),
+    ]
+    for headings, combined in groups:
+        plan = plan.replace(f"## {headings[0]}\n", f"## {combined}\n", 1)
+        for heading in headings[1:]:
+            plan = plan.replace(f"\n\n## {heading}\n\n", "\n\n", 1)
+    return plan
+
+
 class PlannerBundleTest(unittest.TestCase):
     def make_task(self, contract: dict[str, object] | None = None, plan: str | None = None) -> Path:
         temp = WritableTemporaryDirectory()
@@ -474,6 +506,33 @@ class PlannerBundleTest(unittest.TestCase):
 
     def test_valid_bundle_passes_approval(self) -> None:
         self.assertEqual(set(), self.error_codes(self.make_task()))
+
+    def test_compact_semantic_sections_pass_approval(self) -> None:
+        plan = compact_plan()
+        self.assertLessEqual(len(re.findall(r"^##\s+", plan, re.MULTILINE)), 14)
+        self.assertEqual(set(), self.error_codes(self.make_task(plan=plan)))
+
+    def test_profile_line_budget_is_warning_only(self) -> None:
+        plan = valid_plan("\n".join(f"补充证据 {index}" for index in range(220)))
+        issues = validate_task(self.make_task(plan=plan), "approval")
+        budget_issues = [
+            issue for issue in issues if issue.code == "TASK_PLAN_SOFT_BUDGET_EXCEEDED"
+        ]
+        self.assertEqual(1, len(budget_issues))
+        self.assertEqual("warning", budget_issues[0].level)
+        self.assertFalse(any(issue.level == "error" for issue in issues))
+
+    def test_validation_timeout_is_optional_and_positive(self) -> None:
+        contract = valid_contract()
+        contract["validations"][0]["timeout_seconds"] = 45
+        self.assertEqual(set(), self.error_codes(self.make_task(contract=contract)))
+
+        contract = valid_contract()
+        contract["validations"][0]["timeout_seconds"] = 0
+        self.assertIn(
+            "TASK_CONTRACT_INVALID_VALUE",
+            self.error_codes(self.make_task(contract=contract)),
+        )
 
     def test_full_profile_review_uses_strict_dispatch(self) -> None:
         contract = valid_contract()

@@ -12,7 +12,9 @@
 
 本文件只保存批准意图。批准后不得写入 current stage、progress、运行结果、ledger 摘要或 commit 状态；执行事实由 `attestation.json`、`run-state.json` 和 `ledger.jsonl` 保存。
 
-## 问题定义（Problem）
+按 profile 删除不适用的占位行并合并表达：lite 建议不超过 200 行，standard 350 行，full 600 行。正文只解释决策、风险、紧凑追踪和 Stage 摘要；完整字段以 `plan-contract.json` 为准。
+
+## 问题定义与需求与验收（Problem, Requirements And Acceptance）
 
 目标（Goal）：`GOAL-01`
 
@@ -23,8 +25,6 @@
 约束（Constraints）:
 
 待确认项（Open uncertainties）:
-
-## 需求与验收（Requirements And Acceptance）
 
 功能需求：
 
@@ -44,7 +44,9 @@
 | --- | --- | --- |
 | AC-01 | REQ-01 |  |
 
-## 调研门禁（Research Gate）
+## 调研门禁、规范发现门禁、开发质量门禁与依赖选型门禁（Research, Standards, Quality And Dependency Gates）
+
+### 调研门禁
 
 研究模式（Research mode）：`none / local-only / online-required / blocked-by-access`
 
@@ -72,7 +74,7 @@
 
 调研结论（Research result）：`pending`
 
-## 规范发现门禁（Standards Discovery Gate）
+### 规范发现门禁
 
 发现模式（Discovery mode）：`none / local-only / online-required / blocked-by-access`
 
@@ -99,7 +101,7 @@ standards index:
 
 规范发现结论（Standards result）：`pending`
 
-## 开发质量门禁（Development Quality Gate）
+### 开发质量门禁
 
 质量范围（Quality scope）:
 
@@ -118,7 +120,7 @@ standards index:
 
 开发质量结论（Development quality result）：`pending`
 
-## 依赖选型门禁（Dependency Selection Gate）
+### 依赖选型门禁
 
 选择模式（Selection mode）：`none / retain / change / mixed`
 
@@ -160,7 +162,7 @@ standards index:
 
 依赖选型结论（Dependency selection result）：`pending / passed / not-applicable / blocked`
 
-## 上下文（Context）
+## 上下文、候选方案、决策与影响面矩阵（Context, Options, Decision And Impact）
 
 本地代码（Local code）:
 
@@ -184,8 +186,6 @@ standards index:
 | --- | --- | --- | --- |
 |  | read / confirmed / external / assumption |  |  |
 
-## 候选方案（Options）
-
 ### 方案 A：最小改动（Minimal Change）
 
 - 做法（How）:
@@ -204,8 +204,6 @@ standards index:
 - 验证（Validation）:
 - 回滚（Rollback）:
 
-## 决策（Decision）
-
 选择方案（Chosen option）:
 
 原因（Why）:
@@ -219,8 +217,6 @@ standards index:
 方案变更触发条件（Reapproval triggers）:
 
 -
-
-## 影响面矩阵（Impact Matrix）
 
 | 影响对象（Surface） | 是否涉及（Involved） | 文件/模块（Files/modules） | 风险（Risk） | 验证方式（Validation） | 文档更新（Docs） |
 | --- | --- | --- | --- | --- | --- |
@@ -292,7 +288,7 @@ standards index:
 - 必需验证（Required validation）:
 - 是否预期提交（Commit expected）:
 
-## 环境（Environment）
+## 环境、Git、工具与长期进程（Environment, Git, Tooling And Processes）
 
 Workspace 环境来源（Workspace environment source）:
 
@@ -306,8 +302,6 @@ Workspace 环境来源（Workspace environment source）:
 
 - 
 
-## Git 上下文（Git Context）
-
 - Main / working branch：
 - Task type / branch action：
 - Sync source / occupancy evidence：
@@ -317,13 +311,9 @@ Workspace 环境来源（Workspace environment source）:
 
 规则：同一仓库 Git 命令串行；只读状态优先 `--no-optional-locks`，diff 优先禁用 index refresh。不自动 stash、rebase、reset 或覆盖未知改动。遇到 `index.lock` 时只按精确路径、稳定性和进程检查恢复，并记录 evidence。
 
-## 工具（Tooling）
-
 | 工具（Tool） | 用途（Purpose） | 阶段（Stage） | 状态（Status） | 风险（Risk） | 替代方案（Alternative） | 用户确认（User confirmation） |
 | --- | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |  |
-
-## 长期进程管理（Process Manager Gate）
 
 - Needs long-running process：`yes / no`
 - Runtime context：每个公共命令使用 explicit absolute `--workspace` 或 `--config`
@@ -337,15 +327,13 @@ Workspace 环境来源（Workspace environment source）:
 
 存在 process-manager 时，服务、worker、watcher 和 dev server 必须由统一公共 CLI 管理；finite test/build/lint command 直接运行。不得用手写后台 shell 绕过 manager，不得把平台 backend 选择责任交给调用方，也不得把 shell/profile access denied 无 envelope 地猜成 runtime ACL 问题。
 
-## 验证（Validation）
+## 验证与文档（Validation And Documentation）
 
 | VAL ID | Required | Kind / command / tool | Covers AC/NFR | Evidence path | Failure handling |
 | --- | --- | --- | --- | --- | --- |
 | VAL-01 | yes |  | AC-01 | artifacts/validation/... | repair and rerun / stop |
 
 规划阶段已执行的探针与实施阶段验证分开记录。无法执行的必需项必须说明原因、影响、替代证据和残余风险，不能标为 passed。
-
-## 文档（Documentation）
 
 必需更新（Required updates）:
 
@@ -355,7 +343,7 @@ Changelog 计划（Changelog plan）:
 
 - 
 
-## 文件写入策略（File Write Strategy）
+## 文件写入策略与问题覆盖（File Strategy And Open Decisions）
 
 | File / group | Segmented | Semantic boundaries | Whole-file check |
 | --- | --- | --- | --- |
@@ -363,13 +351,13 @@ Changelog 计划（Changelog plan）:
 
 长内容先建框架，再按完整章节、函数或配置分段 patch；单次新增建议不超过 120 行、最多 200 行。超过 500 行的目标默认定点修改。patch 失败先检查部分写入，完成后完整重读并检查格式、ID、引用和末尾。
 
-## 问题和覆盖项（Questions And Overrides）
-
 | ID | 是否阻塞（Blocking） | 状态（Status） | 问题（Question） | 决策（Decision） | 应用位置（Applied to） |
 | --- | --- | --- | --- | --- | --- |
 |  |  |  |  |  |  |
 
-## 方案质量门禁（Plan Quality Gate）
+## 方案质量门禁与正式方案审查（Plan Quality And Formal Review）
+
+### 方案质量门禁
 
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
@@ -388,13 +376,13 @@ Changelog 计划（Changelog plan）:
 
 - `pending`
 
-## 正式方案审查（Formal Plan Review）
+### 正式方案审查
 
 - Producer：`complex-coding-planner` 负责生成和修复 plan bundle，不生成正式 verdict
 - Profile：`plan-review`
 - Scope：`managed-plan`
 - Coordinator：`review-coordinator`；不执行语义审查，只派发、等待、持久化、校验并关闭 Agent
-- Expected dispatch policy：`strict`（full）/ `conditional`（lite、standard）
+- Expected dispatch policy：`strict`（full）/ `conditional`（lite、standard）；lite/standard 低/中风险默认 `policy-disabled` same-context
 - Dispatch helper：`complex-coding-reviewer/scripts/review_dispatch.py`
 - Review brief：`artifacts/reviews/plan-review-brief.json`，必须 approval-included 并声明当前 requirements/constraints/claims/risk focus
 - Current receipt：`artifacts/reviews/plan-review-attempt-1.json`
@@ -403,7 +391,9 @@ Changelog 计划（Changelog plan）:
 - Canonical result：只读取上述 JSON receipt；approval checker 重建 target/context 并校验 policy、Agent lifecycle、supporting artifact digest、coverage、gaps 与 lineage，计划正文不复制 verdict 或 finding 状态
 - Retry：修复目标后保留旧文件，把 contract 指向递增 attempt，并通过 `supersedes_review_id` 连接前序 receipt
 
-## 生产者就绪门禁（Producer Readiness Gate）
+## 生产者就绪门禁、方案批准与方案变更门禁（Readiness, Approval And Amendment）
+
+### 生产者就绪门禁
 
 | 检查项（Check） | 状态（Status） | 证据（Evidence） |
 | --- | --- | --- |
@@ -430,7 +420,7 @@ Changelog 计划（Changelog plan）:
 
 - `pending`
 
-## 方案批准（Plan Approval）
+### 方案批准
 
 状态（Status）:
 
@@ -451,7 +441,7 @@ Changelog 计划（Changelog plan）:
 
 - `not_authorized`
 
-## 方案变更门禁（Plan Amendment Gate）
+### 方案变更门禁
 
 需要重新批准（Requires reapproval）:
 

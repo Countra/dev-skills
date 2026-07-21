@@ -58,7 +58,13 @@
 4. 同生态、同类别中成熟、广泛采用、维护健康的主流方案。
 5. 主流基线无法满足明确需求时的 specialized exception。
 
-`retain` 至少比较现有依赖与一个合理替代/标准基线；只有一个合理方案时记录其它方案的排除依据。`change`/`mixed` 通常比较现有或标准基线与二至四个领先候选。不同抽象层、不同 package major、fork、rename 或 monorepo package 不得混为同一采用口径。
+按决策影响选择证据档位：
+
+- **快速确认**：健康的现有依赖、标准库、平台能力或官方 SDK 已满足需求时，可以只保留一个正式候选，但必须记录其它方案不合理的排除依据，并确认版本、支持线、安全、许可和项目适配。
+- **主流比较**：新增或替换通用 framework、ORM、SDK、driver、CI Action 等依赖时，比较 2-3 个同生态、同类别的主流候选；已有/标准方案可作为其中一个基线。
+- **专业例外**：主流基线无法满足明确 REQ 时，保留主流候选并执行完整 specialized exception、风险接受、缓解和回滚。
+
+不同抽象层、不同 package major、fork、rename 或 monorepo package 不得混为同一采用口径。不得为了凑候选数纳入明显不适用的方案。
 
 ## 硬门槛
 
@@ -123,7 +129,7 @@
 | 安全开发生命周期 | [NIST SSDF](https://csrc.nist.gov/pubs/sp/800/218/final) | 高层治理，不提供 popularity threshold |
 | 语言风格与项目结构 | 官方语言/框架文档与 [Google Style Guides](https://google.github.io/styleguide/) | 先服从项目内明确规范 |
 
-对 `add`、`upgrade`、`replace` 和高风险 `retain`，停止研究前至少具备：
+主流比较、专业例外以及高风险 `retain` 停止研究前至少具备：
 
 - 官方 package/source/documentation/release/support identity。
 - registry version、published/deprecated、license 和 adoption evidence。
@@ -132,6 +138,8 @@
 - adoption trend 结果与窗口；缺数据时包含两个代理和 caveat。
 - 与现有方案、标准库/官方 SDK 和领先候选的同类适配比较。
 - selected version policy、manifest/lock scope、验证、风险和回滚。
+
+快速确认仍须满足全部适用硬门槛与五项核心可信度信号，但可以复用项目 lock、官方 release/support/security 信息和一个 canonical 候选，不要求额外收集不改变决策的社区比较材料。
 
 URL 只是 locator，不等于 evidence。receipt 必须同时包含观察结果、来源类型、`as_of`、窗口和适用局限。私有证据只保存安全 locator 与摘要，不落盘 token、credential 或敏感 query。
 
@@ -189,4 +197,4 @@ Executor 不重新做候选排名。它核对批准 package identity、version p
 
 ## Research Saturation
 
-达到证据底线后，只有连续新增一手来源不再改变 hard-gate 结果、候选排序、风险、版本策略或验证设计，才可结束搜索。真实性不明、关键来源不可访问、政策缺失或证据互相矛盾时，结果是 blocked，不是低置信度自动选择。
+达到当前证据档位底线后，以一个有界批次验证剩余高影响未知；该批次的新一手证据不再改变 hard-gate 结果、候选排序、风险、版本策略或验证设计时立即结束搜索。真实性不明、关键来源不可访问、政策缺失或证据互相矛盾时，结果是 blocked，不是低置信度自动选择。

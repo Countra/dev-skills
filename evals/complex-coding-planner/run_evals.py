@@ -40,29 +40,15 @@ def remove_eval_tree(path: Path) -> None:
 
 PLAN_SECTIONS = [
     "规划摘要",
-    "问题定义",
-    "需求与验收",
-    "调研门禁",
-    "依赖选型门禁",
-    "规范发现门禁",
-    "开发质量门禁",
-    "上下文",
-    "候选方案",
-    "决策",
-    "影响面矩阵",
+    "问题定义与需求与验收",
+    "调研门禁、依赖选型门禁、规范发现门禁与开发质量门禁",
+    "上下文、候选方案、决策与影响面矩阵",
     "实施计划",
-    "环境",
-    "Git 上下文",
-    "工具",
-    "长期进程管理",
-    "验证",
-    "文档",
-    "文件写入策略",
-    "方案质量门禁",
-    "正式方案审查",
-    "就绪门禁",
-    "方案批准",
-    "方案变更门禁",
+    "环境、Git、工具与长期进程",
+    "验证与文档",
+    "文件写入策略与问题覆盖",
+    "方案质量门禁与正式方案审查",
+    "就绪门禁、方案批准与方案变更门禁",
     "Artifact Index",
     "Executor Handoff",
 ]
@@ -243,11 +229,9 @@ def build_plan(contract: dict[str, Any]) -> str:
                 f"Lifecycle route: {contract['lifecycle_route']}\n\n"
                 f"Plan profile: {contract['plan_profile']}"
             )
-        elif heading == "问题定义":
-            body = "GOAL-01"
-        elif heading == "需求与验收":
-            body = " ".join(ids[1:4])
-        elif heading == "调研门禁":
+        elif "问题定义" in heading:
+            body = "GOAL-01 " + " ".join(ids[1:4])
+        elif "调研门禁" in heading:
             research_result = (
                 "passed"
                 if contract["research"]["mode"] == "online-required"
@@ -261,22 +245,55 @@ def build_plan(contract: dict[str, Any]) -> str:
                 f"- Evidence: {research_evidence} with VAL-01 traceability.\n"
                 "- Impact: STG-01 follows the recorded source limits."
             )
-        elif heading == "候选方案":
-            body = "### 方案 A\nMinimal\n\n### 方案 B\nStructured"
+            body = "\n".join(
+                (
+                    "### 调研门禁",
+                    body,
+                    "### 依赖选型门禁",
+                    STATIC_GATE_BODIES["依赖选型门禁"],
+                    "### 规范发现门禁",
+                    STATIC_GATE_BODIES["规范发现门禁"],
+                    "### 开发质量门禁",
+                    STATIC_GATE_BODIES["开发质量门禁"],
+                )
+            )
+        elif "候选方案" in heading:
+            body = (
+                "Context and impact are bounded by the contract.\n"
+                "### 方案 A\nMinimal\n\n### 方案 B\nStructured\n"
+                "Decision: choose the lowest-risk option that satisfies AC-01."
+            )
         elif heading == "实施计划":
             body = "\n\n".join(render_stage(stage) for stage in contract["stages"])
-        elif heading == "正式方案审查":
+        elif "正式方案审查" in heading:
             dispatch_policy = (
                 "strict" if contract["plan_profile"] == "full" else "conditional"
             )
-            body = STATIC_GATE_BODIES[heading].replace(
+            review_body = STATIC_GATE_BODIES["正式方案审查"].replace(
                 "`conditional`",
                 f"`{dispatch_policy}`",
             )
+            body = "\n".join(
+                (
+                    "### 方案质量门禁",
+                    STATIC_GATE_BODIES["方案质量门禁"],
+                    "### 正式方案审查",
+                    review_body,
+                )
+            )
+        elif "就绪门禁" in heading:
+            body = "\n".join(
+                (
+                    "### 生产者就绪门禁",
+                    STATIC_GATE_BODIES["就绪门禁"],
+                    "### 方案批准",
+                    "Status: not requested; commit authorization requested separately.",
+                    "### 方案变更门禁",
+                    "Amendment: only material scope, DAG, validation, risk, dependency or authorization changes.",
+                )
+            )
         elif heading == "Artifact Index":
             body = " ".join(item["id"] for item in contract["artifacts"]) or "none"
-        elif heading == "方案批准":
-            body = "Status: not requested; commit authorization requested separately"
         elif heading == "Executor Handoff":
             body = "Planner checker: approval mode; no open blocker"
         sections.append(f"## {heading}\n\n{body}")

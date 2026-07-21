@@ -107,11 +107,11 @@ review brief 使用 `kind=other`、`required=true`、`approval_included=true`，
 
 planner approval 通过 `complex-coding-reviewer/scripts/review_validate.py` 校验当前 receipt，固定期望
 `profile=plan-review`、`scope=managed-plan`，并按 plan profile 派生 expected dispatch policy：full=`strict`，
-lite/standard=`conditional`。只有 supporting artifact digest、policy/Agent lifecycle、canonical schema、provenance、coverage、
+lite/standard=`conditional`。后两者在低/中风险默认记录 `capability.status=policy-disabled` 并使用 same-context receipt；旧 external-agent conditional receipt 继续有效。只有 supporting artifact digest、policy/Agent lifecycle、canonical schema、provenance、coverage、
 strengths、findings、gaps、lineage、supersedes 与双 freshness 全部有效且 verdict 为 `passed` 时才通过；Markdown 文本不承载
 正式 verdict。
 
-每个 validation 包含 `id`、`kind`、`required`、`covers`、`command` 和 `evidence_path`。`command` 可以是确定性 CLI，也可以是具名工具流程，但不能伪造尚未执行的结果。
+每个 validation 必须包含 `id`、`kind`、`required`、`covers`、`command` 和 `evidence_path`，可选包含正整数 `timeout_seconds`。缺省 timeout 由 executor 按 kind 派生：test/lint/typecheck/smoke 为 300 秒，build 为 900 秒，其它有限命令为 900 秒。`command` 可以是确定性 CLI，也可以是具名工具流程，但不能伪造尚未执行的结果。
 
 Stage 的 `validation_ids` 可以包含 required 与 optional validation；只有 `required = true` 的项目阻断 stage completion。optional 项如实际执行仍应记录真实结果，不得把未执行项伪造成 passed。
 
@@ -176,9 +176,9 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 
 | Profile | 适用条件 | 必需内容 |
 | --- | --- | --- |
-| `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、1-3 stages、focused plan-review |
-| `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、traceability、2-5 stages、plan-review |
-| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、完整追踪、3-7 stages、恢复与切换证据、strict delegated plan-review |
+| `lite` | 局部、低风险、可逆、短时 managed 任务 | 内联证据、最小 change map、默认 1 stage（兼容 1-3）、same-context focused plan-review |
+| `standard` | 跨文件或中等风险任务 | research/standards 摘要、影响面、默认 2-3 stages（兼容 2-5）、same-context plan-review |
+| `full` | 高风险、跨模块、长时、外部写入或恢复敏感任务 | 独立 artifacts、完整追踪、默认 3-5 stages（兼容 3-7）、strict delegated plan-review |
 
 目标未稳定或存在高影响未知时先进入 `discovery-first`，只产出发现和阻塞决策；不得伪造 ready-for-approval contract。
 
