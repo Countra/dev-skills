@@ -1,4 +1,4 @@
 interface:
   display_name: "Complex Coding Executor"
   short_description: "按已批准任务契约连续执行、可靠恢复并完整验证复杂编码工作"
-  default_prompt: "Use $complex-coding-executor to execute the approved task bundle through all stages, apply risk-derived same-context or delegated review through $complex-coding-reviewer, bound commands that may hang, and complete every final gate."
+  default_prompt: "Use $complex-coding-executor to execute the approved task bundle through all stages, apply risk-derived same-context or delegated review through $complex-coding-reviewer, bound commands that may hang, reuse a strict final receipt only through validated commit equivalence, and complete every final gate."

@@ -319,16 +319,20 @@ def _force_kill_windows_pids(
 ) -> None:
     """只强制回收本次命令树中已追踪且仍存活的 PID。"""
 
+    deadline = time.monotonic() + timeout_seconds
     for pid, handle in tracked.items():
         if not _windows_handle_running(handle):
             continue
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            break
         try:
             subprocess.run(
                 ["taskkill", "/PID", str(pid), "/T", "/F"],
                 check=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=timeout_seconds,
+                timeout=remaining_seconds,
             )
         except (OSError, subprocess.SubprocessError):
             continue

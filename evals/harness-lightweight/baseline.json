@@ -1,0 +1,61 @@
+{
+  "baseline_commit": "e996fa5",
+  "baseline_skill_file_count": 113,
+  "baseline_skill_line_count": 25180,
+  "historical_plan_samples": [
+    {
+      "lines": 816,
+      "path": ".harness/tasks/2026-07-09/feature/gitlab-skill-development/execution-plan.md"
+    },
+    {
+      "lines": 847,
+      "path": ".harness/tasks/2026-07-10/feature/complex-coding-planner-vnext/execution-plan.md"
+    },
+    {
+      "lines": 749,
+      "path": ".harness/tasks/2026-07-10/feature/gitlab-process-manager-capability-upgrade/execution-plan.md"
+    },
+    {
+      "lines": 400,
+      "path": ".harness/tasks/2026-07-11/feature/electron-ui-verifier-reliability-upgrade/execution-plan.md"
+    },
+    {
+      "lines": 358,
+      "path": ".harness/tasks/2026-07-13/feature/skill-evaluation-lab/execution-plan.md"
+    },
+    {
+      "lines": 468,
+      "path": ".harness/tasks/2026-07-14/feature/electron-ui-verifier-safety-knowledge-closure/execution-plan.md"
+    },
+    {
+      "lines": 464,
+      "path": ".harness/tasks/2026-07-15/feature/complex-coding-reviewer/execution-plan.md"
+    },
+    {
+      "lines": 712,
+      "path": ".harness/tasks/2026-07-15/feature/planner-dependency-trust-gate/execution-plan.md"
+    },
+    {
+      "lines": 479,
+      "path": ".harness/tasks/2026-07-16/feature/complex-coding-reviewer-professionalization/execution-plan.md"
+    },
+    {
+      "lines": 800,
+      "path": ".harness/tasks/2026-07-17/feature/process-manager-control-plane-convergence/execution-plan.md"
+    }
+  ],
+  "review_cli_calls_per_attempt": {
+    "current": 2,
+    "legacy": 4,
+    "current_commands": [
+      "review_dispatch.py prepare",
+      "review_dispatch.py complete"
+    ],
+    "legacy_commands": [
+      "review_dispatch.py prepare",
+      "review_dispatch.py finalize",
+      "review_assemble.py",
+      "review_validate.py"
+    ]
+  }
+}

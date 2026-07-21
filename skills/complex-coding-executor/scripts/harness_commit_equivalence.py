@@ -80,7 +80,75 @@ def _validate_review_record_for_equivalence(
             "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
             "final review receipt 与 ledger compact evidence 不一致。",
         )
+    _validate_strict_dispatch(bundle, receipt, compact)
     return report, receipt
+
+
+def _validate_strict_dispatch(
+    bundle: TaskBundle,
+    receipt: dict[str, Any],
+    compact: dict[str, Any],
+) -> None:
+    """重验 supporting dispatch，避免非 strict receipt 冒充快速路径输入。"""
+
+    reviewer = receipt.get("reviewer")
+    if not isinstance(reviewer, dict):
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE",
+            "final receipt 未绑定 supporting dispatch；请使用 post-commit strict review。",
+        )
+    dispatch_ref = reviewer.get("dispatch_ref")
+    dispatch_digest = reviewer.get("dispatch_digest")
+    if not isinstance(dispatch_ref, str) or not isinstance(dispatch_digest, str):
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE",
+            "final receipt 缺少 supporting dispatch 引用；请使用 post-commit strict review。",
+        )
+    dispatch_relative = Path(dispatch_ref)
+    if (
+        dispatch_relative.is_absolute()
+        or "\\" in dispatch_ref
+        or ".." in dispatch_relative.parts
+        or tuple(dispatch_relative.parts[:1]) != ("dispatches",)
+    ):
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+            "final receipt 的 dispatch_ref 不是 review-root 内的 dispatches 引用。",
+        )
+    dispatch_path = resolve_task_ref(
+        bundle,
+        f"artifacts/reviews/{dispatch_ref}",
+        prefix=("artifacts", "reviews", "dispatches"),
+    )
+    if file_digest(dispatch_path) != dispatch_digest:
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+            "final receipt 绑定的 dispatch bytes 已变化。",
+        )
+    dispatch = read_json(dispatch_path, label="final review dispatch")
+    lifecycle = dispatch.get("lifecycle")
+    close = lifecycle.get("close") if isinstance(lifecycle, dict) else None
+    if (
+        dispatch.get("dispatch_id") != compact["dispatch_id"]
+        or dispatch.get("review_id") != compact["review_id"]
+        or reviewer.get("dispatch_id") != compact["dispatch_id"]
+        or reviewer.get("mode") != compact["reviewer_mode"]
+        or reviewer.get("independence_claim")
+        != compact["independence_claim"]
+        or not isinstance(lifecycle, dict)
+        or lifecycle.get("status") != "completed"
+        or not isinstance(close, dict)
+        or close.get("status") != "closed"
+    ):
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+            "final receipt、dispatch 与 ledger provenance 不一致或生命周期未关闭。",
+        )
+    if dispatch.get("policy") != "strict":
+        raise CommitEquivalenceError(
+            "RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE",
+            "commit equivalence 只复用 strict final review。",
+        )
 
 
 def _next_artifact_refs(

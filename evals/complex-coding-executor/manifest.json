@@ -32,6 +32,13 @@
       "commit_expectation": "stage"
     },
     {
+      "id": "complete-final-equivalence",
+      "profile": "standard",
+      "scenario": "commit-equivalence",
+      "commit_authorized": true,
+      "commit_expectation": "final"
+    },
+    {
       "id": "snapshot-loss-reconcile",
       "profile": "lite",
       "scenario": "snapshot-loss-reconcile",

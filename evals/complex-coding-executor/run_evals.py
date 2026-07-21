@@ -22,6 +22,7 @@ from cli_scenarios import (
     initialize_review_repository,
     run_amendment_cli,
     run_complete_cli,
+    run_git,
     run_reviewer_target,
     write_validation_evidence,
 )
@@ -32,6 +33,7 @@ EXECUTOR_SCRIPTS = REPO_ROOT / "skills" / "complex-coding-executor" / "scripts"
 sys.path.insert(0, str(EXECUTOR_SCRIPTS))
 
 from harness_attestation import build_attestation, write_attestation  # noqa: E402
+from harness_commit_equivalence import create_commit_equivalence  # noqa: E402
 from harness_dependency_evaluation import (  # noqa: E402
     evaluate_dependency_preflight,
     evaluate_dependency_stage,
@@ -129,9 +131,9 @@ def approve(bundle: Any, *, commit_authorized: bool = False) -> None:
     write_attestation(bundle.attestation_path, payload)
 
 
-def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
-    check_preflight(bundle)
-    append_event_and_update(bundle, "execution_started")
+def complete_stages(bundle: Any, *, commit_authorized: bool) -> None:
+    """完成 deterministic stages，保留 final review/commit 给场景自行编排。"""
+
     for stage in bundle.contract["stages"]:
         stage_id = stage["id"]
         append_event_and_update(
@@ -200,6 +202,12 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
                 },
             )
         check_transition(bundle)
+
+
+def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
+    check_preflight(bundle)
+    append_event_and_update(bundle, "execution_started")
+    complete_stages(bundle, commit_authorized=commit_authorized)
     final_commit_recorded = commit_authorized and any(
         stage["commit_expectation"] == "final"
         for stage in bundle.contract["stages"]
@@ -227,6 +235,54 @@ def complete_lifecycle(bundle: Any, *, commit_authorized: bool) -> None:
         evidence_refs=[final_report_ref],
     )
     append_event_and_update(bundle, "completed")
+
+
+def complete_with_equivalence(bundle: Any) -> dict[str, Any]:
+    """以真实 Git commit 验证 precommit strict receipt 的等价复用路径。"""
+
+    check_preflight(bundle)
+    append_event_and_update(bundle, "execution_started")
+    complete_stages(bundle, commit_authorized=True)
+    final_review, final_report_ref = create_review_evidence(
+        bundle.workspace,
+        bundle.task_dir,
+        scope={"kind": "final-integration"},
+        review_id="REV-CODE-FINAL-EQUIVALENT-001",
+        final_commit_recorded=False,
+    )
+    recorded = append_event_and_update(
+        bundle,
+        "review_recorded",
+        payload=final_review,
+        evidence_refs=[final_report_ref],
+    )
+    run_git(bundle.workspace, ["add", "-A", "--", "src"])
+    run_git(
+        bundle.workspace,
+        [
+            "-c",
+            "user.name=Executor Eval",
+            "-c",
+            "user.email=executor-eval@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "record equivalent final change",
+        ],
+    )
+    proof = create_commit_equivalence(
+        bundle,
+        recorded["event"]["payload"],
+        created_at="2026-07-16T00:00:10+00:00",
+    )
+    append_event_and_update(
+        bundle,
+        "commit_recorded",
+        payload=proof["commit_payload"],
+        evidence_refs=proof["evidence_refs"],
+    )
+    append_event_and_update(bundle, "completed")
+    return proof
 
 
 def expect_error(expected_code: str, action: Callable[[], Any]) -> str:
@@ -352,6 +408,25 @@ def run_complete(bundle: Any, case: dict[str, Any]) -> dict[str, Any]:
         "lifecycle": status["lifecycle"],
         "event_count": status["last_event_seq"],
         "completed_stages": len(status["completed_stage_ids"]),
+    }
+
+
+def run_commit_equivalence_case(bundle: Any) -> dict[str, Any]:
+    source = bundle.workspace / "src" / "eval_fixture.py"
+    source.write_text("fixture = 'equivalent-final-change'\n", encoding="utf-8")
+    approve(bundle, commit_authorized=True)
+    run_planner_approval_check(bundle)
+    proof = complete_with_equivalence(bundle)
+    bundle.pointer_path.unlink()
+    check_final(bundle)
+    status = status_payload(bundle)
+    return {
+        "lifecycle": status["lifecycle"],
+        "event_count": status["last_event_seq"],
+        "completed_stages": len(status["completed_stage_ids"]),
+        "equivalent": True,
+        "proof_ref": proof["proof_ref"],
+        "agent_calls": 0,
     }
 
 
@@ -524,6 +599,8 @@ def evaluate_case(
             bundle = resolve_task_bundle(workspace, task_dir)
             if case["scenario"] == "complete":
                 details = run_complete(bundle, case)
+            elif case["scenario"] == "commit-equivalence":
+                details = run_commit_equivalence_case(bundle)
             elif case["scenario"] == "complete-cli":
                 details = run_complete_cli(workspace, task_dir, bundle)
             elif case["scenario"] == "amendment-cli":
@@ -574,10 +651,12 @@ def build_report(results: list[dict[str, Any]]) -> dict[str, Any]:
     complete_results = [
         item
         for item in results
-        if item["scenario"] in {"complete", "complete-cli"} and item["passed"]
+        if item["scenario"] in {"complete", "complete-cli", "commit-equivalence"}
+        and item["passed"]
     ]
     complete_total = sum(
-        item["scenario"] in {"complete", "complete-cli"} for item in results
+        item["scenario"] in {"complete", "complete-cli", "commit-equivalence"}
+        for item in results
     )
     return {
         "suite": "complex-coding-executor",

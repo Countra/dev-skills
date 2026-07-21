@@ -100,6 +100,20 @@ class CommitEquivalenceTest(unittest.TestCase):
             self.workspace,
             ".harness/tasks/equivalence",
         )
+        self.dispatch_ref = "dispatches/final.json"
+        self.dispatch_path = task_dir / "artifacts" / "reviews" / self.dispatch_ref
+        write_json(
+            self.dispatch_path,
+            {
+                "dispatch_id": "DSP-CODE-FINAL-001",
+                "review_id": "REV-CODE-FINAL-001",
+                "policy": "strict",
+                "lifecycle": {
+                    "status": "completed",
+                    "close": {"status": "closed"},
+                },
+            },
+        )
         self.report_ref = "artifacts/reviews/final.json"
         self.report_path = task_dir / self.report_ref
         write_json(
@@ -109,6 +123,15 @@ class CommitEquivalenceTest(unittest.TestCase):
                 "profile": "code-review",
                 "scope": {"kind": "final-integration"},
                 "target": target,
+                "reviewer": {
+                    "mode": "external-agent",
+                    "independence_claim": True,
+                    "dispatch_id": "DSP-CODE-FINAL-001",
+                    "dispatch_ref": self.dispatch_ref,
+                    "dispatch_digest": hashlib.sha256(
+                        self.dispatch_path.read_bytes()
+                    ).hexdigest(),
+                },
             },
         )
         self.review_record = {
@@ -213,6 +236,25 @@ class CommitEquivalenceTest(unittest.TestCase):
     def test_legacy_review_without_report_digest_falls_back(self) -> None:
         self.commit_source()
         self.review_record.pop("report_digest")
+        with self.assertRaisesRegex(
+            CommitEquivalenceError,
+            "RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE",
+        ):
+            self.create()
+
+    def test_conditional_dispatch_cannot_use_strict_fast_path(self) -> None:
+        self.commit_source()
+        dispatch = json.loads(self.dispatch_path.read_text(encoding="utf-8"))
+        dispatch["policy"] = "conditional"
+        write_json(self.dispatch_path, dispatch)
+        receipt = json.loads(self.report_path.read_text(encoding="utf-8"))
+        receipt["reviewer"]["dispatch_digest"] = hashlib.sha256(
+            self.dispatch_path.read_bytes()
+        ).hexdigest()
+        write_json(self.report_path, receipt)
+        self.review_record["report_digest"] = hashlib.sha256(
+            self.report_path.read_bytes()
+        ).hexdigest()
         with self.assertRaisesRegex(
             CommitEquivalenceError,
             "RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE",

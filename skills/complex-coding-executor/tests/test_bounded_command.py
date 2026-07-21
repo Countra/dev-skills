@@ -20,6 +20,7 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 from harness_bounded_command import (  # noqa: E402
     EXIT_CLEANUP_FAILED,
     WindowsJobState,
+    _force_kill_windows_pids,
     _terminate_windows_tree,
     cleanup_completed_process_tree,
     run_bounded_command,
@@ -207,6 +208,26 @@ class BoundedCommandTest(unittest.TestCase):
         self.assertEqual([], remaining)
         force_kill.assert_called_once_with({43211: "child-handle"}, 5.0)
         close_handles.assert_called_once_with(tracked)
+
+    def test_windows_force_kill_shares_one_deadline_across_pids(self) -> None:
+        tracked = {43210: "first-handle", 43211: "second-handle"}
+        with (
+            mock.patch(
+                "harness_bounded_command._windows_handle_running",
+                return_value=True,
+            ),
+            mock.patch(
+                "harness_bounded_command.time.monotonic",
+                side_effect=[10.0, 10.1, 15.1],
+            ),
+            mock.patch(
+                "harness_bounded_command.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["taskkill"], 4.9),
+            ) as run,
+        ):
+            _force_kill_windows_pids(tracked, 5.0)
+        self.assertEqual(1, run.call_count)
+        self.assertAlmostEqual(4.9, run.call_args.kwargs["timeout"])
 
     def test_completed_windows_job_does_not_rescan_reused_root_pid(self) -> None:
         process = mock.Mock(pid=43210)

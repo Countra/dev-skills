@@ -42,12 +42,22 @@ class CiContractTest(unittest.TestCase):
             "evals/complex-coding-reviewer/run_semantic_oracle.py --self-test",
             "evals/complex-coding-reviewer/run_evals.py --static-contract-only",
             "evals/complex-coding-reviewer/run_observation_packet.py --validate-only",
-            "skills/skill-evaluation-lab/scripts/se_check.py",
             "unittest discover -s skills/complex-coding-executor/tests",
             "evals/complex-coding-executor/run_evals.py --output",
             "evals/complex-coding-executor/cross_skill_regression.py --include-reviewer",
+            "evals/harness-lightweight/run_evals.py --output",
         )
         for command in required:
+            self.assertEqual(1, self.text.count(command), command)
+        for candidate in (
+            "complex-coding-planner",
+            "complex-coding-reviewer",
+            "complex-coding-executor",
+        ):
+            command = (
+                "skills/skill-evaluation-lab/scripts/se_check.py --workspace . "
+                f"--candidate skills/{candidate} --output"
+            )
             self.assertEqual(1, self.text.count(command), command)
         for forbidden in (
             "secrets.",
@@ -68,8 +78,11 @@ class CiContractTest(unittest.TestCase):
         self.assertIn("reviewer-static-contract.json", self.text)
         self.assertIn("observation-packet-validation.json", self.text)
         self.assertIn("reviewer-static.json", self.text)
+        self.assertIn("planner-static.json", self.text)
+        self.assertIn("executor-static.json", self.text)
         self.assertIn("executor-evals.json", self.text)
         self.assertIn("cross-review.json", self.text)
+        self.assertIn("lightweight.json", self.text)
         for forbidden in (
             "actions/upload-artifact",
             "actions/download-artifact",
