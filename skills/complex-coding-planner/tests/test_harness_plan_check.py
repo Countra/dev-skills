@@ -79,6 +79,9 @@ def valid_review_receipt(
 ) -> dict[str, object]:
     brief = _plan_review_brief(task_dir)
     write_json(task_dir / PLAN_REVIEW_BRIEF_PATH, brief)
+    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
+    policy = "strict" if contract["plan_profile"] == "full" else "conditional"
+    delegated = policy == "strict"
     target = build_plan_bundle_target(task_dir)
     identity = target["identity"]
     assert isinstance(identity, dict)
@@ -172,7 +175,11 @@ def valid_review_receipt(
             "total": 0,
         },
         "summary": "当前 plan bundle 已完成正式方案审查。",
-        "limitations": ["same-context 不构成独立审查证明。"],
+        "limitations": [
+            "确定性 fixture 不代表真实子 Agent 观察。"
+            if delegated
+            else "same-context 不构成独立审查证明。"
+        ],
         "supersedes_review_id": supersedes_review_id,
         "reviewed_at": "2026-07-16T00:00:02+00:00",
     }
@@ -181,42 +188,68 @@ def valid_review_receipt(
     context_path = review_root / "contexts" / f"{review_id}.json"
     write_json(target_path, target)
     write_json(context_path, context)
-    contract = json.loads((task_dir / "plan-contract.json").read_text(encoding="utf-8"))
-    policy = "strict" if contract["plan_profile"] == "full" else "conditional"
     preparation = prepare_dispatch(
         review_id=review_id,
         target_path=target_path,
         context_path=context_path,
         review_root=review_root,
         policy=policy,
-        capability_status="available",
+        capability_status="available" if delegated else "policy-disabled",
         tool_family="planner-integration-test",
-        available_tools=["close_agent", "spawn_agent", "wait_agent"],
+        available_tools=(
+            ["close_agent", "spawn_agent", "wait_agent"] if delegated else []
+        ),
         task_dir=task_dir,
         prepared_at="2026-07-16T00:00:00+00:00",
     )
     preparation_path = review_root / "dispatches" / f"{review_id}-prepare.json"
     write_json(preparation_path, preparation)
-    outcome = {
-        "status": "completed",
-        "agent_id": f"planner-agent-{review_id.lower()}",
-        "fork_context": False,
-        "started_at": "2026-07-16T00:00:01+00:00",
-        "completed_at": "2026-07-16T00:00:02+00:00",
-        "schema_repair_count": 0,
-        "context_expansion_requested": False,
-        "parent_judgment_included": False,
-        "recursive_delegation_allowed": False,
-        "failure": None,
-        "close": {
-            "required": True,
-            "attempted": True,
-            "status": "closed",
-            "closed_at": "2026-07-16T00:00:03+00:00",
-            "error": None,
-        },
-        "fallback": {"mode": "none", "reason_code": None, "reason": None},
-    }
+    if delegated:
+        outcome = {
+            "status": "completed",
+            "agent_id": f"planner-agent-{review_id.lower()}",
+            "fork_context": False,
+            "started_at": "2026-07-16T00:00:01+00:00",
+            "completed_at": "2026-07-16T00:00:02+00:00",
+            "schema_repair_count": 0,
+            "context_expansion_requested": False,
+            "parent_judgment_included": False,
+            "recursive_delegation_allowed": False,
+            "failure": None,
+            "close": {
+                "required": True,
+                "attempted": True,
+                "status": "closed",
+                "closed_at": "2026-07-16T00:00:03+00:00",
+                "error": None,
+            },
+            "fallback": {"mode": "none", "reason_code": None, "reason": None},
+        }
+    else:
+        outcome = {
+            "status": "fallback",
+            "agent_id": None,
+            "fork_context": None,
+            "started_at": None,
+            "completed_at": "2026-07-16T00:00:02+00:00",
+            "schema_repair_count": 0,
+            "context_expansion_requested": False,
+            "parent_judgment_included": False,
+            "recursive_delegation_allowed": False,
+            "failure": None,
+            "close": {
+                "required": False,
+                "attempted": False,
+                "status": "not-required",
+                "closed_at": None,
+                "error": None,
+            },
+            "fallback": {
+                "mode": "same-context",
+                "reason_code": "REVIEW_DISPATCH_POLICY_DISABLED",
+                "reason": "低/中风险计划按编排策略执行 same-context 审查。",
+            },
+        }
     dispatch = finalize_dispatch(
         preparation,
         outcome,

@@ -9,7 +9,7 @@
   委派。保留 blocked dispatch，等待宿主能力或合格 human gate；不能 same-context 放行。
 - `REVIEW_DISPATCH_POLICY_VIOLATION`：policy、capability、decision、attempt、timeout、fallback 或生命周期组合不合法。
   回到 preparation 与原始宿主事实修正，不修改 validator。
-- conditional 只有在能力确认为 unavailable 或 policy disabled 时才允许 fallback；工具完整却回退属于策略违规。
+- 低/中风险 conditional 应由调用方预先记录 `policy-disabled` 并跳过工具探测；已决定委派且工具完整时再回退属于策略违规。
 - strict 场景被平台或用户禁止委派时，保持 `policy=strict` 并记录 `capability.status=policy-disabled`；不得把 expected policy
   改成 disabled 规避 blocked。
 
@@ -32,7 +32,7 @@
   ACL，尝试一次关闭后以 `REVIEW_DISPATCH_AGENT_UNCLOSED` 封存 non-gating 失败。
 - 大目标连续 timeout 时先检查是否误绑定了接近预算上限的 package；package 是读取优化，不应把完整文件与大 diff 一次性
   灌入 Agent。改变 package 需要新 review，不能改写已冻结 retry chain。
-- 若完整 target 本身仍可管理，但 high-risk 的默认 1800 秒不足，可在旧 retry chain 封闭后按冻结目标规模创建新 review，
+- 若完整 target 本身仍可管理，但 high-risk 的默认 900 秒不足，可在旧 retry chain 封闭后按冻结目标规模创建新 review，
   显式设置更长等待时间；该值必须受当前任务剩余预算约束，不能修改已开始的 preparation。
 - schema 错误：只允许同一 Agent 修正一次，只发送 validator 的 JSON/closed-schema 错误，不发送新的语义判断。
 - 只有 preparation 的 `available_tools` 已冻结 `send_input` 时才能记录一次 schema repair；工具不可用就封存失败或进入新

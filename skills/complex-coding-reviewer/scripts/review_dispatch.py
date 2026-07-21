@@ -6,13 +6,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from complex_coding_reviewer.assemble import assemble_receipt
 from complex_coding_reviewer.cli import require_review_root, run_cli
+from complex_coding_reviewer.contract import validate_receipt
 from complex_coding_reviewer.dispatch import prepare_dispatch, validate_preparation
 from complex_coding_reviewer.dispatch_lifecycle import finalize_dispatch, validate_dispatch
 from complex_coding_reviewer.errors import ReviewError
 from complex_coding_reviewer.io import (
     load_json_object,
     resolve_review_artifact,
+    resolve_review_ref,
     write_new_json,
 )
 
@@ -64,6 +67,23 @@ def main() -> int:
     )
     validate.add_argument("--require-receipt-ready", action="store_true")
     _roots(validate)
+
+    complete = commands.add_parser(
+        "complete",
+        help="一次封存 dispatch、组装并校验 canonical receipt",
+    )
+    complete.add_argument("--preparation", type=Path, required=True)
+    complete.add_argument("--outcome", type=Path, required=True)
+    complete.add_argument("--dispatch-output", type=Path, required=True)
+    complete.add_argument("--output", type=Path, required=True)
+    complete.add_argument("--supersedes", type=Path)
+    complete.add_argument("--finalized-at")
+    complete.add_argument(
+        "--expected-dispatch-policy",
+        choices=("strict", "conditional", "disabled"),
+        required=True,
+    )
+    _roots(complete)
     args = parser.parse_args()
 
     def handler() -> dict[str, object]:
@@ -116,6 +136,75 @@ def main() -> int:
                 "lifecycle_status": value["lifecycle"]["status"],
                 "receipt_ready": value["lifecycle"]["status"] in {"completed", "fallback"},
                 "output": str(output),
+                "agent_calls": 0,
+                "network_calls": 0,
+            }
+        if args.command == "complete":
+            require_review_root(args.dispatch_output, args.review_root)
+            require_review_root(args.output, args.review_root)
+            preparation_path = resolve_review_artifact(
+                args.preparation,
+                args.review_root,
+            )
+            outcome_path = resolve_review_artifact(args.outcome, args.review_root)
+            preparation = load_json_object(preparation_path)
+            dispatch = finalize_dispatch(
+                preparation,
+                load_json_object(outcome_path),
+                preparation_path=preparation_path,
+                review_root=args.review_root,
+                workspace=args.workspace,
+                task_dir=args.task_dir,
+                finalized_at=args.finalized_at,
+            )
+            dispatch_path = write_new_json(
+                args.dispatch_output,
+                dispatch,
+                review_root=args.review_root,
+            )
+            inputs = preparation["inputs"]
+            target_path = resolve_review_ref(inputs["target_ref"], args.review_root)
+            context_path = resolve_review_ref(inputs["context_ref"], args.review_root)
+            result_path = resolve_review_ref(
+                inputs["semantic_result_ref"],
+                args.review_root,
+            )
+            receipt = assemble_receipt(
+                target_path=target_path,
+                context_path=context_path,
+                dispatch_path=dispatch_path,
+                semantic_result_path=result_path,
+                review_root=args.review_root,
+                workspace=args.workspace,
+                task_dir=args.task_dir,
+            )
+            previous = None
+            if args.supersedes is not None:
+                previous = load_json_object(
+                    resolve_review_artifact(args.supersedes, args.review_root)
+                )
+            summary = validate_receipt(
+                receipt,
+                review_root=args.review_root,
+                workspace=args.workspace,
+                task_dir=args.task_dir,
+                expected_dispatch_policy=args.expected_dispatch_policy,
+                previous_receipt=previous,
+            )
+            receipt_path = write_new_json(
+                args.output,
+                receipt,
+                review_root=args.review_root,
+            )
+            return {
+                "dispatch_id": dispatch["dispatch_id"],
+                "review_id": receipt["review_id"],
+                "verdict": receipt["verdict"],
+                "gate_ready": True,
+                "dispatch_output": str(dispatch_path),
+                "output": str(receipt_path),
+                "reviewer_mode": summary["reviewer_mode"],
+                "independence_claim": summary["independence_claim"],
                 "agent_calls": 0,
                 "network_calls": 0,
             }

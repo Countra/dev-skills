@@ -38,7 +38,7 @@ Planner 自述的完成状态、依赖理由和风险降级都只是 claim。即
 - 无法验证的要求记录为 verification gap，说明需要的证据、责任方和是否阻断批准。
 - clean review 仍要说明审查范围、关键正向证据、未覆盖面和残余风险。
 - full managed plan 使用 `strict` dispatch，必须由一个 `fork_context=false` 的 delegated reviewer 子 Agent 完成；工具不可用
-  时 blocked，不允许 same-context 降级。lite/standard 使用 `conditional`，但工具可用时仍必须委派。
+  时 blocked，不允许 same-context 降级。lite/standard 使用 `conditional`，低/中风险默认由编排策略设置 `policy-disabled` 并走 same-context；用户要求独立审查或风险升级时再委派。
 
 ## Verdict
 

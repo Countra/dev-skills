@@ -745,6 +745,8 @@ def static_contract_report() -> dict[str, Any]:
                         "close_agent",
                         "send_input",
                         "可创建一次 attempt=2",
+                        "`capability.status=policy-disabled`",
+                        "不执行 Agent tool discovery",
                     )
                 ),
                 "detail": "dispatch reference 必须覆盖策略、隔离、关闭和有界重试。",
@@ -766,12 +768,26 @@ def static_contract_report() -> dict[str, Any]:
                         "`timeout_class=standard`",
                         "`timeout_class=high-risk`",
                         "`requested_risk_focus`",
+                        "默认等待 300 秒",
+                        "默认等待 900 秒",
                         "不改变 policy 或 verdict",
                         "单次 `wait_agent` 不超过 60 秒",
                         "轮询不重置总等待预算",
                     )
                 ),
                 "detail": "等待预算必须从冻结风险声明派生、分段可观察，且不能改变派发策略或结论。",
+            },
+            {
+                "id": "combined-complete-entrypoint",
+                "passed": all(
+                    value in texts["dispatch"]
+                    for value in (
+                        "review_dispatch.py complete",
+                        "减少 finalize、assemble、validate 三次调用",
+                        "旧 finalize、assemble、validate 入口继续",
+                    )
+                ),
+                "detail": "正常门禁应提供一次确定性 complete 调用，同时保留旧分步入口。",
             },
             {
                 "id": "dispatch-provenance-hardening",

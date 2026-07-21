@@ -12,6 +12,33 @@ from helpers import create_file_target, receipt_for_target, writable_tempdir, wr
 SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 
 
+def fallback_outcome() -> dict[str, object]:
+    return {
+        "status": "fallback",
+        "agent_id": None,
+        "fork_context": None,
+        "started_at": None,
+        "completed_at": "2026-07-16T00:00:02+00:00",
+        "schema_repair_count": 0,
+        "context_expansion_requested": False,
+        "parent_judgment_included": False,
+        "recursive_delegation_allowed": False,
+        "failure": None,
+        "close": {
+            "required": False,
+            "attempted": False,
+            "status": "not-required",
+            "closed_at": None,
+            "error": None,
+        },
+        "fallback": {
+            "mode": "same-context",
+            "reason_code": "REVIEW_HOST_TOOLS_UNAVAILABLE",
+            "reason": "测试宿主没有 Agent 工具。",
+        },
+    }
+
+
 class CliTests(unittest.TestCase):
     def run_script(self, name: str, *arguments: str) -> tuple[int, dict[str, object]]:
         result = subprocess.run(
@@ -263,6 +290,103 @@ class CliTests(unittest.TestCase):
             self.assertEqual(0, code, payload)
             self.assertEqual("fallback", payload["result"]["lifecycle_status"])
             self.assertEqual(0, payload["result"]["agent_calls"])
+
+    def test_complete_cli_finalizes_assembles_and_validates_once(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
+            review_root = root / "reviews"
+            original_dispatch_path = review_root / Path(
+                *receipt["reviewer"]["dispatch_ref"].split("/")
+            )
+            original_dispatch = json.loads(
+                original_dispatch_path.read_text(encoding="utf-8")
+            )
+            preparation_path = review_root / Path(
+                *original_dispatch["preparation_ref"].split("/")
+            )
+            outcome_path = review_root / "outcomes" / "complete.json"
+            write_json(outcome_path, fallback_outcome())
+            dispatch_output = review_root / "dispatches" / "complete-final.json"
+            receipt_output = review_root / "complete-receipt.json"
+
+            code, payload = self.run_script(
+                "review_dispatch.py",
+                "complete",
+                "--preparation",
+                str(preparation_path),
+                "--outcome",
+                str(outcome_path),
+                "--dispatch-output",
+                str(dispatch_output),
+                "--output",
+                str(receipt_output),
+                "--finalized-at",
+                "2026-07-16T00:00:04+00:00",
+                "--expected-dispatch-policy",
+                "conditional",
+                "--review-root",
+                str(review_root),
+                "--workspace",
+                str(root),
+            )
+            self.assertEqual(0, code, payload)
+            self.assertTrue(payload["result"]["gate_ready"])
+            self.assertEqual(0, payload["result"]["agent_calls"])
+            self.assertTrue(dispatch_output.is_file())
+            self.assertTrue(receipt_output.is_file())
+
+    def test_complete_cli_preserves_dispatch_when_semantic_result_is_invalid(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            receipt = receipt_for_target(create_file_target(root), root=root)
+            review_root = root / "reviews"
+            original_dispatch_path = review_root / Path(
+                *receipt["reviewer"]["dispatch_ref"].split("/")
+            )
+            original_dispatch = json.loads(
+                original_dispatch_path.read_text(encoding="utf-8")
+            )
+            preparation_path = review_root / Path(
+                *original_dispatch["preparation_ref"].split("/")
+            )
+            result_path = review_root / Path(
+                *original_dispatch["inputs"]["semantic_result_ref"].split("/")
+            )
+            semantic = json.loads(result_path.read_text(encoding="utf-8"))
+            semantic["verdict"] = "passed"
+            semantic["open_counts"]["major"] = 1
+            semantic["open_counts"]["total"] = 1
+            write_json(result_path, semantic)
+            outcome_path = review_root / "outcomes" / "invalid-result.json"
+            write_json(outcome_path, fallback_outcome())
+            dispatch_output = review_root / "dispatches" / "invalid-final.json"
+            receipt_output = review_root / "invalid-receipt.json"
+
+            code, payload = self.run_script(
+                "review_dispatch.py",
+                "complete",
+                "--preparation",
+                str(preparation_path),
+                "--outcome",
+                str(outcome_path),
+                "--dispatch-output",
+                str(dispatch_output),
+                "--output",
+                str(receipt_output),
+                "--finalized-at",
+                "2026-07-16T00:00:04+00:00",
+                "--expected-dispatch-policy",
+                "conditional",
+                "--review-root",
+                str(review_root),
+                "--workspace",
+                str(root),
+            )
+            self.assertEqual(1, code, payload)
+            self.assertEqual("REVIEW_RESULT_INVALID", payload["error"]["code"])
+            self.assertTrue(dispatch_output.is_file())
+            self.assertFalse(receipt_output.exists())
 
     def test_finalize_cli_reports_unclosed_agent_as_non_gating(self) -> None:
         with writable_tempdir() as temp:

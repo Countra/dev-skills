@@ -72,8 +72,8 @@ def _fallback_outcome() -> dict[str, Any]:
         },
         "fallback": {
             "mode": "same-context",
-            "reason_code": "REVIEW_HOST_TOOLS_UNAVAILABLE",
-            "reason": "确定性 eval 不提供 Agent 工具，固定 agent_calls=0。",
+            "reason_code": "REVIEW_DISPATCH_POLICY_DISABLED",
+            "reason": "低/中风险确定性 eval 按编排策略使用 same-context，固定 agent_calls=0。",
         },
     }
 
@@ -101,7 +101,7 @@ def assemble_fixture_receipt(
         context_path=context_path,
         review_root=review_root,
         policy=policy,
-        capability_status="available" if delegated else "unavailable",
+        capability_status="available" if delegated else "policy-disabled",
         tool_family="deterministic-eval-fixture",
         available_tools=(
             ["close_agent", "spawn_agent", "wait_agent"]

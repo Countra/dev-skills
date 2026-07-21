@@ -427,7 +427,7 @@ def review_receipt(task_dir: Path) -> dict[str, Any]:
         context=context,
         semantic=semantic,
         policy=policy,
-        delegated=True,
+        delegated=policy == "strict",
     )
 
 

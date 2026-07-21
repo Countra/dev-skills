@@ -6,10 +6,14 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
 from .errors import ReviewError
+
+
+ATOMIC_REPLACE_RETRY_DELAYS = (0.025, 0.05, 0.1, 0.2)
 
 
 def canonical_json_bytes(value: Any) -> bytes:
@@ -254,6 +258,22 @@ def resolve_review_ref(value: str, review_root: Path) -> Path:
     return resolve_review_artifact(root / Path(*normalized.split("/")), root)
 
 
+def replace_with_bounded_retry(source: Path, destination: Path) -> None:
+    """有限重试 Windows 共享冲突，不掩盖持续权限或路径错误。"""
+
+    for attempt in range(len(ATOMIC_REPLACE_RETRY_DELAYS) + 1):
+        try:
+            os.replace(source, destination)
+            return
+        except OSError as exc:
+            retryable = isinstance(exc, PermissionError) or getattr(
+                exc, "winerror", None
+            ) in {5, 32}
+            if not retryable or attempt == len(ATOMIC_REPLACE_RETRY_DELAYS):
+                raise
+            time.sleep(ATOMIC_REPLACE_RETRY_DELAYS[attempt])
+
+
 def write_new_bytes(output: Path, data: bytes, *, review_root: Path | None = None) -> Path:
     resolved = resolve_new_output(output, review_root=review_root)
     temporary: Path | None = None
@@ -279,7 +299,7 @@ def write_new_bytes(output: Path, data: bytes, *, review_root: Path | None = Non
             ) from exc
         os.close(reservation)
         reserved = True
-        os.replace(temporary, resolved)
+        replace_with_bounded_retry(temporary, resolved)
         reserved = False
     except ReviewError:
         raise

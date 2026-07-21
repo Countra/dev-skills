@@ -49,7 +49,7 @@ def completed_outcome(*, repairs: int = 0) -> dict[str, object]:
     }
 
 
-def fallback_outcome() -> dict[str, object]:
+def fallback_outcome(*, policy_disabled: bool = False) -> dict[str, object]:
     return {
         "status": "fallback",
         "agent_id": None,
@@ -70,8 +70,16 @@ def fallback_outcome() -> dict[str, object]:
         },
         "fallback": {
             "mode": "same-context",
-            "reason_code": "REVIEW_HOST_TOOLS_UNAVAILABLE",
-            "reason": "宿主未提供完整 Agent 工具族。",
+            "reason_code": (
+                "REVIEW_DISPATCH_POLICY_DISABLED"
+                if policy_disabled
+                else "REVIEW_HOST_TOOLS_UNAVAILABLE"
+            ),
+            "reason": (
+                "低风险编排策略选择 same-context。"
+                if policy_disabled
+                else "宿主未提供完整 Agent 工具族。"
+            ),
         },
     }
 
@@ -270,6 +278,37 @@ class DispatchContractTests(unittest.TestCase):
                     expected_policy="strict",
                     require_receipt_ready=True,
                 )
+
+    def test_conditional_policy_disabled_uses_same_context_without_discovery(self) -> None:
+        with writable_tempdir() as temp:
+            root = Path(temp)
+            _, review_root, target_path, context_path, _ = self._artifacts(root)
+            preparation = prepare_dispatch(
+                review_id="REV-POLICY-001",
+                target_path=target_path,
+                context_path=context_path,
+                review_root=review_root,
+                policy="conditional",
+                capability_status="policy-disabled",
+                tool_family="risk-policy",
+                available_tools=[],
+                workspace=root,
+                prepared_at="2026-07-16T00:00:00+00:00",
+            )
+            self.assertEqual("fallback", preparation["decision"])
+            self.assertEqual("policy-disabled", preparation["capability"]["status"])
+            preparation_path = review_root / "dispatches" / "policy-prepare.json"
+            write_json(preparation_path, preparation)
+            dispatch = finalize_dispatch(
+                preparation,
+                fallback_outcome(policy_disabled=True),
+                preparation_path=preparation_path,
+                review_root=review_root,
+                workspace=root,
+                finalized_at="2026-07-16T00:00:04+00:00",
+            )
+            self.assertEqual("same-context", dispatch["reviewer"]["mode"])
+            self.assertFalse(dispatch["reviewer"]["independence_claim"])
 
     def test_policy_disabled_obeys_calling_policy(self) -> None:
         with writable_tempdir() as temp:
@@ -672,6 +711,19 @@ class DispatchContractTests(unittest.TestCase):
                     timeout_seconds=901,
                 )
 
+            default = prepare_dispatch(
+                review_id="REV-TIMEOUT-DEFAULT-001",
+                target_path=target_path,
+                context_path=context_path,
+                review_root=review_root,
+                policy="conditional",
+                capability_status="policy-disabled",
+                tool_family="risk-policy",
+                available_tools=[],
+                workspace=root,
+            )
+            self.assertEqual(300, default["timeout_seconds"])
+
     def test_risk_focused_conditional_uses_high_risk_timeout_class(self) -> None:
         with writable_tempdir() as temp:
             root = Path(temp)
@@ -709,7 +761,25 @@ class DispatchContractTests(unittest.TestCase):
                 workspace=root,
             )
             self.assertEqual("high-risk", preparation["timeout_class"])
-            self.assertEqual(1800, preparation["timeout_seconds"])
+            self.assertEqual(900, preparation["timeout_seconds"])
+
+            legacy_budget = prepare_dispatch(
+                review_id="REV-TIMEOUT-LEGACY-001",
+                target_path=target_path,
+                context_path=high_risk_context_path,
+                review_root=review_root,
+                policy="conditional",
+                capability_status="available",
+                tool_family="unit-test-host",
+                available_tools=["close_agent", "spawn_agent", "wait_agent"],
+                workspace=root,
+                timeout_seconds=1800,
+            )
+            validate_preparation(
+                legacy_budget,
+                review_root=review_root,
+                workspace=root,
+            )
 
             extended = prepare_dispatch(
                 review_id="REV-TIMEOUT-003",

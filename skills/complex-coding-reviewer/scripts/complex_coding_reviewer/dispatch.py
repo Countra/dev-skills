@@ -137,7 +137,7 @@ def _timeout_default(timeout_class: str) -> int:
             "未知 timeout_class。",
             path="$.timeout_class",
         )
-    return 1800 if timeout_class == "high-risk" else 900
+    return 900 if timeout_class == "high-risk" else 300
 
 
 def _validate_timeout_budget(timeout_class: str, timeout: int) -> None:
