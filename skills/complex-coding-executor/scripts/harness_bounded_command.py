@@ -12,9 +12,10 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from harness_state_errors import StateError
 from harness_state_io import write_json_atomic
@@ -25,6 +26,14 @@ EXIT_CLEANUP_FAILED = 125
 EXIT_LAUNCH_FAILED = 126
 EXIT_CANCELLED = 130
 FORCE_WAIT_SECONDS = 5.0
+
+
+@dataclass
+class WindowsJobState:
+    """Job handle 与绑定竞态窗口内已生成的原始子进程。"""
+
+    handle: Any | None
+    preassignment_processes: dict[int, Any]
 
 
 class BoundedCommandError(Exception):
@@ -173,7 +182,7 @@ def _windows_process_running(pid: int) -> bool:
         kernel32.CloseHandle(handle)
 
 
-def _create_windows_job(process: subprocess.Popen[Any]) -> Any | None:
+def _create_windows_job(process: subprocess.Popen[Any]) -> WindowsJobState | None:
     class BasicLimitInformation(ctypes.Structure):
         _fields_ = [
             ("PerProcessUserTimeLimit", ctypes.c_longlong),
@@ -242,26 +251,87 @@ def _create_windows_job(process: subprocess.Popen[Any]) -> Any | None:
         and process_handle_value
         and kernel32.AssignProcessToJobObject(job, process_handle_value)
     )
+    preassignment = _track_windows_processes(
+        _windows_descendant_pids(process.pid)
+    )
     if not assigned:
         kernel32.CloseHandle(job)
-        return None
-    return job
+        return WindowsJobState(None, preassignment) if preassignment else None
+    return WindowsJobState(job, preassignment)
 
 
 def _close_windows_job(job: Any) -> bool:
+    handle = job.handle if isinstance(job, WindowsJobState) else job
+    if handle is None:
+        return True
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
     kernel32.CloseHandle.restype = wintypes.BOOL
-    return bool(kernel32.CloseHandle(job))
+    return bool(kernel32.CloseHandle(handle))
 
 
-def _wait_until_stopped(pids: Sequence[int], deadline: float) -> list[int]:
-    remaining = list(pids)
+def _track_windows_processes(pids: Sequence[int]) -> dict[int, Any]:
+    """持有原始进程 handle，避免退出后的 PID 复用造成误判或误杀。"""
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    tracked: dict[int, Any] = {}
+    for pid in dict.fromkeys(pids):
+        handle = kernel32.OpenProcess(0x00100000, False, pid)
+        if handle:
+            tracked[pid] = handle
+    return tracked
+
+
+def _windows_handle_running(handle: Any) -> bool:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    return kernel32.WaitForSingleObject(handle, 0) == 0x00000102
+
+
+def _close_windows_process_handles(tracked: Mapping[int, Any]) -> None:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    for handle in tracked.values():
+        kernel32.CloseHandle(handle)
+
+
+def _wait_until_stopped(
+    tracked: Mapping[int, Any],
+    deadline: float,
+) -> list[int]:
+    remaining = list(tracked)
     while remaining and time.monotonic() < deadline:
-        remaining = [pid for pid in remaining if _windows_process_running(pid)]
+        remaining = [
+            pid for pid in remaining if _windows_handle_running(tracked[pid])
+        ]
         if remaining:
             time.sleep(0.05)
-    return [pid for pid in remaining if _windows_process_running(pid)]
+    return [pid for pid in remaining if _windows_handle_running(tracked[pid])]
+
+
+def _force_kill_windows_pids(
+    tracked: Mapping[int, Any],
+    timeout_seconds: float,
+) -> None:
+    """只强制回收本次命令树中已追踪且仍存活的 PID。"""
+
+    for pid, handle in tracked.items():
+        if not _windows_handle_running(handle):
+            continue
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=timeout_seconds,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
 
 
 def _terminate_windows_tree(
@@ -269,47 +339,60 @@ def _terminate_windows_tree(
     grace_seconds: float,
     windows_job: Any | None,
 ) -> tuple[bool, list[int]]:
-    tracked = [process.pid, *_windows_descendant_pids(process.pid)]
+    tracked = (
+        dict(windows_job.preassignment_processes)
+        if isinstance(windows_job, WindowsJobState)
+        else {}
+    )
+    current_pids = [process.pid, *_windows_descendant_pids(process.pid)]
+    tracked.update(
+        _track_windows_processes(
+            [pid for pid in current_pids if pid not in tracked]
+        )
+    )
+    remaining: list[int] = []
     try:
-        process.send_signal(signal.CTRL_BREAK_EVENT)
-    except (OSError, ValueError):
-        pass
-    remaining = _wait_until_stopped(tracked, time.monotonic() + grace_seconds)
-    if windows_job is not None:
-        closed = _close_windows_job(windows_job)
+        try:
+            process.send_signal(signal.CTRL_BREAK_EVENT)
+        except (OSError, ValueError):
+            pass
         remaining = _wait_until_stopped(
             tracked,
-            time.monotonic() + FORCE_WAIT_SECONDS,
+            time.monotonic() + grace_seconds,
         )
+        if windows_job is not None:
+            closed = _close_windows_job(windows_job)
+            remaining = _wait_until_stopped(
+                tracked,
+                time.monotonic() + FORCE_WAIT_SECONDS,
+            )
+            if remaining:
+                # Popen 与 Job 绑定之间存在极短竞态，已提前生成的子进程不会自动入 Job。
+                _force_kill_windows_pids(
+                    {pid: tracked[pid] for pid in remaining},
+                    max(FORCE_WAIT_SECONDS, grace_seconds),
+                )
+                remaining = _wait_until_stopped(
+                    tracked,
+                    time.monotonic() + FORCE_WAIT_SECONDS,
+                )
+            return closed and not remaining, remaining
+        if remaining:
+            _force_kill_windows_pids(
+                {pid: tracked[pid] for pid in remaining},
+                max(FORCE_WAIT_SECONDS, grace_seconds),
+            )
+            remaining = _wait_until_stopped(
+                tracked,
+                time.monotonic() + FORCE_WAIT_SECONDS,
+            )
+        return not remaining, remaining
+    finally:
         try:
             process.wait(timeout=0.1)
         except (OSError, subprocess.SubprocessError):
             pass
-        return closed and not remaining, remaining
-    if remaining:
-        targets = [process.pid, *[pid for pid in remaining if pid != process.pid]]
-        for pid in targets:
-            if not _windows_process_running(pid):
-                continue
-            try:
-                subprocess.run(
-                    ["taskkill", "/PID", str(pid), "/T", "/F"],
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=max(FORCE_WAIT_SECONDS, grace_seconds),
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-        remaining = _wait_until_stopped(
-            tracked,
-            time.monotonic() + FORCE_WAIT_SECONDS,
-        )
-    try:
-        process.wait(timeout=0.1)
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return not remaining, remaining
+        _close_windows_process_handles(tracked)
 
 
 def _terminate_posix_group(
@@ -380,14 +463,30 @@ def cleanup_completed_process_tree(
 ) -> tuple[bool, list[int]]:
     """回收正常 root 退出后仍可能存活的子进程。"""
 
-    if os.name == "nt" and windows_job is not None:
-        tracked = _windows_descendant_pids(process.pid)
-        closed = _close_windows_job(windows_job)
-        remaining = _wait_until_stopped(
-            tracked,
-            time.monotonic() + FORCE_WAIT_SECONDS,
+    if os.name == "nt":
+        tracked = (
+            dict(windows_job.preassignment_processes)
+            if isinstance(windows_job, WindowsJobState)
+            else _track_windows_processes(_windows_descendant_pids(process.pid))
         )
-        return closed and not remaining, remaining
+        closed = _close_windows_job(windows_job) if windows_job is not None else True
+        try:
+            remaining = _wait_until_stopped(
+                tracked,
+                time.monotonic() + FORCE_WAIT_SECONDS,
+            )
+            if remaining:
+                _force_kill_windows_pids(
+                    {pid: tracked[pid] for pid in remaining},
+                    max(FORCE_WAIT_SECONDS, grace_seconds),
+                )
+                remaining = _wait_until_stopped(
+                    tracked,
+                    time.monotonic() + FORCE_WAIT_SECONDS,
+                )
+            return closed and not remaining, remaining
+        finally:
+            _close_windows_process_handles(tracked)
     remaining = remaining_process_tree_pids(process)
     if not remaining:
         return True, []

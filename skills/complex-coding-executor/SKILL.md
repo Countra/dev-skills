@@ -27,6 +27,8 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
   `final-integration` 使用 `strict` dispatch，low/medium-risk stage 使用 `conditional` 并默认以 `policy-disabled` 进入完整 same-context 审查，风险升级或用户要求独立时才委派。Executor 只冻结输入、调用 Reviewer
   coordinator 并消费结果，不生成 Agent prompt、provenance 或 verdict。target/context 变化后旧 receipt stale，brief 必须精确
   覆盖 contract scope 并引用当前 validation evidence。
+- 新写入的 `review_recorded` 自动补充可选 `report_digest`；历史事件无需回写。final commit 后可运行
+  `harness_commit_equivalence.py create`，仅当提交前 strict receipt、单一直接提交、canonical paths、A/M/D、被审字节、Git filter 后 blob 与干净工作树全部等价时，才把 proof 引用随 `commit_recorded` 写入并复用该语义结论；任一不一致立即回退现有 post-commit strict review。
 - contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
 - 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
 - stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。
@@ -52,6 +54,7 @@ description: 执行由 complex-coding-planner 生成并获用户批准的复杂 
 - 计划证明: `scripts/harness_attest_plan.py`
 - 进度 ledger: `scripts/harness_ledger_append.py`、`scripts/harness_ledger_summary.py`
 - 有限命令保护: `scripts/harness_bounded_command.py`
+- 提交等价证明: `scripts/harness_commit_equivalence.py`
 
 ## 禁止行为
 

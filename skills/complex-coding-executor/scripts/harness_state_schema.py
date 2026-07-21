@@ -87,6 +87,7 @@ REVIEW_RECORD_FIELDS = {
     "independence_claim",
     "dispatch_id",
 }
+REVIEW_RECORD_OPTIONAL_FIELDS = {"report_digest"}
 REVIEW_COUNT_FIELDS = {"blocking", "major", "minor", "advisory", "total"}
 REVIEW_GAP_COUNT_FIELDS = {"blocking", "major", "minor", "total"}
 REVIEW_COVERAGE_FIELDS = {
@@ -98,6 +99,8 @@ REVIEW_COVERAGE_FIELDS = {
 REVIEW_LINEAGE_FIELDS = {"predecessor_review_id", "accounted_finding_count"}
 REVIEW_VERDICTS = {"passed", "changes_required", "blocked"}
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_EQUIVALENCE_REF_FIELD = "review_equivalence_ref"
+COMMIT_EQUIVALENCE_DIGEST_FIELD = "review_equivalence_digest"
 
 
 @dataclass(frozen=True)
@@ -201,7 +204,9 @@ def validate_review_record(
         "review payload 必须是 object。",
     )
     assert isinstance(payload, dict)
-    unknown = sorted(set(payload) - REVIEW_RECORD_FIELDS)
+    unknown = sorted(
+        set(payload) - REVIEW_RECORD_FIELDS - REVIEW_RECORD_OPTIONAL_FIELDS
+    )
     missing = sorted(REVIEW_RECORD_FIELDS - set(payload))
     _require_review(
         not unknown and not missing,
@@ -258,6 +263,16 @@ def validate_review_record(
             "RUN_STATE_REVIEW_TARGET_INVALID",
             f"review {field} 必须是小写 SHA-256。",
         )
+    report_digest = payload.get("report_digest")
+    _require_review(
+        report_digest is None
+        or (
+            isinstance(report_digest, str)
+            and SHA256.fullmatch(report_digest) is not None
+        ),
+        "RUN_STATE_REVIEW_REPORT_INVALID",
+        "review report_digest 必须是小写 SHA-256。",
+    )
     verdict = payload.get("verdict")
     _require_review(
         verdict in REVIEW_VERDICTS,
@@ -329,6 +344,40 @@ def validate_review_record(
         "passed review 不得包含开放 blocking 或 major finding。",
     )
     return {**payload, "scope": scope}
+
+
+def validate_commit_equivalence_reference(
+    payload: Any,
+) -> dict[str, str] | None:
+    """校验 final commit payload 中可选的等价证明引用。"""
+
+    if not isinstance(payload, dict):
+        raise StateError("LEDGER_PAYLOAD_INVALID", "commit payload 必须是 object。")
+    proof_ref = payload.get(COMMIT_EQUIVALENCE_REF_FIELD)
+    proof_digest = payload.get(COMMIT_EQUIVALENCE_DIGEST_FIELD)
+    if proof_ref is None and proof_digest is None:
+        return None
+    _require_review(
+        isinstance(proof_ref, str)
+        and bool(proof_ref)
+        and "\\" not in proof_ref
+        and not Path(proof_ref).is_absolute()
+        and ".." not in Path(proof_ref).parts
+        and tuple(Path(proof_ref).parts[:3])
+        == ("artifacts", "reviews", "equivalences"),
+        "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+        "review_equivalence_ref 必须位于 artifacts/reviews/equivalences。",
+    )
+    _require_review(
+        isinstance(proof_digest, str)
+        and SHA256.fullmatch(proof_digest) is not None,
+        "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+        "review_equivalence_digest 必须是小写 SHA-256。",
+    )
+    return {
+        "proof_ref": proof_ref,
+        "proof_digest": proof_digest,
+    }
 
 
 def parse_timestamp(value: Any) -> None:

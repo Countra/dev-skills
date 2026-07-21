@@ -347,6 +347,56 @@ class StateReducerTest(unittest.TestCase):
         with self.assertRaisesRegex(StateError, "RUN_STATE_FINAL_REVIEW_INCOMPLETE"):
             replay_events(final_contract, events)
 
+    def test_final_commit_equivalence_preserves_pre_commit_review(self) -> None:
+        final_contract = contract()
+        final_contract["stages"][0]["commit_expectation"] = "final"
+        events = self.completed_events()[:6]
+        events.extend(
+            [
+                self.event(
+                    7,
+                    "commit_recorded",
+                    payload={
+                        "commit": "a" * 40,
+                        "repository": ".",
+                        "review_equivalence_ref": (
+                            "artifacts/reviews/equivalences/REV-CODE-001.json"
+                        ),
+                        "review_equivalence_digest": "d" * 64,
+                    },
+                ),
+                self.event(8, "completed"),
+            ]
+        )
+        result = replay_events(final_contract, events)
+        self.assertEqual("completed", result.state["lifecycle"])
+        self.assertEqual("REV-CODE-001", result.final_review["review_id"])
+
+    def test_stage_commit_rejects_equivalence_reference(self) -> None:
+        stage_contract = contract()
+        stage_contract["stages"][0]["commit_expectation"] = "stage"
+        events = self.completed_events()[:5]
+        events.append(
+            self.event(
+                6,
+                "commit_recorded",
+                stage_id="STG-01",
+                payload={
+                    "commit": "a" * 40,
+                    "repository": ".",
+                    "review_equivalence_ref": (
+                        "artifacts/reviews/equivalences/REV-CODE-001.json"
+                    ),
+                    "review_equivalence_digest": "d" * 64,
+                },
+            )
+        )
+        with self.assertRaisesRegex(
+            StateError,
+            "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+        ):
+            replay_events(stage_contract, events)
+
     def test_attempt_failure_requires_reason_impact_and_next_strategy(self) -> None:
         events = [
             self.event(1, "execution_started"),

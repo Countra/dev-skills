@@ -11,7 +11,7 @@ from typing import Any
 
 from harness_attestation import validate_attestation
 from harness_dependency_evaluation import evaluate_dependency_preflight
-from harness_review import ReviewGateError, validate_review_gate
+from harness_review import ReviewGateError, validate_final_review_gate
 from harness_state import (
     commit_evidence_gaps,
     replay_events,
@@ -365,18 +365,11 @@ def check_final(
             "final checker 缺少 final-integration passed review。",
         )
     events = read_events(bundle.ledger_path)
-    final_commit_recorded = any(
-        event.get("type") == "commit_recorded" and event.get("stage_id") is None
-        for event in events
-    )
     try:
-        validate_review_gate(
+        validate_final_review_gate(
             bundle,
             replayed.final_review,
-            stage_id=None,
-            attempt=None,
-            final_commit_recorded=final_commit_recorded,
-            require_lifecycle_baseline=True,
+            events,
         )
     except ReviewGateError as exc:
         raise ExecutionError(exc.code, exc.message) from exc

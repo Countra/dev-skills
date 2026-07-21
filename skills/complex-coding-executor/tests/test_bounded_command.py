@@ -19,6 +19,9 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from harness_bounded_command import (  # noqa: E402
     EXIT_CLEANUP_FAILED,
+    WindowsJobState,
+    _terminate_windows_tree,
+    cleanup_completed_process_tree,
     run_bounded_command,
 )
 from harness_state_errors import StateError  # noqa: E402
@@ -167,6 +170,68 @@ class BoundedCommandTest(unittest.TestCase):
         self.assertEqual(EXIT_CLEANUP_FAILED, exit_code)
         self.assertEqual("cleanup-failed", result["termination"])
         self.assertEqual([43210, 43211], result["cleanup_failure_pids"])
+
+    def test_windows_job_race_force_kills_tracked_escapee(self) -> None:
+        process = mock.Mock(pid=43210)
+        tracked = {43210: "root-handle", 43211: "child-handle"}
+        with (
+            mock.patch(
+                "harness_bounded_command._windows_descendant_pids",
+                return_value=[43211],
+            ),
+            mock.patch(
+                "harness_bounded_command._track_windows_processes",
+                return_value=tracked,
+            ),
+            mock.patch(
+                "harness_bounded_command._wait_until_stopped",
+                side_effect=[[43210, 43211], [43211], []],
+            ),
+            mock.patch(
+                "harness_bounded_command._close_windows_job",
+                return_value=True,
+            ),
+            mock.patch(
+                "harness_bounded_command._force_kill_windows_pids"
+            ) as force_kill,
+            mock.patch(
+                "harness_bounded_command._close_windows_process_handles"
+            ) as close_handles,
+        ):
+            cleaned, remaining = _terminate_windows_tree(
+                process,
+                0.1,
+                WindowsJobState(object(), {}),
+            )
+        self.assertTrue(cleaned)
+        self.assertEqual([], remaining)
+        force_kill.assert_called_once_with({43211: "child-handle"}, 5.0)
+        close_handles.assert_called_once_with(tracked)
+
+    def test_completed_windows_job_does_not_rescan_reused_root_pid(self) -> None:
+        process = mock.Mock(pid=43210)
+        job = WindowsJobState("job-handle", {})
+        with (
+            mock.patch("harness_bounded_command.os.name", "nt"),
+            mock.patch(
+                "harness_bounded_command._windows_descendant_pids"
+            ) as descendants,
+            mock.patch(
+                "harness_bounded_command._close_windows_job",
+                return_value=True,
+            ),
+            mock.patch(
+                "harness_bounded_command._wait_until_stopped",
+                return_value=[],
+            ),
+            mock.patch(
+                "harness_bounded_command._close_windows_process_handles"
+            ),
+        ):
+            cleaned, remaining = cleanup_completed_process_tree(process, 0.1, job)
+        self.assertTrue(cleaned)
+        self.assertEqual([], remaining)
+        descendants.assert_not_called()
 
     def test_timeout_reclaims_spawned_child(self) -> None:
         pid_file = self.root / "child.pid"

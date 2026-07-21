@@ -30,6 +30,7 @@ from complex_coding_reviewer.target import (  # noqa: E402
 from harness_review import (  # noqa: E402
     ReviewGateError,
     _expected_dispatch_policy,
+    bind_review_report_digest,
     validate_review_gate,
 )
 from harness_task_bundle import resolve_task_bundle  # noqa: E402
@@ -404,6 +405,50 @@ class ReviewGateTest(unittest.TestCase):
             attempt=1,
         )
         self.assertEqual(compact, result)
+
+    def test_new_review_event_can_bind_receipt_bytes(self) -> None:
+        bundle, _ = self.make_bundle()
+        target = build_working_tree_target(
+            bundle.workspace,
+            paths=["src"],
+            stage_id="STG-01",
+            attempt=1,
+        )
+        receipt = self.receipt(
+            bundle,
+            target,
+            {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+        )
+        compact = self.write_receipt(bundle, receipt, "stage-digest.json")
+        bound = bind_review_report_digest(bundle, compact)
+        self.assertEqual(64, len(bound["report_digest"]))
+        self.assertEqual(
+            bound,
+            validate_review_gate(
+                bundle,
+                bound,
+                stage_id="STG-01",
+                attempt=1,
+            ),
+        )
+
+    def test_wrong_receipt_digest_is_rejected(self) -> None:
+        bundle, _ = self.make_bundle()
+        target = build_working_tree_target(
+            bundle.workspace,
+            paths=["src"],
+            stage_id="STG-01",
+            attempt=1,
+        )
+        receipt = self.receipt(
+            bundle,
+            target,
+            {"kind": "stage-delta", "stage_id": "STG-01", "attempt": 1},
+        )
+        compact = self.write_receipt(bundle, receipt, "wrong-digest.json")
+        compact["report_digest"] = "0" * 64
+        with self.assertRaisesRegex(ReviewGateError, "REPORT_INVALID"):
+            bind_review_report_digest(bundle, compact)
 
     def test_dispatch_policy_is_derived_from_risk_and_final_scope(self) -> None:
         bundle, _ = self.make_bundle()

@@ -51,7 +51,7 @@
 3. passed validation 必须引用真实 task-local evidence 文件；`RUN_STATE_VALIDATION_TARGET_MISMATCH` 表示验证和 stage receipt 不是同一 target/attempt，需在最终修改后重跑。
 4. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、双 digest、
    `reviewer_mode`、`independence_claim`、`dispatch_id`、coverage/gap/lineage 摘要、`stage_id`、`attempt` 与 Reviewer 公共
-   validator 结果必须精确一致。
+   validator 结果必须精确一致。新事件会自动增加 `report_digest` 绑定 receipt bytes；旧 ledger 缺少该可选字段仍合法，但不能使用 commit-equivalence 快速路径。
 5. `REVIEW_DISPATCH_STALE` 表示 receipt 后目标或 brief/standards/validation context 已变化；修复后必须生成新
    target/context/dispatch/result/receipt，不得只改 ledger 摘要。
 6. `RUN_STATE_REVIEW_EVIDENCE_MISSING`、`REPORT_INVALID` 或 `PAYLOAD_MISMATCH` 分别表示 evidence ref 未绑定、路径越界/缺失或 compact payload 不是由 receipt 派生。
@@ -100,8 +100,8 @@ Dispatch 专项诊断：
 ## Final 与提交
 
 1. 最后一个 stage 完成后先确认无 current/remaining stage，并生成 `code-review/final-integration` receipt；此时尚不追加 `completed`。
-2. contract 预期 final 提交且 attestation 已授权时，完成 pre-commit 门禁、实际提交并写 `commit_recorded`；该事件会撤销 pre-commit final receipt。
-3. final commit 后对真实 commit-range 重新生成 `final-integration` receipt。出现 `RUN_STATE_FINAL_REVIEW_INCOMPLETE` 时检查是否漏了这次 post-commit 重审。
+2. contract 预期 final 提交且 attestation 已授权时，完成 pre-commit 门禁并实际提交。运行 `harness_commit_equivalence.py ... create`：成功时把返回的 `commit_payload` 与全部 `evidence_refs` 原样写入 final `commit_recorded`，pre-commit strict receipt 会被 proof 保留。
+3. `RUN_STATE_REVIEW_EQUIVALENCE_UNAVAILABLE` 表示旧 receipt 或前置条件不支持快速路径；`MISMATCH`、`DIRTY`、`INVALID` 分别表示提交/范围漂移、额外 source 变更或 proof/摘要无效。任何失败都应写入不含 proof 的普通 `commit_recorded`，再对真实 commit-range 生成新的 strict `final-integration` receipt；不要编辑 proof 绕过。
 4. commit expectation 与当前 final receipt 闭环后追加 `completed` 并关闭 active pointer，再运行 final；final 要求 lifecycle completed、pointer 已关闭且 receipt freshness 仍有效。
 5. 提交前完成 Reviewer 审查、`git diff --check` 和范围检查；同仓库 Git 命令串行。
 6. 使用 `git commit -F <message-file>`，不要用多个 `-m` 拼接正文。

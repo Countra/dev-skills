@@ -9,6 +9,7 @@ from typing import Any
 from harness_state_schema import (
     ReplayResult,
     StateError,
+    validate_commit_equivalence_reference,
     validate_event,
     validate_review_record,
     validate_validation_record,
@@ -458,6 +459,7 @@ def apply_event(
             "commit_recorded.payload.commit 必须是 7-64 位十六进制 hash。",
         )
         require_payload_strings(payload, event_type, ("repository",))
+        equivalence = validate_commit_equivalence_reference(payload)
         if stage_id is None:
             final_expected = any(
                 item.get("commit_expectation") == "final"
@@ -470,8 +472,20 @@ def apply_event(
                 "RUN_STATE_COMMIT_TIMING_INVALID",
                 "final commit 必须在所有 stage 完成后按 contract 记录。",
             )
-            review_records["final_review"] = None
+            if equivalence is None:
+                review_records["final_review"] = None
+            else:
+                require(
+                    review_records["final_review"] is not None,
+                    "RUN_STATE_FINAL_REVIEW_INCOMPLETE",
+                    "commit equivalence 必须绑定提交前已通过的 final review。",
+                )
         else:
+            require(
+                equivalence is None,
+                "RUN_STATE_REVIEW_EQUIVALENCE_INVALID",
+                "commit equivalence 只允许用于 final commit。",
+            )
             require(
                 definitions[str(stage_id)].get("commit_expectation") == "stage"
                 and stage_id in state["completed_stage_ids"],

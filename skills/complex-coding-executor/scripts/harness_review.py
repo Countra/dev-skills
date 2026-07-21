@@ -3,12 +3,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
+from harness_commit_equivalence import (
+    CommitEquivalenceError,
+    validate_commit_equivalence,
+)
 from harness_review_errors import ReviewGateError
 from harness_review_context import validate_managed_context
 from harness_review_target import validate_managed_target
@@ -85,6 +90,46 @@ def _resolve_report(bundle: TaskBundle, report_ref: str) -> tuple[Path, Path]:
             f"review report 必须是普通文件：{report_ref}",
         )
     return root, report
+
+
+def _report_digest(report: Path) -> str:
+    try:
+        if report.stat().st_size > MAX_REVIEW_BYTES:
+            raise ReviewGateError(
+                "RUN_STATE_REVIEW_REPORT_TOO_LARGE",
+                f"review JSON 超过 {MAX_REVIEW_BYTES} bytes：{report}",
+            )
+        return hashlib.sha256(report.read_bytes()).hexdigest()
+    except ReviewGateError:
+        raise
+    except OSError as exc:
+        raise ReviewGateError(
+            "RUN_STATE_REVIEW_REPORT_INVALID",
+            f"无法计算 review JSON 摘要：{report}: {exc}",
+        ) from exc
+
+
+def bind_review_report_digest(
+    bundle: TaskBundle,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """为新 review event 绑定 receipt bytes；旧 event 仍可不含该字段。"""
+
+    report_ref = payload.get("report_ref")
+    if not isinstance(report_ref, str) or not report_ref:
+        raise ReviewGateError(
+            "RUN_STATE_REVIEW_REPORT_INVALID",
+            "review payload.report_ref 必须是非空字符串。",
+        )
+    _, report = _resolve_report(bundle, report_ref)
+    digest = _report_digest(report)
+    supplied = payload.get("report_digest")
+    if supplied is not None and supplied != digest:
+        raise ReviewGateError(
+            "RUN_STATE_REVIEW_REPORT_INVALID",
+            "review payload.report_digest 与 receipt bytes 不一致。",
+        )
+    return {**payload, "report_digest": digest}
 
 
 def _execution_baseline(bundle: TaskBundle) -> str:
@@ -387,9 +432,64 @@ def validate_review_gate(
         "independence_claim": result.get("independence_claim"),
         "dispatch_id": result.get("dispatch_id"),
     }
+    if "report_digest" in compact:
+        expected["report_digest"] = _report_digest(report)
     if compact != expected:
         raise ReviewGateError(
             "RUN_STATE_REVIEW_PAYLOAD_MISMATCH",
             "ledger compact payload 与 Reviewer 公共校验结果不一致。",
         )
     return expected
+
+
+def validate_final_review_gate(
+    bundle: TaskBundle,
+    payload: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """在 postcommit receipt 与 commit-equivalence 两条合法路径间确定性路由。"""
+
+    final_commits = [
+        event
+        for event in events
+        if event.get("type") == "commit_recorded" and event.get("stage_id") is None
+    ]
+    if not final_commits:
+        return validate_review_gate(
+            bundle,
+            payload,
+            stage_id=None,
+            attempt=None,
+            final_commit_recorded=False,
+            require_lifecycle_baseline=True,
+        )
+    final_commit = final_commits[-1]
+    latest_review_seq = max(
+        (
+            int(event["seq"])
+            for event in events
+            if event.get("type") == "review_recorded"
+            and isinstance(event.get("payload"), dict)
+            and event["payload"].get("scope") == {"kind": "final-integration"}
+        ),
+        default=0,
+    )
+    if latest_review_seq > int(final_commit["seq"]):
+        return validate_review_gate(
+            bundle,
+            payload,
+            stage_id=None,
+            attempt=None,
+            final_commit_recorded=True,
+            require_lifecycle_baseline=True,
+        )
+    try:
+        result = validate_commit_equivalence(
+            bundle,
+            payload,
+            final_commit["payload"],
+            final_commit["evidence_refs"],
+        )
+    except CommitEquivalenceError as exc:
+        raise ReviewGateError(exc.code, exc.message) from exc
+    return {**payload, "commit_equivalence": result}
