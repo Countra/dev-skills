@@ -24,6 +24,7 @@ from harness_task_bundle import (
     load_json_object,
     validate_pointer,
 )
+from harness_validation_schema import validation_timeout_seconds
 
 
 class ExecutionError(Exception):
@@ -134,9 +135,12 @@ def load_snapshot(bundle: TaskBundle) -> dict[str, Any] | None:
         raise ExecutionError(exc.code, exc.message) from exc
 
 
-def status_payload(bundle: TaskBundle) -> dict[str, Any]:
-    replayed, attestation = replay_bundle(bundle)
-    snapshot = load_snapshot(bundle)
+def _status_payload(
+    bundle: TaskBundle,
+    replayed: ReplayResult,
+    attestation: dict[str, Any],
+    snapshot: dict[str, Any] | None,
+) -> dict[str, Any]:
     differences = state_differences(snapshot, replayed.state)
     return {
         "task_id": bundle.task_id,
@@ -152,6 +156,11 @@ def status_payload(bundle: TaskBundle) -> dict[str, Any]:
         "snapshot_exists": snapshot is not None,
         "snapshot_drift": differences,
         "authorizations": attestation["authorizations"],
+        "validation_timeouts": {
+            str(item["id"]): validation_timeout_seconds(item)
+            for item in bundle.contract.get("validations", [])
+            if isinstance(item, dict) and isinstance(item.get("id"), str)
+        },
         "reviews": {
             "stage_review_ids": {
                 stage_id: review["review_id"]
@@ -167,25 +176,34 @@ def status_payload(bundle: TaskBundle) -> dict[str, Any]:
     }
 
 
-def require_clean_snapshot(bundle: TaskBundle, replayed: ReplayResult) -> None:
+def status_payload(bundle: TaskBundle) -> dict[str, Any]:
+    replayed, attestation = replay_bundle(bundle)
+    return _status_payload(bundle, replayed, attestation, load_snapshot(bundle))
+
+
+def require_clean_snapshot(
+    bundle: TaskBundle,
+    replayed: ReplayResult,
+) -> dict[str, Any] | None:
     snapshot = load_snapshot(bundle)
     if replayed.state["last_event_seq"] == 0 and snapshot is None:
-        return
+        return snapshot
     differences = state_differences(snapshot, replayed.state)
     if differences:
         raise ExecutionError(
             "RUN_STATE_DRIFT",
             f"run-state 与 ledger replay 不一致：{json.dumps(differences, ensure_ascii=False, sort_keys=True)}",
         )
+    return snapshot
 
 
-def check_preflight(
+def _preflight_context(
     bundle: TaskBundle,
     dependency_receipt: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[ReplayResult, dict[str, Any], dict[str, Any] | None]:
     replayed, attestation = replay_bundle(bundle)
     evaluate_dependency_preflight(bundle, dependency_receipt)
-    require_clean_snapshot(bundle, replayed)
+    snapshot = require_clean_snapshot(bundle, replayed)
     state = replayed.state
     if state["reapproval_required"]:
         raise ExecutionError(
@@ -202,15 +220,29 @@ def check_preflight(
             "RUN_STATE_NOT_EXECUTABLE",
             f"任务 lifecycle={state['lifecycle']}。",
         )
-    return attestation
+    return replayed, attestation, snapshot
 
 
-def check_transition(
+def check_preflight(
     bundle: TaskBundle,
     dependency_receipt: str | None = None,
 ) -> dict[str, Any]:
-    attestation = check_preflight(bundle, dependency_receipt)
-    replayed, _ = replay_bundle(bundle)
+    _, attestation, _ = _preflight_context(bundle, dependency_receipt)
+    return attestation
+
+
+def check_preflight_status(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """在同一次 replay 上返回 preflight 授权与状态。"""
+
+    replayed, attestation, snapshot = _preflight_context(bundle, dependency_receipt)
+    status = _status_payload(bundle, replayed, attestation, snapshot)
+    return attestation, status
+
+
+def _require_transition_ready(replayed: ReplayResult) -> None:
     state = replayed.state
     if state["current_stage_id"] is not None:
         raise ExecutionError(
@@ -222,7 +254,27 @@ def check_transition(
             "RUN_STATE_NOT_STARTED",
             "先追加 execution_started。",
         )
+
+
+def check_transition(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> dict[str, Any]:
+    replayed, attestation, _ = _preflight_context(bundle, dependency_receipt)
+    _require_transition_ready(replayed)
     return attestation
+
+
+def check_transition_status(
+    bundle: TaskBundle,
+    dependency_receipt: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """在同一次 replay 上返回 transition 授权与状态。"""
+
+    replayed, attestation, snapshot = _preflight_context(bundle, dependency_receipt)
+    _require_transition_ready(replayed)
+    status = _status_payload(bundle, replayed, attestation, snapshot)
+    return attestation, status
 
 
 def reconcile_snapshot(bundle: TaskBundle) -> dict[str, Any]:

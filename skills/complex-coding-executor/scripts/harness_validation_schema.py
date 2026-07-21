@@ -9,7 +9,7 @@ from typing import Any
 from harness_state_errors import StateError
 
 
-VALIDATION_RECORD_FIELDS = {
+VALIDATION_RECORD_REQUIRED_FIELDS = {
     "validation_id",
     "result",
     "command",
@@ -20,9 +20,43 @@ VALIDATION_RECORD_FIELDS = {
     "summary",
     "claim_boundary",
 }
+VALIDATION_RECORD_OPTIONAL_FIELDS = {
+    "duration_ms",
+    "termination",
+    "cleanup_verified",
+}
+VALIDATION_RECORD_FIELDS = (
+    VALIDATION_RECORD_REQUIRED_FIELDS | VALIDATION_RECORD_OPTIONAL_FIELDS
+)
 VALIDATION_RESULTS = {"passed", "failed", "not-run"}
 VALIDATION_CLAIM_SOURCES = {"observed", "reported", "not-run"}
+VALIDATION_TERMINATIONS = {
+    "completed",
+    "timeout",
+    "cleanup-failed",
+    "launch-failed",
+    "cancelled",
+}
+FAST_VALIDATION_KINDS = {"test", "lint", "typecheck", "smoke"}
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def validation_timeout_seconds(validation: dict[str, Any]) -> int:
+    """返回显式 timeout，或按 validation kind 派生兼容默认值。"""
+
+    explicit = validation.get("timeout_seconds")
+    if explicit is not None:
+        if (
+            not isinstance(explicit, int)
+            or isinstance(explicit, bool)
+            or explicit < 1
+        ):
+            raise StateError(
+                "RUN_STATE_VALIDATION_TIMEOUT_INVALID",
+                "validation.timeout_seconds 必须是正整数。",
+            )
+        return explicit
+    return 300 if validation.get("kind") in FAST_VALIDATION_KINDS else 900
 
 
 def validate_validation_record(
@@ -38,7 +72,7 @@ def validate_validation_record(
             "validation payload 必须是 object。",
         )
     unknown = sorted(set(payload) - VALIDATION_RECORD_FIELDS)
-    missing = sorted(VALIDATION_RECORD_FIELDS - set(payload))
+    missing = sorted(VALIDATION_RECORD_REQUIRED_FIELDS - set(payload))
     if unknown or missing:
         raise StateError(
             "RUN_STATE_VALIDATION_PAYLOAD_INVALID",
@@ -104,5 +138,51 @@ def validate_validation_record(
         raise StateError(
             "RUN_STATE_VALIDATION_PROVENANCE_INVALID",
             "reported evidence 不能直接证明 validation passed。",
+        )
+    duration_ms = payload.get("duration_ms")
+    if duration_ms is not None and (
+        not isinstance(duration_ms, int)
+        or isinstance(duration_ms, bool)
+        or duration_ms < 0
+    ):
+        raise StateError(
+            "RUN_STATE_VALIDATION_PAYLOAD_INVALID",
+            "validation duration_ms 必须是非负整数。",
+        )
+    termination = payload.get("termination")
+    if termination is not None and termination not in VALIDATION_TERMINATIONS:
+        raise StateError(
+            "RUN_STATE_VALIDATION_PAYLOAD_INVALID",
+            "validation termination 无效。",
+        )
+    cleanup_verified = payload.get("cleanup_verified")
+    if cleanup_verified is not None and not isinstance(cleanup_verified, bool):
+        raise StateError(
+            "RUN_STATE_VALIDATION_PAYLOAD_INVALID",
+            "validation cleanup_verified 必须是 boolean。",
+        )
+    if result == "passed" and (
+        termination not in {None, "completed"}
+        or cleanup_verified is False
+    ):
+        raise StateError(
+            "RUN_STATE_VALIDATION_PROVENANCE_INVALID",
+            "passed validation 只能记录正常完成且已确认清理的命令。",
+        )
+    expected_exit_codes = {
+        "timeout": 124,
+        "cleanup-failed": 125,
+        "launch-failed": 126,
+    }
+    expected_exit = expected_exit_codes.get(termination)
+    if expected_exit is not None and exit_code != expected_exit:
+        raise StateError(
+            "RUN_STATE_VALIDATION_EXIT_INVALID",
+            f"termination={termination} 时 exit_code 必须是 {expected_exit}。",
+        )
+    if termination == "cleanup-failed" and cleanup_verified is not False:
+        raise StateError(
+            "RUN_STATE_VALIDATION_PROVENANCE_INVALID",
+            "cleanup-failed 必须显式记录 cleanup_verified=false。",
         )
     return payload

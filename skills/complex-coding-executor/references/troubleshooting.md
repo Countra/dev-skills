@@ -47,7 +47,7 @@
 症状：`RUN_STATE_STAGE_*`、`RUN_STATE_VALIDATION_*` 或 `RUN_STATE_REVIEW_*`。
 
 1. `stage_started` 的 attempt 必须逐次递增，依赖 stage 必须完成。
-2. `validation_recorded` 只能引用该 stage 声明的 VAL，必须携带 current attempt/target、command、exit code、claim source/boundary；只有 `observed + passed + exit_code=0` 可以建立通过门禁，`reported`/`not-run` 不可以。
+2. `validation_recorded` 只能引用该 stage 声明的 VAL，必须携带 current attempt/target、command、exit code、claim source/boundary；只有 `observed + passed + exit_code=0` 可以建立通过门禁，`reported`/`not-run` 不可以。`duration_ms`、`termination`、`cleanup_verified` 可选，旧事件无需补写。
 3. passed validation 必须引用真实 task-local evidence 文件；`RUN_STATE_VALIDATION_TARGET_MISMATCH` 表示验证和 stage receipt 不是同一 target/attempt，需在最终修改后重跑。
 4. `review_recorded` 必须引用 `artifacts/reviews/**` 下的 canonical receipt，compact payload、双 digest、
    `reviewer_mode`、`independence_claim`、`dispatch_id`、coverage/gap/lineage 摘要、`stage_id`、`attempt` 与 Reviewer 公共
@@ -67,6 +67,17 @@ Dispatch 专项诊断：
 - `REVIEW_DISPATCH_PROVENANCE_MISMATCH`：检查 dispatch/result ref、raw digest、Agent ID 和 compact provenance，不编辑旧 receipt。
 - `REVIEW_RESULT_INVALID`：只有纯 schema 错误允许原 Agent 修正一次；语义失败或第二次失败创建新 attempt/blocked。
 
+## 有限命令与静默卡死
+
+症状：命令长时间无输出、取消无效、全系统进程查询卡住，或重复检查后仍无法确认状态。
+
+1. 先停止原样重跑；相同失败命令第二次前必须缩小查询范围、改参数、改工具或改证据，禁止第三次原样执行。
+2. 已知 PID 用 PID 查询，长期服务用 Process Manager status；不要用无界 `Get-CimInstance Win32_Process` 或全系统 command-line 正则扫描。
+3. PowerShell 自动化使用 `-NoProfile -NonInteractive`；profile 的主题、图标或缓存 access denied 只是 shell 噪声，不能据此判断项目 ACL。
+4. 宿主 deadline 不可靠或命令有卡死历史时使用 `harness_bounded_command.py`。`RUN_STATE_COMMAND_TIMEOUT` 表示返回 124 且清理完成；`RUN_STATE_COMMAND_CLEANUP_FAILED` 返回 125 并列出精确 PID；`RUN_STATE_COMMAND_LAUNCH_FAILED` 返回 126。
+5. cleanup 失败时只处理结果列出的本次 PID，不做全局匹配、不自动提权；仍无法回收则 blocked。
+6. 不用 `Tee-Object` 保存测试日志。保留实时输出，task evidence 只写结果 JSON 与结构化摘要。
+
 ## Dependency Execution Gate
 
 症状：`EXEC_DEPENDENCY_*`。
@@ -81,7 +92,7 @@ Dispatch 专项诊断：
 ## Block、Research Drift 与 Amendment
 
 1. 普通可恢复阻塞写 `blocked`，解决后写 `resumed`。
-2. scope、DAG、required validation、风险、依赖或授权变化写 `research_drift`/`amendment_requested`，设置 reapproval 后停止。
+2. 用户可见范围、公共接口、Stage DAG、required validation、风险等级、依赖决策、数据迁移或授权变化写 `research_drift`/`amendment_requested`，设置 reapproval 后停止；批准范围内内部实现调整写 note。
 3. `harness_attest_plan.py --mode archive` 归档当前 immutable set、attestation、ledger 和可用 run-state。
 4. planner 生成递增 revision 并重新批准后，用 `--mode write` 写新 attestation。
 5. `--mode activate-amendment --archive-dir <dir> [--carry-stage STG-XX]` 轮换运行文件，并以首条事件连接上一 ledger hash；只继承上一 ledger 已完成且契约语义未变的 stage。
@@ -100,5 +111,5 @@ Dispatch 专项诊断：
 - 用 `Path.resolve()` 后的规范路径判断 containment。
 - 避免会写 `__pycache__` 的语法检查；可用 `python -B`、AST parse 或隔离测试目录。
 - Windows 本地代码页可能影响子进程 JSON；公共 runner/checker 显式使用 UTF-8 模式。
-- 重要结果以退出码和 `PASS`/`FAIL [CODE]` 为准；PowerShell profile 噪声不是脚本输出的一部分。
+- 重要结果以退出码和 `PASS`/`FAIL [CODE]` 为准；PowerShell 自动化使用 `-NoProfile -NonInteractive`，profile 噪声不是脚本输出的一部分。
 - `HARNESS_DISABLED=1` 时不消费 active task，也不写 pointer、attestation、ledger 或 state。

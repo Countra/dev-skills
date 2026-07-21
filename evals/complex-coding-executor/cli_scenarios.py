@@ -350,7 +350,7 @@ def create_review_evidence(
         context=context,
         semantic=semantic,
         policy=dispatch_policy,
-        delegated=True,
+        delegated=dispatch_policy == "strict",
     )
     report_ref = f"artifacts/reviews/{filename}.json"
     report = task_dir / report_ref

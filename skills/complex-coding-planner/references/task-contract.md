@@ -217,8 +217,8 @@ plan 中每个 Stage Contract 必须同步对应依赖、REQ/AC/NFR、VAL、allo
 - plan：`research_drift`、`amendment_requested`、`amendment_approved`。
 - operation：`commit_recorded`、`note`、`heartbeat`。
 
-关键 payload：`validation_recorded` 是 closed object，包含 `validation_id`、`result`、`command`、`claim_source`、
-`stage_attempt`、`target_digest`、`exit_code`、`summary`、`claim_boundary`；只有 `observed`、exit code 0 且绑定当前
+关键 payload：`validation_recorded` 是 closed object，必需字段包含 `validation_id`、`result`、`command`、`claim_source`、
+`stage_attempt`、`target_digest`、`exit_code`、`summary`、`claim_boundary`，可选包含 `duration_ms`、`termination`、`cleanup_verified`；只有 `observed`、exit code 0 且绑定当前
 attempt/target 的记录可以 passed，并必须引用 task-local evidence 文件。`review_recorded` 只保存由 Reviewer 公共 validator
 精确派生的 compact receipt：`result`、`review_id`、`profile`、`scope`、`target_digest`、`context_digest`、
 `reviewer_mode`、`independence_claim`、`dispatch_id`、`verdict`、`report_ref`、`open_counts`、`gap_counts`、

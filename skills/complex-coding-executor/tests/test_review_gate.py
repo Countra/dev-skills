@@ -255,41 +255,70 @@ class ReviewGateTest(unittest.TestCase):
         else:
             stage = stages[scope["stage_id"]]
             dispatch_policy = "strict" if stage.get("risk") == "high" else "conditional"
+        delegated = dispatch_policy == "strict"
         preparation = prepare_dispatch(
             review_id=review_id,
             target_path=target_path,
             context_path=context_path,
             review_root=review_root,
             policy=dispatch_policy,
-            capability_status="available",
+            capability_status="available" if delegated else "policy-disabled",
             tool_family="executor-unit-test-host",
-            available_tools=["close_agent", "spawn_agent", "wait_agent"],
+            available_tools=(
+                ["close_agent", "spawn_agent", "wait_agent"] if delegated else []
+            ),
             workspace=bundle.workspace,
             task_dir=bundle.task_dir,
             prepared_at="2026-07-16T00:00:00+00:00",
         )
         preparation_path = review_root / "dispatches" / f"{review_id}-prepare.json"
         write_json(preparation_path, preparation)
-        outcome = {
-            "status": "completed",
-            "agent_id": f"agent-{review_id.lower()}",
-            "fork_context": False,
-            "started_at": "2026-07-16T00:00:01+00:00",
-            "completed_at": "2026-07-16T00:00:02+00:00",
-            "schema_repair_count": 0,
-            "context_expansion_requested": False,
-            "parent_judgment_included": False,
-            "recursive_delegation_allowed": False,
-            "failure": None,
-            "close": {
-                "required": True,
-                "attempted": True,
-                "status": "closed",
-                "closed_at": "2026-07-16T00:00:03+00:00",
-                "error": None,
-            },
-            "fallback": {"mode": "none", "reason_code": None, "reason": None},
-        }
+        if delegated:
+            outcome = {
+                "status": "completed",
+                "agent_id": f"agent-{review_id.lower()}",
+                "fork_context": False,
+                "started_at": "2026-07-16T00:00:01+00:00",
+                "completed_at": "2026-07-16T00:00:02+00:00",
+                "schema_repair_count": 0,
+                "context_expansion_requested": False,
+                "parent_judgment_included": False,
+                "recursive_delegation_allowed": False,
+                "failure": None,
+                "close": {
+                    "required": True,
+                    "attempted": True,
+                    "status": "closed",
+                    "closed_at": "2026-07-16T00:00:03+00:00",
+                    "error": None,
+                },
+                "fallback": {"mode": "none", "reason_code": None, "reason": None},
+            }
+        else:
+            outcome = {
+                "status": "fallback",
+                "agent_id": None,
+                "fork_context": None,
+                "started_at": None,
+                "completed_at": "2026-07-16T00:00:02+00:00",
+                "schema_repair_count": 0,
+                "context_expansion_requested": False,
+                "parent_judgment_included": False,
+                "recursive_delegation_allowed": False,
+                "failure": None,
+                "close": {
+                    "required": False,
+                    "attempted": False,
+                    "status": "not-required",
+                    "closed_at": None,
+                    "error": None,
+                },
+                "fallback": {
+                    "mode": "same-context",
+                    "reason_code": "REVIEW_DISPATCH_POLICY_DISABLED",
+                    "reason": "低/中风险 stage 按编排策略使用 same-context。",
+                },
+            }
         dispatch = finalize_dispatch(
             preparation,
             outcome,

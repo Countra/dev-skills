@@ -14,8 +14,8 @@ from harness_cli import (
 )
 from harness_execution import (
     check_final,
-    check_preflight,
-    check_transition,
+    check_preflight_status,
+    check_transition_status,
     reconcile_snapshot,
     status_payload,
 )
@@ -43,22 +43,22 @@ def run_mode(
     if mode == "reconcile":
         return reconcile_snapshot(bundle)
     if mode == "preflight":
-        attestation = check_preflight(bundle, dependency_receipt)
+        attestation, status = check_preflight_status(bundle, dependency_receipt)
         result = authorization_result(
             bundle.task_id,
             bundle.plan_revision,
             attestation,
         )
-        result["state"] = status_payload(bundle)
+        result["state"] = status
         return result
     if mode == "transition":
-        attestation = check_transition(bundle, dependency_receipt)
+        attestation, status = check_transition_status(bundle, dependency_receipt)
         result = authorization_result(
             bundle.task_id,
             bundle.plan_revision,
             attestation,
         )
-        result["state"] = status_payload(bundle)
+        result["state"] = status
         return result
     attestation = check_final(bundle, dependency_receipt)
     result = authorization_result(
