@@ -1,0 +1,20 @@
+{
+  "task_id": "compat-e996fa5",
+  "plan_revision": 1,
+  "artifacts": [],
+  "stages": [
+    {
+      "id": "STG-01",
+      "depends_on": [],
+      "validation_ids": [
+        "VAL-01"
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "required": true
+    }
+  ]
+}

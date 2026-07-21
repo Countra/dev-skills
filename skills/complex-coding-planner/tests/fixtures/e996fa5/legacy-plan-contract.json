@@ -1,0 +1,55 @@
+{
+  "task_id": "legacy-plan-e996fa5",
+  "plan_revision": 1,
+  "lifecycle_route": "managed",
+  "plan_profile": "lite",
+  "goal": {
+    "id": "GOAL-01"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01"
+    }
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC-01"
+    }
+  ],
+  "nonfunctional_requirements": [
+    {
+      "id": "NFR-01"
+    }
+  ],
+  "artifacts": [],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "兼容验证",
+      "depends_on": [],
+      "requirement_ids": [
+        "REQ-01"
+      ],
+      "acceptance_ids": [
+        "AC-01"
+      ],
+      "nonfunctional_ids": [
+        "NFR-01"
+      ],
+      "validation_ids": [
+        "VAL-01"
+      ],
+      "allowed_changes": [
+        "skills/"
+      ],
+      "forbidden_changes": [
+        "unrelated/"
+      ]
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01"
+    }
+  ]
+}

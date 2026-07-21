@@ -1,0 +1,252 @@
+{
+  "baseline": {
+    "commit": "e996fa5",
+    "skill_file_count": 113,
+    "skill_line_count": 25180
+  },
+  "contract": {
+    "task_id": "compat-e996fa5",
+    "plan_revision": 1,
+    "stages": [
+      {
+        "id": "STG-01",
+        "depends_on": [],
+        "validation_ids": [
+          "VAL-01"
+        ]
+      }
+    ],
+    "validations": [
+      {
+        "id": "VAL-01",
+        "required": true
+      }
+    ]
+  },
+  "events": [
+    {
+      "seq": 1,
+      "event_id": "EVT-000001",
+      "occurred_at": "2026-07-21T00:00:01+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": null,
+      "type": "execution_started",
+      "attempt": null,
+      "payload": {},
+      "evidence_refs": []
+    },
+    {
+      "seq": 2,
+      "event_id": "EVT-000002",
+      "occurred_at": "2026-07-21T00:00:02+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": "STG-01",
+      "type": "stage_started",
+      "attempt": 1,
+      "payload": {},
+      "evidence_refs": []
+    },
+    {
+      "seq": 3,
+      "event_id": "EVT-000003",
+      "occurred_at": "2026-07-21T00:00:03+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": "STG-01",
+      "type": "validation_recorded",
+      "attempt": 1,
+      "payload": {
+        "validation_id": "VAL-01",
+        "result": "passed",
+        "command": "python -m unittest",
+        "claim_source": "observed",
+        "stage_attempt": 1,
+        "target_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "exit_code": 0,
+        "summary": "旧版验证记录通过。",
+        "claim_boundary": "只证明 e996fa5 目标上的测试结果。"
+      },
+      "evidence_refs": [
+        "artifacts/validation/val-01.txt"
+      ]
+    },
+    {
+      "seq": 4,
+      "event_id": "EVT-000004",
+      "occurred_at": "2026-07-21T00:00:04+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": "STG-01",
+      "type": "review_recorded",
+      "attempt": 1,
+      "payload": {
+        "result": "passed",
+        "review_id": "REV-CODE-COMPAT-001",
+        "profile": "code-review",
+        "scope": {
+          "kind": "stage-delta",
+          "stage_id": "STG-01",
+          "attempt": 1
+        },
+        "target_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "context_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "verdict": "passed",
+        "report_ref": "artifacts/reviews/stage-01.json",
+        "open_counts": {
+          "blocking": 0,
+          "major": 0,
+          "minor": 0,
+          "advisory": 0,
+          "total": 0
+        },
+        "gap_counts": {
+          "blocking": 0,
+          "major": 0,
+          "minor": 0,
+          "total": 0
+        },
+        "coverage_summary": {
+          "target_paths": 1,
+          "requirements": 1,
+          "risks": 6,
+          "context_expansions": 0
+        },
+        "lineage_summary": {
+          "predecessor_review_id": null,
+          "accounted_finding_count": 0
+        },
+        "strength_count": 0,
+        "summary": "e996fa5 conditional external-agent review 通过。",
+        "reviewer_mode": "external-agent",
+        "independence_claim": true,
+        "dispatch_id": "REV-CODE-COMPAT-001-DISPATCH-1"
+      },
+      "evidence_refs": [
+        "artifacts/reviews/stage-01.json"
+      ]
+    },
+    {
+      "seq": 5,
+      "event_id": "EVT-000005",
+      "occurred_at": "2026-07-21T00:00:05+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": "STG-01",
+      "type": "stage_completed",
+      "attempt": null,
+      "payload": {},
+      "evidence_refs": []
+    },
+    {
+      "seq": 6,
+      "event_id": "EVT-000006",
+      "occurred_at": "2026-07-21T00:00:06+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": null,
+      "type": "review_recorded",
+      "attempt": null,
+      "payload": {
+        "result": "passed",
+        "review_id": "REV-CODE-COMPAT-FINAL-001",
+        "profile": "code-review",
+        "scope": {
+          "kind": "final-integration"
+        },
+        "target_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "context_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "verdict": "passed",
+        "report_ref": "artifacts/reviews/final-01.json",
+        "open_counts": {
+          "blocking": 0,
+          "major": 0,
+          "minor": 0,
+          "advisory": 0,
+          "total": 0
+        },
+        "gap_counts": {
+          "blocking": 0,
+          "major": 0,
+          "minor": 0,
+          "total": 0
+        },
+        "coverage_summary": {
+          "target_paths": 1,
+          "requirements": 1,
+          "risks": 6,
+          "context_expansions": 0
+        },
+        "lineage_summary": {
+          "predecessor_review_id": null,
+          "accounted_finding_count": 0
+        },
+        "strength_count": 0,
+        "summary": "e996fa5 final review 通过。",
+        "reviewer_mode": "external-agent",
+        "independence_claim": true,
+        "dispatch_id": "REV-CODE-COMPAT-FINAL-001-DISPATCH-1"
+      },
+      "evidence_refs": [
+        "artifacts/reviews/final-01.json"
+      ]
+    },
+    {
+      "seq": 7,
+      "event_id": "EVT-000007",
+      "occurred_at": "2026-07-21T00:00:07+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": null,
+      "type": "completed",
+      "attempt": null,
+      "payload": {},
+      "evidence_refs": []
+    }
+  ],
+  "expected_state": {
+    "task_id": "compat-e996fa5",
+    "plan_revision": 1,
+    "lifecycle": "completed",
+    "current_stage_id": null,
+    "completed_stage_ids": [
+      "STG-01"
+    ],
+    "remaining_stage_ids": [],
+    "stop_condition": null,
+    "next_action": null,
+    "reapproval_required": false,
+    "last_event_seq": 7,
+    "state_revision": 7,
+    "updated_at": "2026-07-21T00:00:07+00:00"
+  },
+  "amendment_events": [
+    {
+      "seq": 1,
+      "event_id": "EVT-000001",
+      "occurred_at": "2026-07-21T00:01:01+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": null,
+      "type": "execution_started",
+      "attempt": null,
+      "payload": {},
+      "evidence_refs": []
+    },
+    {
+      "seq": 2,
+      "event_id": "EVT-000002",
+      "occurred_at": "2026-07-21T00:01:02+00:00",
+      "task_id": "compat-e996fa5",
+      "plan_revision": 1,
+      "stage_id": null,
+      "type": "amendment_requested",
+      "attempt": null,
+      "payload": {
+        "reason": "公共范围发生变化。"
+      },
+      "evidence_refs": []
+    }
+  ]
+}

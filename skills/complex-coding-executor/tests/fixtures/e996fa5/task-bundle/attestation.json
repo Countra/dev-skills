@@ -1,0 +1,25 @@
+{
+  "task_id": "compat-e996fa5",
+  "plan_revision": 1,
+  "approved_at": "2026-07-21T00:00:00+00:00",
+  "approved_by": "compatibility-fixture",
+  "approval_summary": "保留 e996fa5 task bundle 的批准与恢复语义。",
+  "authorizations": {
+    "implementation": true,
+    "commit": true,
+    "external_write": false,
+    "elevated_tool": false
+  },
+  "immutable_files": [
+    {
+      "path": "execution-plan.md",
+      "sha256": "c58a5460321b1d11821f81286b41e4b7c76119444c47b0dadfa11988cf7650cf",
+      "size_bytes": 100
+    },
+    {
+      "path": "plan-contract.json",
+      "sha256": "1087cc8cb7c50168680e0a9883f2b0b883a4bd5e9015819aad0b6e87667fc64a",
+      "size_bytes": 284
+    }
+  ]
+}
