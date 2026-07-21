@@ -198,6 +198,7 @@ class BoundedCommandTest(unittest.TestCase):
             mock.patch(
                 "harness_bounded_command._close_windows_process_handles"
             ) as close_handles,
+            mock.patch.object(signal, "CTRL_BREAK_EVENT", 1, create=True),
         ):
             cleaned, remaining = _terminate_windows_tree(
                 process,
