@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import json
+import math
 import os
 import signal
 import subprocess
@@ -17,15 +17,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from harness_state_errors import StateError
-from harness_state_io import write_json_atomic
-
-
 EXIT_TIMEOUT = 124
 EXIT_CLEANUP_FAILED = 125
 EXIT_LAUNCH_FAILED = 126
 EXIT_CANCELLED = 130
 FORCE_WAIT_SECONDS = 5.0
+MAX_TIMEOUT_SECONDS = 86_400.0
+MAX_GRACE_SECONDS = 300.0
 
 
 @dataclass
@@ -233,31 +231,38 @@ def _create_windows_job(process: subprocess.Popen[Any]) -> WindowsJobState | Non
     job = kernel32.CreateJobObjectW(None, None)
     if not job:
         return None
-    information = ExtendedLimitInformation()
-    information.BasicLimitInformation.LimitFlags = 0x00002000
-    configured = kernel32.SetInformationJobObject(
-        job,
-        9,
-        ctypes.byref(information),
-        ctypes.sizeof(information),
-    )
-    process_handle = getattr(process, "_handle", None)
     try:
-        process_handle_value = int(process_handle)
-    except (TypeError, ValueError):
-        process_handle_value = 0
-    assigned = bool(
-        configured
-        and process_handle_value
-        and kernel32.AssignProcessToJobObject(job, process_handle_value)
-    )
-    preassignment = _track_windows_processes(
-        _windows_descendant_pids(process.pid)
-    )
-    if not assigned:
-        kernel32.CloseHandle(job)
-        return WindowsJobState(None, preassignment) if preassignment else None
-    return WindowsJobState(job, preassignment)
+        information = ExtendedLimitInformation()
+        information.BasicLimitInformation.LimitFlags = 0x00002000
+        configured = kernel32.SetInformationJobObject(
+            job,
+            9,
+            ctypes.byref(information),
+            ctypes.sizeof(information),
+        )
+        process_handle = getattr(process, "_handle", None)
+        try:
+            process_handle_value = int(process_handle)
+        except (TypeError, ValueError):
+            process_handle_value = 0
+        assigned = bool(
+            configured
+            and process_handle_value
+            and kernel32.AssignProcessToJobObject(job, process_handle_value)
+        )
+        preassignment = _track_windows_processes(
+            _windows_descendant_pids(process.pid)
+        )
+        if not assigned:
+            kernel32.CloseHandle(job)
+            return WindowsJobState(None, preassignment) if preassignment else None
+        return WindowsJobState(job, preassignment)
+    except BaseException:
+        try:
+            kernel32.CloseHandle(job)
+        except Exception:
+            pass
+        raise
 
 
 def _close_windows_job(job: Any) -> bool:
@@ -277,10 +282,18 @@ def _track_windows_processes(pids: Sequence[int]) -> dict[int, Any]:
     kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     kernel32.OpenProcess.restype = wintypes.HANDLE
     tracked: dict[int, Any] = {}
-    for pid in dict.fromkeys(pids):
-        handle = kernel32.OpenProcess(0x00100000, False, pid)
-        if handle:
-            tracked[pid] = handle
+    try:
+        for pid in dict.fromkeys(pids):
+            handle = kernel32.OpenProcess(0x00100000, False, pid)
+            if handle:
+                tracked[pid] = handle
+    except BaseException:
+        for handle in tracked.values():
+            try:
+                kernel32.CloseHandle(handle)
+            except Exception:
+                pass
+        raise
     return tracked
 
 
@@ -473,8 +486,8 @@ def cleanup_completed_process_tree(
             if isinstance(windows_job, WindowsJobState)
             else _track_windows_processes(_windows_descendant_pids(process.pid))
         )
-        closed = _close_windows_job(windows_job) if windows_job is not None else True
         try:
+            closed = _close_windows_job(windows_job) if windows_job is not None else True
             remaining = _wait_until_stopped(
                 tracked,
                 time.monotonic() + FORCE_WAIT_SECONDS,
@@ -529,7 +542,66 @@ def run_bounded_command(
             error=f"{type(exc).__name__}: 命令未启动。",
         )
         return EXIT_LAUNCH_FAILED, payload
-    windows_job = _create_windows_job(process) if os.name == "nt" else None
+    windows_job = None
+    if os.name == "nt":
+        try:
+            windows_job = _create_windows_job(process)
+        except KeyboardInterrupt:
+            cleanup_verified, failure_pids = terminate_process_tree(
+                process,
+                grace_seconds,
+                None,
+            )
+            exit_code = EXIT_CANCELLED if cleanup_verified else EXIT_CLEANUP_FAILED
+            return exit_code, _result(
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                result="failed",
+                exit_code=exit_code,
+                termination="cancelled" if cleanup_verified else "cleanup-failed",
+                cleanup_verified=cleanup_verified,
+                pid=process.pid,
+                cleanup_failure_pids=failure_pids,
+                error_code=(
+                    "RUN_STATE_COMMAND_CANCELLED"
+                    if cleanup_verified
+                    else "RUN_STATE_COMMAND_CLEANUP_FAILED"
+                ),
+                error=(
+                    "用户取消后已完成有界清理。"
+                    if cleanup_verified
+                    else "用户取消后仍有本次命令树进程存活。"
+                ),
+            )
+        except Exception:
+            cleanup_verified, failure_pids = terminate_process_tree(
+                process,
+                grace_seconds,
+                None,
+            )
+            exit_code = EXIT_LAUNCH_FAILED if cleanup_verified else EXIT_CLEANUP_FAILED
+            return exit_code, _result(
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                result="failed",
+                exit_code=exit_code,
+                termination=(
+                    "launch-failed" if cleanup_verified else "cleanup-failed"
+                ),
+                cleanup_verified=cleanup_verified,
+                pid=process.pid,
+                cleanup_failure_pids=failure_pids,
+                error_code=(
+                    "RUN_STATE_COMMAND_LAUNCH_FAILED"
+                    if cleanup_verified
+                    else "RUN_STATE_COMMAND_CLEANUP_FAILED"
+                ),
+                error=(
+                    "Windows 进程隔离初始化失败，已回收本次命令树。"
+                    if cleanup_verified
+                    else "Windows 进程隔离初始化失败，且仍有本次命令树进程存活。"
+                ),
+            )
     try:
         exit_code = process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
@@ -627,55 +699,41 @@ def run_bounded_command(
     return exit_code, payload
 
 
-def _positive_seconds(value: str) -> float:
+def _bounded_seconds(value: str, *, maximum: float, option: str) -> float:
     try:
         seconds = float(value)
     except ValueError as exc:
         raise argparse.ArgumentTypeError("必须是正数秒数。") from exc
-    if seconds <= 0:
+    if not math.isfinite(seconds) or seconds <= 0:
         raise argparse.ArgumentTypeError("必须是正数秒数。")
+    if seconds > maximum:
+        raise argparse.ArgumentTypeError(
+            f"{option} 不得超过 {maximum:g} 秒。"
+        )
     return seconds
 
 
-def _resolve_result_path(cwd: Path, raw: str | None) -> Path | None:
-    if raw is None:
-        return None
-    relative = Path(raw)
-    if relative.is_absolute() or ".." in relative.parts:
-        raise BoundedCommandError(
-            "RUN_STATE_COMMAND_LAUNCH_FAILED",
-            "--result-json 必须是 --cwd 内的相对路径。",
-            EXIT_LAUNCH_FAILED,
-        )
-    resolved = (cwd / relative).resolve(strict=False)
-    try:
-        resolved.relative_to(cwd)
-    except ValueError as exc:
-        raise BoundedCommandError(
-            "RUN_STATE_COMMAND_LAUNCH_FAILED",
-            "--result-json 解析后越出 --cwd。",
-            EXIT_LAUNCH_FAILED,
-        ) from exc
-    return resolved
+def _timeout_seconds(value: str) -> float:
+    return _bounded_seconds(
+        value,
+        maximum=MAX_TIMEOUT_SECONDS,
+        option="--timeout-seconds",
+    )
 
 
-def _persist_result(path: Path | None, payload: dict[str, Any]) -> None:
-    if path is None:
-        return
-    write_json_atomic(
-        path,
-        payload,
-        error_code="RUN_STATE_COMMAND_RESULT_WRITE_FAILED",
-        label="bounded command result",
+def _grace_seconds(value: str) -> float:
+    return _bounded_seconds(
+        value,
+        maximum=MAX_GRACE_SECONDS,
+        option="--grace-seconds",
     )
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="在 deadline 内运行一个有限命令")
     parser.add_argument("--cwd", type=Path, required=True)
-    parser.add_argument("--timeout-seconds", type=_positive_seconds, required=True)
-    parser.add_argument("--grace-seconds", type=_positive_seconds, default=5.0)
-    parser.add_argument("--result-json")
+    parser.add_argument("--timeout-seconds", type=_timeout_seconds, required=True)
+    parser.add_argument("--grace-seconds", type=_grace_seconds, default=5.0)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = list(args.command)
@@ -708,23 +766,27 @@ def main() -> int:
                 "-- 后必须提供 program 和参数。",
                 EXIT_LAUNCH_FAILED,
             )
-        result_path = _resolve_result_path(cwd, args.result_json)
         exit_code, payload = run_bounded_command(
             command,
             cwd=cwd,
             timeout_seconds=args.timeout_seconds,
             grace_seconds=args.grace_seconds,
         )
-        _persist_result(result_path, payload)
     except BoundedCommandError as exc:
         print(f"FAIL [{exc.code}]: {exc.message}", file=sys.stderr)
         return exc.exit_code
-    except (OSError, StateError) as exc:
-        code = getattr(exc, "code", "RUN_STATE_COMMAND_RESULT_WRITE_FAILED")
-        message = getattr(exc, "message", str(exc))
-        print(f"FAIL [{code}]: {message}", file=sys.stderr)
-        return 1
-    print(json.dumps(payload, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+    except OSError as exc:
+        print(f"FAIL [RUN_STATE_COMMAND_LAUNCH_FAILED]: {exc}", file=sys.stderr)
+        return EXIT_LAUNCH_FAILED
+    cleanup = "verified" if payload["cleanup_verified"] else "failed"
+    remaining = payload["cleanup_failure_pids"]
+    suffix = f", remaining-pids={','.join(map(str, remaining))}" if remaining else ""
+    print(
+        "bounded-command: "
+        f"{payload['termination']}, exit={payload['exit_code']}, "
+        f"duration={payload['duration_ms']}ms, cleanup={cleanup}{suffix}",
+        file=sys.stderr,
+    )
     return exit_code
 
 

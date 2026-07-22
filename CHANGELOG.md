@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-07-22
+
+### Breaking: Coding Harness 约定优先精简
+
+- `complex-coding-planner`、`complex-coding-executor` 与 `complex-coding-reviewer` 一次性切换为 compact workflow；旧 heavy task bundle 仅作为历史归档，不由新工具执行。
+- direct 任务不创建 Harness 制品；managed 任务只维护计划、compact contract、active pointer 与单一 run-state，取消 ledger、attestation、artifact graph 和审查回执链。
+- Reviewer 改为 instruction/reference-only，以 findings-first 人类文本返回结果；高风险审查仍使用隔离子 Agent，但不生成 receipt、dispatch、manifest 或 provenance JSON。
+- 生产 Python 收敛为 active pointer、contract、plan check、compact state 与 bounded command 六个脚本；权限、计划漂移、阶段依赖、必需验证和高风险审查继续失败关闭。
+- CI 在 Ubuntu 验证 compact 四文件生命周期，并在 Windows、Ubuntu、macOS 验证有限命令超时与进程树回收；不调用 Agent、访问网络或上传 Actions artifact。
+
 ## 2026-07-18
 
 ### Breaking: Reviewer 独立子 Agent 审查

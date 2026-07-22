@@ -1,4 +1,4 @@
-name: Planner Reviewer Executor Contract
+name: Compact Coding Skills
 
 on:
   push:
@@ -11,14 +11,51 @@ permissions:
   contents: read
 
 concurrency:
-  group: planner-reviewer-executor-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  group: compact-coding-skills-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  contract:
-    name: ${{ matrix.os }} planner reviewer executor contract
+  core:
+    name: ubuntu compact workflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run Planner tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p "test_*.py" -v
+
+      - name: Run Reviewer tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p "test_*.py" -v
+
+      - name: Run Executor state tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p "test_compact_state.py" -v
+
+      - name: Run compact cross-skill eval
+        run: python -u -X utf8 -B evals/complex-coding-workflow/run_evals.py
+
+      - name: Check Planner skill
+        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-planner
+
+      - name: Check Reviewer skill
+        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-reviewer
+
+      - name: Check Executor skill
+        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-executor
+
+  bounded-command:
+    name: ${{ matrix.os }} bounded command
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -35,44 +72,5 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run Planner unit tests
-        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p "test_*.py" -v
-
-      - name: Run Planner deterministic evals
-        run: python -u -X utf8 -B evals/complex-coding-planner/run_evals.py --output .ci-artifacts/planner-reviewer-executor/planner-evals.json
-
-      - name: Run Reviewer unit tests
-        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p "test_*.py" -v
-
-      - name: Run Reviewer deterministic evals
-        run: python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --output .ci-artifacts/planner-reviewer-executor/reviewer-evals.json
-
-      - name: Run Reviewer semantic oracle contract
-        run: python -u -X utf8 -B evals/complex-coding-reviewer/run_semantic_oracle.py --self-test --output .ci-artifacts/planner-reviewer-executor/reviewer-oracle-self-test.json
-
-      - name: Validate Reviewer static contract
-        run: python -u -X utf8 -B evals/complex-coding-reviewer/run_evals.py --static-contract-only --output .ci-artifacts/planner-reviewer-executor/reviewer-static-contract.json
-
-      - name: Validate non-executable observation packet
-        run: python -u -X utf8 -B evals/complex-coding-reviewer/run_observation_packet.py --validate-only --output .ci-artifacts/planner-reviewer-executor/observation-packet-validation.json
-
-      - name: Run Reviewer static skill evaluation
-        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-reviewer --output .ci-artifacts/planner-reviewer-executor/reviewer-static.json
-
-      - name: Run Planner static skill evaluation
-        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-planner --output .ci-artifacts/planner-reviewer-executor/planner-static.json
-
-      - name: Run Executor static skill evaluation
-        run: python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-executor --output .ci-artifacts/planner-reviewer-executor/executor-static.json
-
-      - name: Run Executor unit tests
-        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p "test_*.py" -v
-
-      - name: Run Executor deterministic evals
-        run: python -u -X utf8 -B evals/complex-coding-executor/run_evals.py --output .ci-artifacts/planner-reviewer-executor/executor-evals.json
-
-      - name: Run Planner Reviewer Executor joint regression
-        run: python -u -X utf8 -B evals/complex-coding-executor/cross_skill_regression.py --include-reviewer --work-dir .ci-artifacts/planner-reviewer-executor/cross-review-work --output .ci-artifacts/planner-reviewer-executor/cross-review.json
-
-      - name: Report lightweight harness observations
-        run: python -u -X utf8 -B evals/harness-lightweight/run_evals.py --output .ci-artifacts/planner-reviewer-executor/lightweight.json
+      - name: Run bounded command tests
+        run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p "test_bounded_command.py" -v

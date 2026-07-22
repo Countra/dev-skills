@@ -1,4 +1,4 @@
 interface:
   display_name: "Complex Coding Reviewer"
-  short_description: "按风险协调 same-context 或独立审查，生成目标绑定证据"
-  default_prompt: "Use $complex-coding-reviewer as the review coordinator: freeze the target and context, use same-context for low or medium risk unless independence is required, delegate one isolated reviewer for strict review, and produce a validated dispatch-bound receipt."
+  short_description: "对计划或代码执行只读、证据驱动的专业审查"
+  default_prompt: "使用 $complex-coding-reviewer 对明确目标执行 findings-first 审查，报告有证据的缺陷、覆盖范围和验证缺口，不生成 JSON 审查制品。"

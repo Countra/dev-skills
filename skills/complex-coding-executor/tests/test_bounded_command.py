@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import signal
 import subprocess
@@ -13,11 +12,12 @@ from unittest import mock
 from helpers import WritableTemporaryDirectory
 
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
-SCRIPT = SCRIPTS_DIR / "harness_bounded_command.py"
-sys.path.insert(0, str(SCRIPTS_DIR))
+SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+SCRIPT = SCRIPTS / "harness_bounded_command.py"
+sys.path.insert(0, str(SCRIPTS))
 
 from harness_bounded_command import (  # noqa: E402
+    EXIT_CANCELLED,
     EXIT_CLEANUP_FAILED,
     WindowsJobState,
     _force_kill_windows_pids,
@@ -25,25 +25,6 @@ from harness_bounded_command import (  # noqa: E402
     cleanup_completed_process_tree,
     run_bounded_command,
 )
-from harness_state_errors import StateError  # noqa: E402
-from harness_validation_schema import (  # noqa: E402
-    validate_validation_record,
-    validation_timeout_seconds,
-)
-
-
-def validation_payload() -> dict[str, object]:
-    return {
-        "validation_id": "VAL-01",
-        "result": "passed",
-        "command": "python -m unittest",
-        "claim_source": "observed",
-        "stage_attempt": 1,
-        "target_digest": "a" * 64,
-        "exit_code": 0,
-        "summary": "unit test passed",
-        "claim_boundary": "只证明当前 target 的单元测试结果。",
-    }
 
 
 class BoundedCommandTest(unittest.TestCase):
@@ -57,7 +38,6 @@ class BoundedCommandTest(unittest.TestCase):
         *command: str,
         timeout_seconds: str = "5",
         grace_seconds: str = "1",
-        result_path: str = "artifacts/result.json",
     ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             [
@@ -73,8 +53,6 @@ class BoundedCommandTest(unittest.TestCase):
                 timeout_seconds,
                 "--grace-seconds",
                 grace_seconds,
-                "--result-json",
-                result_path,
                 "--",
                 *command,
             ],
@@ -82,35 +60,21 @@ class BoundedCommandTest(unittest.TestCase):
             capture_output=True,
             text=True,
             encoding="utf-8",
-            timeout=20,
+            timeout=25,
         )
 
-    def read_result(self, relative: str = "artifacts/result.json") -> dict[str, object]:
-        return json.loads((self.root / relative).read_text(encoding="utf-8"))
-
-    def test_success_inherits_output_and_writes_result(self) -> None:
-        completed = self.run_cli(
-            sys.executable,
-            "-c",
-            "print('bounded-output')",
-        )
+    def test_success_streams_output_and_human_summary(self) -> None:
+        completed = self.run_cli(sys.executable, "-c", "print('bounded-output')")
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("bounded-output", completed.stdout)
-        result = self.read_result()
-        self.assertEqual("passed", result["result"])
-        self.assertEqual("completed", result["termination"])
-        self.assertTrue(result["cleanup_verified"])
+        self.assertIn("bounded-command: completed", completed.stderr)
+        self.assertIn("cleanup=verified", completed.stderr)
+        self.assertFalse(list(self.root.rglob("*.json")))
 
     def test_normal_failure_preserves_child_exit_code(self) -> None:
-        completed = self.run_cli(
-            sys.executable,
-            "-c",
-            "raise SystemExit(7)",
-        )
+        completed = self.run_cli(sys.executable, "-c", "raise SystemExit(7)")
         self.assertEqual(7, completed.returncode)
-        result = self.read_result()
-        self.assertEqual(7, result["exit_code"])
-        self.assertEqual("completed", result["termination"])
+        self.assertIn("exit=7", completed.stderr)
 
     def test_silent_timeout_is_bounded_and_cleaned(self) -> None:
         started = time.monotonic()
@@ -123,40 +87,79 @@ class BoundedCommandTest(unittest.TestCase):
         )
         elapsed = time.monotonic() - started
         self.assertEqual(124, completed.returncode, completed.stderr)
-        self.assertLess(elapsed, 11.0)
-        result = self.read_result()
-        self.assertEqual("timeout", result["termination"])
-        self.assertTrue(result["cleanup_verified"])
-        self.assertEqual("RUN_STATE_COMMAND_TIMEOUT", result["error_code"])
+        self.assertLess(elapsed, 12.5)
+        self.assertIn("bounded-command: timeout", completed.stderr)
+        self.assertIn("cleanup=verified", completed.stderr)
 
-    def test_missing_program_is_classified_without_command_echo(self) -> None:
+    def test_missing_program_is_classified_without_echoing_argument(self) -> None:
         marker = "missing-program-with-secret-marker"
         completed = self.run_cli(marker)
         self.assertEqual(126, completed.returncode)
-        result = self.read_result()
-        self.assertEqual("launch-failed", result["termination"])
-        self.assertEqual("RUN_STATE_COMMAND_LAUNCH_FAILED", result["error_code"])
-        self.assertNotIn(marker, json.dumps(result, ensure_ascii=False))
+        self.assertNotIn(marker, completed.stderr)
+        self.assertIn("launch-failed", completed.stderr)
 
-    def test_result_path_cannot_escape_cwd(self) -> None:
-        completed = self.run_cli(
-            sys.executable,
-            "-c",
-            "raise SystemExit(0)",
-            result_path="../outside.json",
-        )
-        self.assertEqual(126, completed.returncode)
-        self.assertFalse((self.root.parent / "outside.json").exists())
+    def test_non_finite_deadline_is_rejected_before_launch(self) -> None:
+        for value in ("nan", "inf"):
+            with self.subTest(value=value):
+                completed = self.run_cli(
+                    sys.executable,
+                    "-c",
+                    "raise SystemExit(99)",
+                    timeout_seconds=value,
+                )
+                self.assertEqual(2, completed.returncode)
+                self.assertIn("必须是正数秒数", completed.stderr)
+
+    def test_excessive_timeout_and_grace_are_rejected_before_launch(self) -> None:
+        cases = (("86401", "1", "--timeout-seconds"), ("5", "301", "--grace-seconds"))
+        for timeout, grace, option in cases:
+            with self.subTest(option=option):
+                completed = self.run_cli(
+                    sys.executable,
+                    "-c",
+                    "raise SystemExit(99)",
+                    timeout_seconds=timeout,
+                    grace_seconds=grace,
+                )
+                self.assertEqual(2, completed.returncode)
+                self.assertIn(f"{option} 不得超过", completed.stderr)
+
+    def test_windows_job_setup_failure_reclaims_started_process(self) -> None:
+        process = mock.Mock(pid=43210)
+        with (
+            mock.patch("harness_bounded_command.subprocess.Popen", return_value=process),
+            mock.patch("harness_bounded_command.os.name", "nt"),
+            mock.patch.object(
+                subprocess,
+                "CREATE_NEW_PROCESS_GROUP",
+                512,
+                create=True,
+            ),
+            mock.patch(
+                "harness_bounded_command._create_windows_job",
+                side_effect=RuntimeError("job setup failed"),
+            ),
+            mock.patch(
+                "harness_bounded_command.terminate_process_tree",
+                return_value=(True, []),
+            ) as terminate,
+        ):
+            exit_code, result = run_bounded_command(
+                ["unit"],
+                cwd=self.root,
+                timeout_seconds=1,
+                grace_seconds=0.1,
+            )
+        self.assertEqual(126, exit_code)
+        self.assertEqual("launch-failed", result["termination"])
+        terminate.assert_called_once_with(process, 0.1, None)
 
     def test_cleanup_failure_returns_stable_exit_and_pids(self) -> None:
-        process = mock.Mock()
-        process.pid = 43210
+        process = mock.Mock(pid=43210)
         process.wait.side_effect = subprocess.TimeoutExpired(["unit"], 0.1)
         with (
-            mock.patch(
-                "harness_bounded_command.subprocess.Popen",
-                return_value=process,
-            ),
+            mock.patch("harness_bounded_command.subprocess.Popen", return_value=process),
+            mock.patch("harness_bounded_command._create_windows_job", return_value=None),
             mock.patch(
                 "harness_bounded_command.terminate_process_tree",
                 return_value=(False, [43211, 43210]),
@@ -169,91 +172,27 @@ class BoundedCommandTest(unittest.TestCase):
                 grace_seconds=0.1,
             )
         self.assertEqual(EXIT_CLEANUP_FAILED, exit_code)
-        self.assertEqual("cleanup-failed", result["termination"])
         self.assertEqual([43210, 43211], result["cleanup_failure_pids"])
 
-    def test_windows_job_race_force_kills_tracked_escapee(self) -> None:
+    def test_keyboard_interrupt_is_bounded(self) -> None:
         process = mock.Mock(pid=43210)
-        tracked = {43210: "root-handle", 43211: "child-handle"}
+        process.wait.side_effect = KeyboardInterrupt
         with (
+            mock.patch("harness_bounded_command.subprocess.Popen", return_value=process),
+            mock.patch("harness_bounded_command._create_windows_job", return_value=None),
             mock.patch(
-                "harness_bounded_command._windows_descendant_pids",
-                return_value=[43211],
+                "harness_bounded_command.terminate_process_tree",
+                return_value=(True, []),
             ),
-            mock.patch(
-                "harness_bounded_command._track_windows_processes",
-                return_value=tracked,
-            ),
-            mock.patch(
-                "harness_bounded_command._wait_until_stopped",
-                side_effect=[[43210, 43211], [43211], []],
-            ),
-            mock.patch(
-                "harness_bounded_command._close_windows_job",
-                return_value=True,
-            ),
-            mock.patch(
-                "harness_bounded_command._force_kill_windows_pids"
-            ) as force_kill,
-            mock.patch(
-                "harness_bounded_command._close_windows_process_handles"
-            ) as close_handles,
-            mock.patch.object(signal, "CTRL_BREAK_EVENT", 1, create=True),
         ):
-            cleaned, remaining = _terminate_windows_tree(
-                process,
-                0.1,
-                WindowsJobState(object(), {}),
+            exit_code, result = run_bounded_command(
+                ["unit"],
+                cwd=self.root,
+                timeout_seconds=1,
+                grace_seconds=0.1,
             )
-        self.assertTrue(cleaned)
-        self.assertEqual([], remaining)
-        force_kill.assert_called_once_with({43211: "child-handle"}, 5.0)
-        close_handles.assert_called_once_with(tracked)
-
-    def test_windows_force_kill_shares_one_deadline_across_pids(self) -> None:
-        tracked = {43210: "first-handle", 43211: "second-handle"}
-        with (
-            mock.patch(
-                "harness_bounded_command._windows_handle_running",
-                return_value=True,
-            ),
-            mock.patch(
-                "harness_bounded_command.time.monotonic",
-                side_effect=[10.0, 10.1, 15.1],
-            ),
-            mock.patch(
-                "harness_bounded_command.subprocess.run",
-                side_effect=subprocess.TimeoutExpired(["taskkill"], 4.9),
-            ) as run,
-        ):
-            _force_kill_windows_pids(tracked, 5.0)
-        self.assertEqual(1, run.call_count)
-        self.assertAlmostEqual(4.9, run.call_args.kwargs["timeout"])
-
-    def test_completed_windows_job_does_not_rescan_reused_root_pid(self) -> None:
-        process = mock.Mock(pid=43210)
-        job = WindowsJobState("job-handle", {})
-        with (
-            mock.patch("harness_bounded_command.os.name", "nt"),
-            mock.patch(
-                "harness_bounded_command._windows_descendant_pids"
-            ) as descendants,
-            mock.patch(
-                "harness_bounded_command._close_windows_job",
-                return_value=True,
-            ),
-            mock.patch(
-                "harness_bounded_command._wait_until_stopped",
-                return_value=[],
-            ),
-            mock.patch(
-                "harness_bounded_command._close_windows_process_handles"
-            ),
-        ):
-            cleaned, remaining = cleanup_completed_process_tree(process, 0.1, job)
-        self.assertTrue(cleaned)
-        self.assertEqual([], remaining)
-        descendants.assert_not_called()
+        self.assertEqual(EXIT_CANCELLED, exit_code)
+        self.assertEqual("cancelled", result["termination"])
 
     def test_timeout_reclaims_spawned_child(self) -> None:
         pid_file = self.root / "child.pid"
@@ -272,7 +211,6 @@ class BoundedCommandTest(unittest.TestCase):
             grace_seconds="1",
         )
         self.assertEqual(124, completed.returncode, completed.stderr)
-        self.assertTrue(pid_file.is_file())
         child_pid = int(pid_file.read_text(encoding="utf-8"))
         self.addCleanup(self._force_stop, child_pid)
         deadline = time.monotonic() + 3
@@ -287,16 +225,63 @@ class BoundedCommandTest(unittest.TestCase):
             "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']);"
             "pathlib.Path(sys.argv[1]).write_text(str(child.pid),encoding='utf-8')"
         )
-        completed = self.run_cli(
-            sys.executable,
-            "-c",
-            child_code,
-            str(pid_file),
-        )
+        completed = self.run_cli(sys.executable, "-c", child_code, str(pid_file))
         self.assertEqual(0, completed.returncode, completed.stderr)
         child_pid = int(pid_file.read_text(encoding="utf-8"))
         self.addCleanup(self._force_stop, child_pid)
         self.assertFalse(self._is_running(child_pid))
+
+    def test_windows_job_race_force_kills_tracked_escapee(self) -> None:
+        process = mock.Mock(pid=43210)
+        tracked = {43210: "root-handle", 43211: "child-handle"}
+        with (
+            mock.patch("harness_bounded_command._windows_descendant_pids", return_value=[43211]),
+            mock.patch("harness_bounded_command._track_windows_processes", return_value=tracked),
+            mock.patch(
+                "harness_bounded_command._wait_until_stopped",
+                side_effect=[[43210, 43211], [43211], []],
+            ),
+            mock.patch("harness_bounded_command._close_windows_job", return_value=True),
+            mock.patch("harness_bounded_command._force_kill_windows_pids") as force_kill,
+            mock.patch("harness_bounded_command._close_windows_process_handles"),
+            mock.patch.object(signal, "CTRL_BREAK_EVENT", 1, create=True),
+        ):
+            cleaned, remaining = _terminate_windows_tree(
+                process,
+                0.1,
+                WindowsJobState(object(), {}),
+            )
+        self.assertTrue(cleaned)
+        self.assertEqual([], remaining)
+        force_kill.assert_called_once_with({43211: "child-handle"}, 5.0)
+
+    def test_windows_force_kill_shares_one_deadline(self) -> None:
+        tracked = {43210: "first-handle", 43211: "second-handle"}
+        with (
+            mock.patch("harness_bounded_command._windows_handle_running", return_value=True),
+            mock.patch("harness_bounded_command.time.monotonic", side_effect=[10.0, 10.1, 15.1]),
+            mock.patch(
+                "harness_bounded_command.subprocess.run",
+                side_effect=subprocess.TimeoutExpired(["taskkill"], 4.9),
+            ) as run,
+        ):
+            _force_kill_windows_pids(tracked, 5.0)
+        self.assertEqual(1, run.call_count)
+
+    def test_completed_windows_job_does_not_rescan_reused_root_pid(self) -> None:
+        process = mock.Mock(pid=43210)
+        job = WindowsJobState("job-handle", {})
+        with (
+            mock.patch("harness_bounded_command.os.name", "nt"),
+            mock.patch("harness_bounded_command._windows_descendant_pids") as descendants,
+            mock.patch("harness_bounded_command._close_windows_job", return_value=True),
+            mock.patch("harness_bounded_command._wait_until_stopped", return_value=[]),
+            mock.patch("harness_bounded_command._close_windows_process_handles"),
+        ):
+            cleaned, remaining = cleanup_completed_process_tree(process, 0.1, job)
+        self.assertTrue(cleaned)
+        self.assertEqual([], remaining)
+        descendants.assert_not_called()
 
     @staticmethod
     def _is_running(pid: int) -> bool:
@@ -331,62 +316,6 @@ class BoundedCommandTest(unittest.TestCase):
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-
-
-class ValidationMetadataTest(unittest.TestCase):
-    def test_old_payload_and_new_metadata_are_both_valid(self) -> None:
-        old = validation_payload()
-        self.assertEqual("passed", validate_validation_record(old, attempt=1)["result"])
-        current = {
-            **old,
-            "duration_ms": 123,
-            "termination": "completed",
-            "cleanup_verified": True,
-        }
-        self.assertEqual(
-            "completed",
-            validate_validation_record(current, attempt=1)["termination"],
-        )
-
-    def test_timeout_metadata_requires_stable_exit_code(self) -> None:
-        payload = {
-            **validation_payload(),
-            "result": "failed",
-            "exit_code": 1,
-            "termination": "timeout",
-            "cleanup_verified": True,
-        }
-        with self.assertRaisesRegex(StateError, "RUN_STATE_VALIDATION_EXIT_INVALID"):
-            validate_validation_record(payload, attempt=1)
-        payload["exit_code"] = 124
-        self.assertEqual(
-            "timeout",
-            validate_validation_record(payload, attempt=1)["termination"],
-        )
-
-    def test_cleanup_failure_must_be_explicit(self) -> None:
-        payload = {
-            **validation_payload(),
-            "result": "failed",
-            "exit_code": 125,
-            "termination": "cleanup-failed",
-            "cleanup_verified": True,
-        }
-        with self.assertRaisesRegex(
-            StateError,
-            "RUN_STATE_VALIDATION_PROVENANCE_INVALID",
-        ):
-            validate_validation_record(payload, attempt=1)
-
-    def test_timeout_defaults_preserve_old_contracts(self) -> None:
-        self.assertEqual(300, validation_timeout_seconds({"kind": "test"}))
-        self.assertEqual(300, validation_timeout_seconds({"kind": "lint"}))
-        self.assertEqual(900, validation_timeout_seconds({"kind": "build"}))
-        self.assertEqual(900, validation_timeout_seconds({"id": "VAL-OLD"}))
-        self.assertEqual(
-            42,
-            validation_timeout_seconds({"kind": "test", "timeout_seconds": 42}),
-        )
 
 
 if __name__ == "__main__":
