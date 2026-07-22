@@ -152,11 +152,31 @@ def _assert_static_contract() -> None:
 
     planner_text = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
     executor_text = (EXECUTOR / "SKILL.md").read_text(encoding="utf-8")
+    executor_safety_text = (
+        EXECUTOR / "references" / "execution-safety.md"
+    ).read_text(encoding="utf-8")
     reviewer_text = (REVIEWER / "SKILL.md").read_text(encoding="utf-8")
     if "direct" not in planner_text or "不创建 `.harness` 文件" not in planner_text:
         raise EvalFailure("Planner direct zero-artifact convention is missing")
     if "不保存 findings JSON" not in executor_text:
         raise EvalFailure("Executor review persistence boundary is missing")
+    planner_process_terms = (
+        "长期进程",
+        "`process-manager`",
+        "有限命令",
+        "deadline",
+        "不进入 Process Manager",
+    )
+    if any(term not in planner_text for term in planner_process_terms):
+        raise EvalFailure("Planner process ownership convention is missing")
+    executor_process_terms = (
+        "pm_manager.py status",
+        "recommendedAction",
+        "pm_session.py close --stop-manager-if-idle",
+        "不自动提权",
+    )
+    if any(term not in executor_safety_text for term in executor_process_terms):
+        raise EvalFailure("Executor process recovery convention is missing")
     for phrase in ("findings-first", "路径和行号", "不要向用户输出 JSON"):
         if phrase not in reviewer_text:
             raise EvalFailure(f"Reviewer human-output rule missing: {phrase}")

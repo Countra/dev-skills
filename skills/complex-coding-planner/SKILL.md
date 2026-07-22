@@ -65,6 +65,7 @@ checker 只检查机器边界，不评价文风或代替语义审查。
 - 优先项目现有规范、实现模式和健康依赖。
 - 新增或替换关键依赖时，检查稳定版本、采用规模、维护活跃度、更新时间、采用趋势和项目适配；只保留最终选择、主要理由与来源。
 - 设计模式、SOLID、低耦合高内聚是决策工具，不是逐项填写的清单。
+- 计划需要 dev server、watcher、Electron driver 或后台 worker 等长期进程时，明确由 `process-manager` 托管，并规划 readiness 与最终 cleanup；测试、构建和 lint 等有限命令只设置 deadline，不进入 Process Manager。
 - 调研与依赖规则见 [research-and-dependencies.md](references/research-and-dependencies.md)。
 - task bundle 与恢复边界见 [task-state.md](references/task-state.md)。
 

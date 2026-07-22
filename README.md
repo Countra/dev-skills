@@ -18,6 +18,7 @@
 - 本地事实足够时停止调研；时效事实、关键依赖、平台差异和高风险未知优先查询官方一手资料。
 - 关键依赖选择仍检查稳定版本、采用规模、维护活跃度、更新时间、趋势和项目适配，但不生成 dependency receipt。
 - managed 计划执行人类可读 plan-review；高风险或用户要求时使用一个隔离 Reviewer 子 Agent。
+- 计划涉及长期进程时明确 Process Manager ownership、readiness 和 cleanup；有限验证只设置 deadline。
 - plan checker 只验证 contract、DAG、scope、validation 和风险边界，不评价文风。
 - 用户批准前不得实现；实施、提交、外部写入和提权是不同授权。
 

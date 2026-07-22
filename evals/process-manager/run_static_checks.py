@@ -267,47 +267,138 @@ def check_process_contract(failures: list[str]) -> dict[str, Any]:
     }
 
 
-def check_process_consumers(failures: list[str]) -> dict[str, Any]:
-    paths = (
-        REPO_ROOT / "skills" / "complex-coding-planner" / "references" / "planning-workflow.md",
-        REPO_ROOT / "skills" / "complex-coding-planner" / "templates" / "execution-plan.md",
-        REPO_ROOT / "skills" / "complex-coding-executor" / "SKILL.md",
-        REPO_ROOT / "skills" / "complex-coding-executor" / "references" / "execution-workflow.md",
-        REPO_ROOT / "skills" / "electron-ui-verifier" / "SKILL.md",
-        REPO_ROOT / "skills" / "electron-ui-verifier" / "references" / "server.md",
-        REPO_ROOT / "skills" / "electron-ui-verifier" / "references" / "troubleshooting.md",
-        REPO_ROOT / "skills" / "electron-ui-verifier" / "tests" / "public_contract_support.py",
-        REPO_ROOT / "skills" / "electron-ui-verifier" / "tests" / "run_process_manager_smoke.py",
-    )
-    text = ""
-    for path in paths:
-        try:
-            text += "\n" + path.read_text(encoding="utf-8")
-        except (OSError, UnicodeError) as exc:
-            failures.append(f"process-manager consumer 读取失败 {relative(path)}: {exc}")
-    required = (
-        "pm_manager.py ensure",
-        "pm_session.py open",
-        "pm_session.py close",
-        "--session-id",
-        "--stop-manager-if-idle",
-        "recommendedAction",
-        "不自动提权",
-    )
-    forbidden = (
+def process_consumer_contracts(repo_root: Path) -> dict[str, dict[str, Any]]:
+    skills = repo_root / "skills"
+    return {
+        "planner": {
+            "paths": (skills / "complex-coding-planner" / "SKILL.md",),
+            "requirements": {
+                "long-running-process-ownership": (
+                    "长期进程", "process-manager", "readiness", "cleanup"
+                ),
+                "finite-command-boundary": ("有限命令", "deadline", "不进入 process manager"),
+            },
+        },
+        "executor": {
+            "paths": (
+                skills / "complex-coding-executor" / "SKILL.md",
+                skills / "complex-coding-executor" / "references" / "execution-safety.md",
+                skills / "complex-coding-executor" / "references" / "execution-workflow.md",
+            ),
+            "requirements": {
+                "finite-vs-long-running": ("长期进程", "有限命令不进入 process manager"),
+                "session-lifecycle": (
+                    "pm_manager.py ensure",
+                    "pm_session.py open",
+                    "pm_start.py --session-id",
+                    "pm_session.py close --stop-manager-if-idle",
+                    "finally",
+                    "owner-empty",
+                ),
+                "status-recovery": ("pm_manager.py status", "recommendedaction"),
+                "privilege-boundary": ("不自动提权",),
+            },
+        },
+        "electron-docs": {
+            "paths": (
+                skills / "electron-ui-verifier" / "SKILL.md",
+                skills / "electron-ui-verifier" / "references" / "server.md",
+                skills / "electron-ui-verifier" / "references" / "troubleshooting.md",
+            ),
+            "requirements": {
+                "session-lifecycle": (
+                    "pm_manager.py ensure",
+                    "pm_session.py open",
+                    "pm_session.py close --stop-manager-if-idle",
+                    "--session-id",
+                ),
+                "status-recovery": ("recommendedaction",),
+                "privilege-boundary": ("不得猜成 acl 问题或自动提权",),
+            },
+        },
+        "electron-runtime": {
+            "paths": (
+                skills / "electron-ui-verifier" / "tests" / "public_contract_support.py",
+                skills / "electron-ui-verifier" / "tests" / "run_process_manager_smoke.py",
+            ),
+            "requirements": {
+                "manager-ensure": ('"pm_manager.py", "ensure"',),
+                "session-binding": ("pm_session.py", "--session-id", "--stop-manager-if-idle"),
+                "cleanup-evidence": ("finally:", "cleanupverified", "ownerempty"),
+            },
+        },
+    }
+
+
+def check_process_consumers(
+    failures: list[str], repo_root: Path = REPO_ROOT
+) -> dict[str, Any]:
+    forbidden_tokens = (
         "manager_offline",
         "pm_health.py",
         "pm_shutdown.py",
         "pm_manager.py status|start",
         "pm_manager status/start",
     )
-    missing = [token for token in required if token not in text]
-    present = [token for token in forbidden if token in text]
-    if missing:
-        failures.append("process-manager consumers 缺少 current contract: " + ", ".join(missing))
-    if present:
-        failures.append("process-manager consumers 残留旧 contract: " + ", ".join(present))
-    return {"file_count": len(paths), "missing": missing, "forbidden": present}
+    groups: dict[str, Any] = {}
+    aggregate_missing: list[str] = []
+    aggregate_forbidden: list[str] = []
+    file_count = 0
+
+    for group_name, contract in process_consumer_contracts(repo_root).items():
+        paths: tuple[Path, ...] = contract["paths"]
+        file_count += len(paths)
+        text_parts: list[str] = []
+        missing_files: list[str] = []
+        for path in paths:
+            path_label = path.relative_to(repo_root).as_posix()
+            try:
+                text_parts.append(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError) as exc:
+                missing_files.append(path_label)
+                failures.append(
+                    f"process-manager consumer {group_name} 读取失败 {path_label}: {exc}"
+                )
+
+        normalized = "\n".join(text_parts).casefold()
+        missing_requirements: list[str] = []
+        for requirement, tokens in contract["requirements"].items():
+            absent = [token for token in tokens if token.casefold() not in normalized]
+            if not absent:
+                continue
+            qualified = f"{group_name}:{requirement}"
+            missing_requirements.append(qualified)
+            failures.append(
+                "process-manager consumer 缺少 current contract "
+                f"{qualified}: {', '.join(absent)}"
+            )
+
+        forbidden_hits = [token for token in forbidden_tokens if token.casefold() in normalized]
+        qualified_forbidden = [f"{group_name}:{token}" for token in forbidden_hits]
+        if forbidden_hits:
+            failures.append(
+                f"process-manager consumer {group_name} 残留旧 contract: "
+                + ", ".join(forbidden_hits)
+            )
+
+        aggregate_missing.extend(
+            [f"{group_name}:file:{path}" for path in missing_files]
+            + missing_requirements
+        )
+        aggregate_forbidden.extend(qualified_forbidden)
+        groups[group_name] = {
+            "file_count": len(paths),
+            "missing_files": missing_files,
+            "missing": missing_requirements,
+            "forbidden": qualified_forbidden,
+        }
+
+    return {
+        "file_count": file_count,
+        "missing": aggregate_missing,
+        "forbidden": aggregate_forbidden,
+        "groups": groups,
+    }
 
 
 def check_process_workflow(failures: list[str]) -> dict[str, Any]:

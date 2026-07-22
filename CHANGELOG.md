@@ -10,6 +10,12 @@
 - 生产 Python 收敛为 active pointer、contract、plan check、compact state 与 bounded command 六个脚本；权限、计划漂移、阶段依赖、必需验证和高风险审查继续失败关闭。
 - CI 在 Ubuntu 验证 compact 四文件生命周期，并在 Windows、Ubuntu、macOS 验证有限命令超时与进程树回收；不调用 Agent、访问网络或上传 Actions artifact。
 
+### Fixed: Process Manager 消费者契约
+
+- Planner 补回长期进程 ownership、readiness 与 cleanup 规划约定，Executor 补齐统一 session 生命周期和 `status`/`recommendedAction` 恢复路径。
+- Process Manager 静态检查改为按 Planner、Executor、Electron 文档和 Electron 运行支撑分别校验，不再引用已删除文件或跨消费者拼接补词。
+- 平台无关契约检查改为单独的 Ubuntu job，三平台 lifecycle 不再因同一个静态文档错误全部跳过。
+
 ## 2026-07-18
 
 ### Breaking: Reviewer 独立子 Agent 审查
