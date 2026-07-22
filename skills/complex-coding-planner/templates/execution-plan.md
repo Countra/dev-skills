@@ -36,6 +36,7 @@
 ## 验证与审查
 
 - `VAL-01`：<命令或可观察检查>
+- 多阶段最终集成：`VAL-FINAL`（单阶段且阶段验证已覆盖最终状态时可省略）
 - Plan review：same-context / independent
 - Final review：same-context / independent
 

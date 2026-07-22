@@ -29,6 +29,29 @@ class CompactPlanCheckTest(unittest.TestCase):
     def codes(issues) -> set[str]:
         return {issue.code for issue in issues if issue.severity == "error"}
 
+    @staticmethod
+    def add_second_stage(contract: dict) -> None:
+        contract["stages"].append(
+            {
+                "id": "STG-02",
+                "title": "完成集成",
+                "depends_on": ["STG-01"],
+                "scope": ["skills/example"],
+                "risk": "medium",
+                "validation_ids": ["VAL-02"],
+                "review": "same-context",
+            }
+        )
+        contract["validations"].append(
+            {
+                "id": "VAL-02",
+                "stage_id": "STG-02",
+                "command": "python -m unittest integration",
+                "required": True,
+                "timeout_seconds": 300,
+            }
+        )
+
     def test_valid_contract_and_flexible_plan_pass(self) -> None:
         write_bundle(self.task_dir)
         self.assertEqual(set(), self.codes(validate_task(self.task_dir, "approval")))
@@ -93,6 +116,40 @@ class CompactPlanCheckTest(unittest.TestCase):
         codes = self.codes(validate_contract(contract))
         self.assertIn("PLAN_VALIDATION_STAGE_UNKNOWN", codes)
         self.assertIn("PLAN_VALIDATION_STAGE_MISMATCH", codes)
+
+    def test_multistage_contract_requires_final_validation(self) -> None:
+        contract = compact_contract()
+        self.add_second_stage(contract)
+        self.assertIn(
+            "PLAN_FINAL_VALIDATION_REQUIRED",
+            self.codes(validate_contract(contract)),
+        )
+
+        contract["validations"].append(
+            {
+                "id": "VAL-FINAL",
+                "stage_id": "final",
+                "command": "python -m unittest full-suite",
+                "required": True,
+                "timeout_seconds": 900,
+            }
+        )
+        contract["final_validation_ids"] = ["VAL-FINAL"]
+        self.assertEqual(set(), self.codes(validate_contract(contract)))
+
+    def test_final_validation_must_use_final_owner(self) -> None:
+        contract = compact_contract()
+        self.add_second_stage(contract)
+        contract["final_validation_ids"] = ["VAL-02"]
+        self.assertIn(
+            "PLAN_VALIDATION_STAGE_MISMATCH",
+            self.codes(validate_contract(contract)),
+        )
+
+    def test_single_stage_contract_can_omit_final_validation_list(self) -> None:
+        contract = compact_contract()
+        contract.pop("final_validation_ids")
+        self.assertEqual(set(), self.codes(validate_contract(contract)))
 
     def test_required_validation_must_be_referenced_by_stage(self) -> None:
         contract = compact_contract()

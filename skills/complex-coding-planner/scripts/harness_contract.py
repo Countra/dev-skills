@@ -25,9 +25,11 @@ CONTRACT_FIELDS = {
     "scope",
     "stages",
     "validations",
+    "final_validation_ids",
     "final_review",
     "permissions_requested",
 }
+CONTRACT_OPTIONAL_FIELDS = {"final_validation_ids"}
 STAGE_FIELDS = {
     "id",
     "title",
@@ -104,8 +106,10 @@ def _exact_fields(
     expected: set[str],
     path: str,
     issues: list[ContractIssue],
+    *,
+    optional: set[str] | None = None,
 ) -> None:
-    missing = sorted(expected - set(value))
+    missing = sorted(expected - (optional or set()) - set(value))
     extra = sorted(set(value) - expected)
     if missing:
         _issue(
@@ -189,7 +193,13 @@ def validate_contract(value: Any) -> list[ContractIssue]:
                 "plan-contract.json 根节点必须是 object。",
             )
         ]
-    _exact_fields(value, CONTRACT_FIELDS, "contract", issues)
+    _exact_fields(
+        value,
+        CONTRACT_FIELDS,
+        "contract",
+        issues,
+        optional=CONTRACT_OPTIONAL_FIELDS,
+    )
 
     task_id = _text(value.get("task_id"), "task_id", issues)
     if task_id and not TASK_ID.fullmatch(task_id):
@@ -411,7 +421,7 @@ def validate_contract(value: Any) -> list[ContractIssue]:
             )
             continue
         stage_id = _text(raw_validation.get("stage_id"), f"{path}.stage_id", issues)
-        if stage_id and stage_id not in stages:
+        if stage_id and stage_id != "final" and stage_id not in stages:
             _issue(
                 issues,
                 "error",
@@ -460,14 +470,53 @@ def validate_contract(value: Any) -> list[ContractIssue]:
                     "PLAN_VALIDATION_STAGE_MISMATCH",
                     f"{validation_id} 的 stage_id 与 {stage_id} 不一致。",
                 )
+    final_validation_ids = _strings(
+        value.get("final_validation_ids", []),
+        "final_validation_ids",
+        issues,
+        allow_empty=True,
+    )
+    for validation_id in final_validation_ids:
+        validation = validations.get(validation_id)
+        if validation is None:
+            _issue(
+                issues,
+                "error",
+                "PLAN_VALIDATION_UNKNOWN",
+                f"final 引用了未知验证 {validation_id}。",
+            )
+        elif validation.get("stage_id") != "final":
+            _issue(
+                issues,
+                "error",
+                "PLAN_VALIDATION_STAGE_MISMATCH",
+                f"{validation_id} 的 stage_id 必须是 final。",
+            )
+    required_final = [
+        validation_id
+        for validation_id in final_validation_ids
+        if validations.get(validation_id, {}).get("required") is True
+    ]
+    if len(stages) > 1 and not required_final:
+        _issue(
+            issues,
+            "error",
+            "PLAN_FINAL_VALIDATION_REQUIRED",
+            "多阶段任务至少需要一个 required final validation。",
+        )
     for validation_id, validation in validations.items():
-        stage = stages.get(str(validation.get("stage_id")))
-        if stage and validation_id not in stage["validation_ids"]:
+        owner = str(validation.get("stage_id"))
+        referenced = (
+            validation_id in final_validation_ids
+            if owner == "final"
+            else validation_id in stages.get(owner, {}).get("validation_ids", [])
+        )
+        if not referenced:
             _issue(
                 issues,
                 "error" if validation.get("required") is True else "warning",
                 "PLAN_VALIDATION_UNREFERENCED",
-                f"{validation_id} 未被所属阶段引用。",
+                f"{validation_id} 未被所属执行边界引用。",
             )
 
     final_review = value.get("final_review")

@@ -23,6 +23,7 @@
       "timeout_seconds": 300
     }
   ],
+  "final_validation_ids": [],
   "final_review": "same-context",
   "permissions_requested": {
     "commit": false,

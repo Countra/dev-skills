@@ -3,7 +3,7 @@
 ## 文件职责
 
 - `execution-plan.md`：用户批准的意图、决策和阶段说明。
-- `plan-contract.json`：Executor 需要精确引用的范围、DAG、验证、审查模式和请求权限。
+- `plan-contract.json`：Executor 需要精确引用的范围、DAG、阶段及最终验证、审查模式和请求权限。
 - `.harness/active-task.json`：workspace 当前 managed task 的指针。
 - `run-state.json`：批准、授权、当前阶段、最近验证、审查摘要和 blocker。
 
@@ -20,6 +20,8 @@
 - `completed`
 
 状态只描述当前恢复点，不记录每条命令或事件历史。Git、源码和实际验证输出仍是事实来源。
+
+多阶段任务在全部 stage 完成后执行 `final_validation_ids` 指定的集成验证，再进入 final review。它复用 `run-state.json` 的 validations 摘要，不创建额外证据文件。
 
 ## 指针安全
 

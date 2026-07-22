@@ -51,13 +51,26 @@ def _required_validations_passed(
 ) -> None:
     stages, validations = contract_maps(contract)
     records = state["validations"]
-    for validation_id in stages[stage_id]["validation_ids"]:
+    validation_ids = (
+        contract.get("final_validation_ids", [])
+        if stage_id == "final"
+        else stages[stage_id]["validation_ids"]
+    )
+    for validation_id in validation_ids:
         definition = validations[validation_id]
         if definition["required"] and records.get(validation_id, {}).get("result") != "passed":
             raise StateError(
                 "TASK_VALIDATION_REQUIRED",
                 f"{stage_id} 的必需验证 {validation_id} 尚未通过。",
             )
+
+
+def _final_next_action(contract: dict[str, Any]) -> str:
+    return (
+        "run final integration validation"
+        if contract.get("final_validation_ids")
+        else "run final integration review"
+    )
 
 
 def _review_passed(
@@ -217,7 +230,7 @@ def approve(bundle: TaskBundle, args: argparse.Namespace) -> dict[str, Any]:
     }
     following = next_stage(bundle.contract, completed)
     state["next_action"] = (
-        f"start {following}" if following else "run final integration review"
+        f"start {following}" if following else _final_next_action(bundle.contract)
     )
     assert_identity(state, bundle)
     write_state(bundle.task_dir, state)
@@ -385,10 +398,25 @@ def _operate(
         state["blocker"] = None
         state["next_action"] = f"implement and validate {args.stage}"
     elif args.command == "validate":
-        if state["current_stage_id"] != args.stage:
-            raise StateError("TASK_STAGE_NOT_ACTIVE", f"{args.stage} 不是当前阶段。")
         definition = validations.get(args.validation)
-        if definition is None or definition["stage_id"] != args.stage:
+        if args.stage == "final":
+            if state["current_stage_id"] is not None:
+                raise StateError("TASK_STAGE_ACTIVE", "当前阶段尚未完成。")
+            if set(state["completed_stage_ids"]) != set(stages):
+                raise StateError(
+                    "TASK_STAGE_REMAINING",
+                    "所有阶段完成后才能记录 final validation。",
+                )
+            expected_ids = set(bundle.contract.get("final_validation_ids", []))
+        else:
+            if state["current_stage_id"] != args.stage:
+                raise StateError("TASK_STAGE_NOT_ACTIVE", f"{args.stage} 不是当前阶段。")
+            expected_ids = set(stages.get(args.stage, {}).get("validation_ids", []))
+        if (
+            definition is None
+            or definition["stage_id"] != args.stage
+            or args.validation not in expected_ids
+        ):
             raise StateError(
                 "TASK_VALIDATION_UNKNOWN",
                 f"{args.validation} 不属于 {args.stage}。",
@@ -411,11 +439,25 @@ def _operate(
             "recorded_at": now(),
         }
         state["reviews"].pop(args.stage, None)
-        state["next_action"] = (
-            f"review {args.stage}"
-            if args.result == "passed"
-            else f"repair and rerun {args.validation}"
-        )
+        if args.result != "passed":
+            state["next_action"] = f"repair and rerun {args.validation}"
+        elif args.stage != "final":
+            state["next_action"] = f"review {args.stage}"
+        else:
+            required_final = [
+                validation_id
+                for validation_id in bundle.contract.get("final_validation_ids", [])
+                if validations[validation_id]["required"]
+            ]
+            final_complete = all(
+                state["validations"].get(validation_id, {}).get("result") == "passed"
+                for validation_id in required_final
+            )
+            state["next_action"] = (
+                "review final"
+                if final_complete
+                else "run remaining final integration validation"
+            )
     elif args.command == "review":
         if args.scope in stages:
             if state["current_stage_id"] != args.scope:
@@ -431,6 +473,7 @@ def _operate(
                     "TASK_STAGE_REMAINING",
                     "所有阶段完成后才能记录 final review。",
                 )
+            _required_validations_passed(state, bundle.contract, "final")
             requirement = bundle.contract["final_review"]
         else:
             raise StateError(
@@ -451,11 +494,12 @@ def _operate(
         if args.verdict == "blocked":
             state["lifecycle"] = "blocked"
             state["blocker"] = f"review blocked: {args.scope}"
-        state["next_action"] = (
-            f"finish {args.scope}"
-            if args.verdict == "passed"
-            else f"address review findings for {args.scope}"
-        )
+        if args.verdict != "passed":
+            state["next_action"] = f"address review findings for {args.scope}"
+        elif args.scope == "final":
+            state["next_action"] = "complete"
+        else:
+            state["next_action"] = f"finish {args.scope}"
     elif args.command == "finish-stage":
         if state["current_stage_id"] != args.stage:
             raise StateError("TASK_STAGE_NOT_ACTIVE", f"{args.stage} 不是当前阶段。")
@@ -470,7 +514,7 @@ def _operate(
         state["lifecycle"] = "approved"
         following = next_stage(bundle.contract, state["completed_stage_ids"])
         state["next_action"] = (
-            f"start {following}" if following else "run final integration review"
+            f"start {following}" if following else _final_next_action(bundle.contract)
         )
     elif args.command == "block":
         state["lifecycle"] = "blocked"
@@ -488,6 +532,9 @@ def _operate(
             for validation_id in stages[active_stage]["validation_ids"]:
                 state["validations"].pop(validation_id, None)
             state["reviews"].pop(active_stage, None)
+        for validation_id in bundle.contract.get("final_validation_ids", []):
+            state["validations"].pop(validation_id, None)
+        state["reviews"].pop("final", None)
         state["lifecycle"] = "awaiting_reapproval"
         state["approval"] = None
         state["current_stage_id"] = None
@@ -502,6 +549,7 @@ def _operate(
             raise StateError("TASK_STAGE_ACTIVE", "当前阶段尚未完成。")
         if set(state["completed_stage_ids"]) != set(stages):
             raise StateError("TASK_STAGE_REMAINING", "仍有未完成阶段。")
+        _required_validations_passed(state, bundle.contract, "final")
         _review_passed(state, bundle.contract["final_review"], "final")
         state["lifecycle"] = "completed"
         state["blocker"] = None

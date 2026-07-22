@@ -360,7 +360,14 @@ def assert_identity(state: dict[str, Any], bundle: TaskBundle) -> None:
     active_scopes = completed_set | ({current} if current else set())
     for validation_id in validation_records:
         owner = validations[validation_id]["stage_id"]
-        if owner not in active_scopes:
+        if owner == "final":
+            valid_owner = (
+                completed_set == set(stages)
+                and validation_id in bundle.contract.get("final_validation_ids", [])
+            )
+        else:
+            valid_owner = owner in active_scopes
+        if not valid_owner:
             raise StateError(
                 "TASK_STATE_INVALID",
                 f"run-state.validations.{validation_id} 与当前阶段状态不一致。",
@@ -382,6 +389,17 @@ def assert_identity(state: dict[str, Any], bundle: TaskBundle) -> None:
                 "TASK_STATE_INVALID",
                 "阶段未全部完成时不能存在 final review。",
             )
+        if scope == "final":
+            for validation_id in bundle.contract.get("final_validation_ids", []):
+                definition = validations[validation_id]
+                record = validation_records.get(validation_id)
+                if definition["required"] and (
+                    not isinstance(record, dict) or record.get("result") != "passed"
+                ):
+                    raise StateError(
+                        "TASK_STATE_INVALID",
+                        f"final review 缺少通过的必需验证 {validation_id}。",
+                    )
     for stage_id in completed:
         stage = stages[stage_id]
         for validation_id in stage["validation_ids"]:

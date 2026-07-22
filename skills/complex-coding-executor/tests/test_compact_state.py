@@ -50,40 +50,82 @@ class CompactStateTest(unittest.TestCase):
         )
 
     def record_stage(self, stage: str = "STG-01", validation: str = "VAL-01") -> None:
-        self.assertEqual(0, self.run_state("start", "--stage", stage).returncode)
+        started = self.run_state("start", "--stage", stage)
+        self.assertEqual(0, started.returncode, started.stdout + started.stderr)
+        validated = self.run_state(
+            "validate",
+            "--stage",
+            stage,
+            "--validation",
+            validation,
+            "--result",
+            "passed",
+            "--exit-code",
+            "0",
+            "--duration-ms",
+            "10",
+            "--summary",
+            "目标测试通过",
+        )
+        self.assertEqual(
+            0,
+            validated.returncode,
+            validated.stdout + validated.stderr,
+        )
+        reviewed = self.run_state(
+            "review",
+            "--scope",
+            stage,
+            "--verdict",
+            "passed",
+            "--mode",
+            "same-context",
+            "--summary",
+            "未发现 blocking 或 major 问题",
+        )
+        self.assertEqual(
+            0,
+            reviewed.returncode,
+            reviewed.stdout + reviewed.stderr,
+        )
+        finished = self.run_state("finish-stage", "--stage", stage)
+        self.assertEqual(0, finished.returncode, finished.stdout + finished.stderr)
+
+    def record_final_validation(self) -> None:
         self.assertEqual(
             0,
             self.run_state(
                 "validate",
                 "--stage",
-                stage,
+                "final",
                 "--validation",
-                validation,
+                "VAL-FINAL",
                 "--result",
                 "passed",
                 "--exit-code",
                 "0",
                 "--duration-ms",
-                "10",
+                "20",
                 "--summary",
-                "目标测试通过",
+                "最终集成验证通过",
             ).returncode,
         )
+
+    def record_final_review(self) -> None:
         self.assertEqual(
             0,
             self.run_state(
                 "review",
                 "--scope",
-                stage,
+                "final",
                 "--verdict",
                 "passed",
                 "--mode",
                 "same-context",
                 "--summary",
-                "未发现 blocking 或 major 问题",
+                "最终集成未发现 blocking 或 major 问题",
             ).returncode,
         )
-        self.assertEqual(0, self.run_state("finish-stage", "--stage", stage).returncode)
 
     def state(self) -> dict:
         return json.loads((self.task_dir / "run-state.json").read_text(encoding="utf-8"))
@@ -142,6 +184,81 @@ class CompactStateTest(unittest.TestCase):
         failed = self.run_state("start", "--stage", "STG-02")
         self.assertNotEqual(0, failed.returncode)
         self.assertIn("TASK_STAGE_DEPENDENCY", failed.stdout)
+
+    def test_final_validation_waits_for_all_stages_and_gates_final_review(self) -> None:
+        self.task_dir = write_workspace_bundle(
+            self.workspace,
+            compact_contract(two_stages=True),
+        )
+        self.assertEqual(0, self.approve().returncode)
+        early = self.run_state(
+            "validate",
+            "--stage",
+            "final",
+            "--validation",
+            "VAL-FINAL",
+            "--result",
+            "passed",
+            "--summary",
+            "过早运行",
+        )
+        self.assertNotEqual(0, early.returncode)
+        self.assertIn("TASK_STAGE_REMAINING", early.stdout)
+
+        self.record_stage()
+        self.record_stage("STG-02", "VAL-02")
+        self.assertEqual("run final integration validation", self.state()["next_action"])
+        missing = self.run_state(
+            "review",
+            "--scope",
+            "final",
+            "--verdict",
+            "passed",
+            "--mode",
+            "same-context",
+            "--summary",
+            "尚未执行最终验证",
+        )
+        self.assertNotEqual(0, missing.returncode)
+        self.assertIn("TASK_VALIDATION_REQUIRED", missing.stdout)
+
+        self.record_final_validation()
+        self.record_final_review()
+        self.assertEqual("complete", self.state()["next_action"])
+        self.assertEqual(0, self.run_state("complete").returncode)
+
+    def test_rerun_final_validation_invalidates_final_review(self) -> None:
+        self.task_dir = write_workspace_bundle(
+            self.workspace,
+            compact_contract(two_stages=True),
+        )
+        self.assertEqual(0, self.approve().returncode)
+        self.record_stage()
+        self.record_stage("STG-02", "VAL-02")
+        self.record_final_validation()
+        self.record_final_review()
+
+        self.record_final_validation()
+        failed = self.run_state("complete")
+        self.assertNotEqual(0, failed.returncode)
+        self.assertIn("TASK_REVIEW_REQUIRED", failed.stdout)
+
+    def test_reapproval_discards_final_validation_and_review(self) -> None:
+        self.task_dir = write_workspace_bundle(
+            self.workspace,
+            compact_contract(two_stages=True),
+        )
+        self.assertEqual(0, self.approve().returncode)
+        self.record_stage()
+        self.record_stage("STG-02", "VAL-02")
+        self.record_final_validation()
+        self.record_final_review()
+
+        result = self.run_state("reapproval", "--reason", "最终集成范围发生变化")
+        self.assertEqual(0, result.returncode, result.stdout)
+        state = self.state()
+        self.assertNotIn("VAL-FINAL", state["validations"])
+        self.assertNotIn("final", state["reviews"])
 
     def test_repeated_approve_cannot_reset_active_revision(self) -> None:
         self.assertEqual(0, self.approve().returncode)

@@ -63,6 +63,7 @@ def compact_contract(*, task_id: str = "compact-task", risk: str = "medium") -> 
                 "timeout_seconds": 300,
             }
         ],
+        "final_validation_ids": [],
         "final_review": review,
         "permissions_requested": {
             "commit": False,

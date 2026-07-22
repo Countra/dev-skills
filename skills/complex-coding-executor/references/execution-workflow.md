@@ -35,7 +35,13 @@ start -> implement -> validate -> review -> finish-stage
 
 `finish-stage` 只检查 contract 声明的 required validation 和 review。新 validation 会使该阶段旧 review 摘要失效，确保修复后的目标重新审查。
 
-低风险阶段可在 contract 中使用 `none`；medium 默认 `same-context`；high 必须 `independent`。所有阶段完成后记录 `final` review，再 complete。
+低风险阶段可在 contract 中使用 `none`；medium 默认 `same-context`；high 必须 `independent`。多阶段任务完成全部 stage 后，按顺序执行：
+
+```text
+validate --stage final -> review --scope final -> complete
+```
+
+`final_validation_ids` 至少引用一个 required validation。重新记录任一 final validation 会使旧 final review 失效；单阶段且阶段验证已经覆盖最终状态时，该列表可以为空。
 
 ## 重新批准
 

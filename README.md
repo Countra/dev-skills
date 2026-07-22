@@ -19,7 +19,7 @@
 - 关键依赖选择仍检查稳定版本、采用规模、维护活跃度、更新时间、趋势和项目适配，但不生成 dependency receipt。
 - managed 计划执行人类可读 plan-review；高风险或用户要求时使用一个隔离 Reviewer 子 Agent。
 - 计划涉及长期进程时明确 Process Manager ownership、readiness 和 cleanup；有限验证只设置 deadline。
-- plan checker 只验证 contract、DAG、scope、validation 和风险边界，不评价文风。
+- plan checker 只验证 contract、DAG、scope、阶段及最终 validation 和风险边界，不评价文风。
 - 用户批准前不得实现；实施、提交、外部写入和提权是不同授权。
 
 ### complex-coding-reviewer
@@ -47,7 +47,7 @@
 
 - 首次启动或中断恢复时读取 plan、compact contract、active pointer、run-state 和 Git 事实；阶段内不重复解析全套状态。
 - 用户批准后在 run-state 保存 plan/contract digest、独立授权、当前阶段、最近验证、审查摘要和 blocker。
-- required validation 或 contract 指定的 review 缺失时不能完成阶段；高风险要求 independent。
+- required validation 或 contract 指定的 review 缺失时不能完成阶段；多阶段任务还必须通过最终集成 validation，高风险要求 independent。
 - 计划 digest 漂移时停止并重新批准，不生成 amendment 或 revision archive 制品。
 - 失败后改变策略，只重跑受影响检查；同一失败命令不得原样执行第三次。
 - 有卡死风险的有限命令使用跨平台 `harness_bounded_command.py`；长期服务仍交给 Process Manager。

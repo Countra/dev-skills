@@ -75,6 +75,7 @@ def compact_contract(
             "timeout_seconds": 300,
         }
     ]
+    final_validation_ids: list[str] = []
     if two_stages:
         stages.append(
             {
@@ -96,6 +97,16 @@ def compact_contract(
                 "timeout_seconds": 300,
             }
         )
+        validations.append(
+            {
+                "id": "VAL-FINAL",
+                "stage_id": "final",
+                "command": "python -m unittest integration",
+                "required": True,
+                "timeout_seconds": 300,
+            }
+        )
+        final_validation_ids.append("VAL-FINAL")
     return {
         "task_id": task_id,
         "plan_revision": 1,
@@ -103,6 +114,7 @@ def compact_contract(
         "scope": ["skills/example"],
         "stages": stages,
         "validations": validations,
+        "final_validation_ids": final_validation_ids,
         "final_review": review,
         "permissions_requested": {
             "commit": False,

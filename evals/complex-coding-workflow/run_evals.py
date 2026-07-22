@@ -102,8 +102,16 @@ def _contract() -> dict:
                 "command": "python -m unittest",
                 "required": True,
                 "timeout_seconds": 300,
-            }
+            },
+            {
+                "id": "VAL-FINAL",
+                "stage_id": "final",
+                "command": "python -m unittest full-suite",
+                "required": True,
+                "timeout_seconds": 900,
+            },
         ],
+        "final_validation_ids": ["VAL-FINAL"],
         "final_review": "same-context",
         "permissions_requested": {
             "commit": False,
@@ -158,8 +166,12 @@ def _assert_static_contract() -> None:
     reviewer_text = (REVIEWER / "SKILL.md").read_text(encoding="utf-8")
     if "direct" not in planner_text or "不创建 `.harness` 文件" not in planner_text:
         raise EvalFailure("Planner direct zero-artifact convention is missing")
+    if "`final_validation_ids`" not in planner_text:
+        raise EvalFailure("Planner final integration validation convention is missing")
     if "不保存 findings JSON" not in executor_text:
         raise EvalFailure("Executor review persistence boundary is missing")
+    if "`validate --stage final`" not in executor_text:
+        raise EvalFailure("Executor final integration validation gate is missing")
     planner_process_terms = (
         "长期进程",
         "`process-manager`",
@@ -212,7 +224,10 @@ def _assert_managed_lifecycle() -> None:
         task_dir.mkdir(parents=True)
         _write_json(task_dir / "plan-contract.json", _contract())
         (task_dir / "execution-plan.md").write_text(
-            "# Compact workflow\n\n- STG-01：实现并验证行为\n- VAL-01：运行目标测试\n",
+            "# Compact workflow\n\n"
+            "- STG-01：实现并验证行为\n"
+            "- VAL-01：运行目标测试\n"
+            "- VAL-FINAL：验证全部阶段汇合后的最终状态\n",
             encoding="utf-8",
         )
 
@@ -275,6 +290,22 @@ def _assert_managed_lifecycle() -> None:
             "finish-stage",
             "--stage",
             "STG-01",
+        )
+        _run(
+            str(STATE),
+            "--workspace",
+            str(workspace),
+            "validate",
+            "--stage",
+            "final",
+            "--validation",
+            "VAL-FINAL",
+            "--result",
+            "passed",
+            "--exit-code",
+            "0",
+            "--summary",
+            "最终集成测试通过",
         )
         _run(
             str(STATE),
