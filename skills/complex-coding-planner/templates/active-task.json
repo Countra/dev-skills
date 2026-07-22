@@ -1,6 +1,5 @@
 {
   "task_id": "<task-id>",
-  "task_dir": ".harness/tasks/<date>/<type>/<task-slug>",
-  "run_state_path": "run-state.json",
-  "updated_at": "<RFC3339 timestamp>"
+  "task_dir": ".harness/tasks/<date>/<type>/<slug>",
+  "updated_at": "<UTC ISO-8601>"
 }

@@ -4,6 +4,8 @@
 
 ```text
 python -X utf8 -B evals/process-manager/run_evals.py --work-dir <可写目录>
+python -X utf8 -B -m unittest discover -s evals/process-manager -p test_*.py
+python -X utf8 -B evals/process-manager/run_static_checks.py
 ```
 
 评测同时验证：
@@ -15,5 +17,6 @@ python -X utf8 -B evals/process-manager/run_evals.py --work-dir <可写目录>
 - 初始化后只读 status 返回 `absent` 与 `recommendedAction=ensure`，统一 `ensure` 负责幂等收敛；
 - `pm_health.py`、`pm_shutdown.py` 和 status-then-start 不属于 current public contract；
 - templates/examples 只有 `direct` 与 `script`，没有旧字段。
+- Planner、Executor、Electron 文档与 Electron 运行支撑按职责分别满足长期进程、恢复、session 和清理约定，任一消费者不能替其它消费者补齐关键词。
 
 该 eval 不启动长期进程。真实进程树、graceful-force、probe、rotation、crash 与 cleanup 由 `skills/process-manager/tests/run_platform_smoke.py` 验证。

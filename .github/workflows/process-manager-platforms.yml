@@ -14,6 +14,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  static-contract:
+    name: ubuntu-latest static consumer contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - name: Checkout candidate tree
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run consumer contract tests
+        run: python -u -X utf8 -B -m unittest discover -s evals/process-manager -p test_*.py
+
+      - name: Run static and schema checks
+        run: python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .ci-artifacts/static-schema-checks.json
+
   platform-lifecycle:
     name: ${{ matrix.os }} public contract and lifecycle
     runs-on: ${{ matrix.os }}
@@ -38,9 +60,6 @@ jobs:
 
       - name: Run executable eval
         run: python -u -X utf8 -B evals/process-manager/run_evals.py --work-dir .ci-artifacts/evals
-
-      - name: Run static and schema checks
-        run: python -u -X utf8 -B evals/process-manager/run_static_checks.py --output .ci-artifacts/static-schema-checks.json
 
       - name: Run native lifecycle smoke
         run: python -u -X utf8 -B skills/process-manager/tests/run_platform_smoke.py --workspace "${{ runner.temp }}/dev-skills-process-manager-${{ github.run_id }}-${{ github.run_attempt }}" --output .ci-artifacts/native-smoke.json --require-native-permissions

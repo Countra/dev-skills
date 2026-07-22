@@ -1,7 +1,7 @@
 # 规划样本：修订遗漏前序 finding
 
-前序审查 `REV-PLAN-01` 有一个开放 major finding：`FIND-API-ROLLBACK`，指出迁移顺序无法支持旧版本回滚。
+前序审查有一个开放 major finding：迁移顺序无法支持旧版本回滚。
 
-修订方案只调整了测试命令，并声明“所有审查问题已处理”；没有说明该 finding 是 resolved、still-open、superseded 还是 invalidated，也没有提供新的迁移证据。
+修订方案只调整了测试命令并声明“所有审查问题已处理”；没有修改迁移顺序，也没有提供新的回滚证据。
 
-审查请求：使用 `plan-review` 判断该修订是否可以取代前序审查，并检查 finding lineage。
+审查请求：使用 `plan-review` 复查当前方案，并确认前序 major 问题是否真的解决。

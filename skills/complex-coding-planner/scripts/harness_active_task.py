@@ -1,445 +1,351 @@
 #!/usr/bin/env python3
-"""安全分类、激活和显式切换 pointer-only active task。"""
+"""原子维护 workspace 唯一的 compact managed task 指针。"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
-import uuid
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from harness_contract import load_contract
+from harness_plan_check import validate_task
 
-POINTER_FIELDS = {"task_id", "task_dir", "run_state_path", "updated_at"}
-ACTIVE_LIFECYCLES = {"approved", "in_progress", "blocked"}
-TERMINAL_LIFECYCLES = {"completed", "aborted"}
+
+POINTER_FIELDS = {"task_id", "task_dir", "updated_at"}
+LIFECYCLES = {
+    "approved",
+    "in_progress",
+    "blocked",
+    "awaiting_reapproval",
+    "completed",
+}
 
 
 class ActiveTaskError(Exception):
-    """active pointer 操作的稳定错误。"""
+    """表示 active pointer 无法安全读取或更新。"""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
 
-    def __str__(self) -> str:
-        return f"[{self.code}] {self.message}"
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def load_json_object(path: Path, label: str) -> dict[str, Any]:
+def _workspace(path: Path) -> Path:
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_WORKSPACE_INVALID",
+            "workspace 不存在或不可访问。",
+        ) from exc
+    if not resolved.is_dir():
+        raise ActiveTaskError(
+            "ACTIVE_TASK_WORKSPACE_INVALID",
+            "workspace 必须是目录。",
+        )
+    return resolved
+
+
+def _load_object(path: Path, label: str) -> dict[str, Any]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"缺少 {label}：{path}",
+            "ACTIVE_TASK_FILE_MISSING",
+            f"缺少 {label}。",
         ) from exc
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"无法解析 {label}：{path}: {exc}",
+            "ACTIVE_TASK_FILE_INVALID",
+            f"无法读取 {label}。",
         ) from exc
     if not isinstance(value, dict):
         raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 根节点必须是 object：{path}",
+            "ACTIVE_TASK_FILE_INVALID",
+            f"{label} 根节点必须是 object。",
         )
     return value
 
 
-def ensure_within(path: Path, parent: Path, label: str) -> None:
+def _write_atomic(path: Path, value: dict[str, Any]) -> None:
     try:
-        path.relative_to(parent)
-    except ValueError as exc:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, raw_temp = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+        )
+    except OSError as exc:
         raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 越出允许目录：{path}",
+            "ACTIVE_TASK_WRITE_FAILED",
+            "无法创建 active-task.json 的原子写入临时文件。",
         ) from exc
-
-
-def resolve_relative(base: Path, raw: str, parent: Path, label: str) -> Path:
-    if not raw or "\x00" in raw:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 为空或包含 null byte。",
-        )
-    candidate = Path(raw)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 必须是安全相对路径：{raw}",
-        )
-    resolved = (base / candidate).resolve()
-    ensure_within(resolved, parent, label)
-    return resolved
-
-
-def parse_rfc3339(value: str, label: str) -> None:
-    candidate = value[:-1] + "+00:00" if value.endswith("Z") else value
+    temp_path = Path(raw_temp)
     try:
-        parsed = datetime.fromisoformat(candidate)
-    except ValueError as exc:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 不是 RFC3339 时间：{value}",
-        ) from exc
-    if parsed.tzinfo is None:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"{label} 必须包含时区：{value}",
-        )
-
-
-def validate_pointer(pointer: dict[str, Any]) -> None:
-    unknown = sorted(set(pointer) - POINTER_FIELDS)
-    missing = sorted(POINTER_FIELDS - set(pointer))
-    if unknown or missing:
-        details = f"unknown={unknown}, missing={missing}"
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            f"active-task 不是 closed pointer：{details}",
-        )
-    for field in POINTER_FIELDS:
-        if not isinstance(pointer.get(field), str) or not pointer[field].strip():
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                f"active-task.{field} 必须是非空字符串。",
-            )
-    for field in ("task_dir", "run_state_path"):
-        candidate = Path(str(pointer[field]))
-        if candidate.is_absolute() or ".." in candidate.parts:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                f"active-task.{field} 必须是安全相对路径。",
-            )
-    parse_rfc3339(str(pointer["updated_at"]), "active-task.updated_at")
-
-
-def load_target(
-    workspace: Path,
-    task_dir_arg: str | Path,
-) -> tuple[Path, str, str]:
-    tasks_root = (workspace / ".harness" / "tasks").resolve()
-    candidate = Path(task_dir_arg)
-    target = candidate.resolve() if candidate.is_absolute() else (workspace / candidate).resolve()
-    ensure_within(target, tasks_root, "target task_dir")
-    if not target.is_dir():
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_TARGET_INVALID",
-            f"目标 task-dir 不存在：{target}",
-        )
-    contract = load_json_object(target / "plan-contract.json", "target plan-contract")
-    task_id = contract.get("task_id")
-    if not isinstance(task_id, str) or not task_id.strip():
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_TARGET_INVALID",
-            "target plan-contract.task_id 必须是非空字符串。",
-        )
-    relative = target.relative_to(workspace).as_posix()
-    return target, task_id, relative
-
-
-def unknown_classification(
-    target_task_id: str,
-    target_task_dir: str,
-    error: ActiveTaskError,
-    *,
-    current_task_id: str | None = None,
-) -> dict[str, Any]:
-    return {
-        "state": "different-unknown",
-        "target_task_id": target_task_id,
-        "target_task_dir": target_task_dir,
-        "current_task_id": current_task_id,
-        "current_task_dir": None,
-        "current_lifecycle": None,
-        "reason": error.message,
-    }
-
-
-def classify_active_pointer(
-    workspace_arg: str | Path,
-    task_dir_arg: str | Path,
-) -> dict[str, Any]:
-    workspace = Path(workspace_arg).resolve()
-    target_dir, target_id, target_relative = load_target(workspace, task_dir_arg)
-    pointer_path = (workspace / ".harness" / "active-task.json").resolve()
-    if not pointer_path.exists():
-        return {
-            "state": "missing",
-            "target_task_id": target_id,
-            "target_task_dir": target_relative,
-            "current_task_id": None,
-            "current_task_dir": None,
-            "current_lifecycle": None,
-            "reason": "active-task.json 不存在",
-        }
-    try:
-        pointer = load_json_object(pointer_path, "active-task pointer")
-        validate_pointer(pointer)
-    except ActiveTaskError as exc:
-        return unknown_classification(target_id, target_relative, exc)
-
-    current_id = str(pointer["task_id"])
-    current_relative = str(pointer["task_dir"]).replace("\\", "/")
-    try:
-        current_dir = resolve_relative(
-            workspace,
-            str(pointer["task_dir"]),
-            workspace,
-            "current task_dir",
-        )
-        ensure_within(
-            current_dir,
-            (workspace / ".harness" / "tasks").resolve(),
-            "current task_dir",
-        )
-        contract = load_json_object(current_dir / "plan-contract.json", "current plan-contract")
-        if contract.get("task_id") != current_id:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                "active-task.task_id 与当前 plan-contract 不一致。",
-            )
-    except ActiveTaskError as exc:
-        result = unknown_classification(
-            target_id,
-            target_relative,
-            exc,
-            current_task_id=current_id,
-        )
-        result["current_task_dir"] = current_relative
-        return result
-
-    if current_id == target_id and current_dir == target_dir:
-        return {
-            "state": "same-task",
-            "target_task_id": target_id,
-            "target_task_dir": target_relative,
-            "current_task_id": current_id,
-            "current_task_dir": current_relative,
-            "current_lifecycle": None,
-            "reason": "active pointer 已指向目标任务",
-        }
-    if current_id == target_id or current_dir == target_dir:
-        error = ActiveTaskError(
-            "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-            "current 与 target 的 task ID/path 发生部分匹配冲突。",
-        )
-        result = unknown_classification(
-            target_id,
-            target_relative,
-            error,
-            current_task_id=current_id,
-        )
-        result["current_task_dir"] = current_relative
-        return result
-
-    try:
-        run_state_path = resolve_relative(
-            current_dir,
-            str(pointer["run_state_path"]),
-            current_dir,
-            "current run-state",
-        )
-        run_state = load_json_object(run_state_path, "current run-state")
-        if run_state.get("task_id") != current_id:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                "current run-state.task_id 与 pointer 不一致。",
-            )
-        lifecycle = run_state.get("lifecycle")
-        if lifecycle not in ACTIVE_LIFECYCLES | TERMINAL_LIFECYCLES:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                f"current lifecycle 无效：{lifecycle}",
-            )
-    except ActiveTaskError as exc:
-        result = unknown_classification(
-            target_id,
-            target_relative,
-            exc,
-            current_task_id=current_id,
-        )
-        result["current_task_dir"] = current_relative
-        return result
-
-    state = "different-terminal" if lifecycle in TERMINAL_LIFECYCLES else "different-nonterminal"
-    return {
-        "state": state,
-        "target_task_id": target_id,
-        "target_task_dir": target_relative,
-        "current_task_id": current_id,
-        "current_task_dir": current_relative,
-        "current_lifecycle": lifecycle,
-        "reason": f"current lifecycle={lifecycle}",
-    }
-
-
-def rfc3339_now() -> str:
-    return (
-        datetime.now(timezone.utc)
-        .isoformat(timespec="milliseconds")
-        .replace("+00:00", "Z")
-    )
-
-
-def write_pointer_atomic(path: Path, pointer: dict[str, str]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-    try:
-        with temporary.open("x", encoding="utf-8", newline="\n") as handle:
-            json.dump(pointer, handle, ensure_ascii=False, indent=2, sort_keys=True)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        try:
-            directory_fd = os.open(path.parent, os.O_RDONLY)
-        except OSError:
-            return
-        try:
-            os.fsync(directory_fd)
-        except OSError:
-            pass
-        finally:
-            os.close(directory_fd)
+        os.replace(temp_path, path)
     except OSError as exc:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_WRITE_FAILED",
-            f"无法原子写入 active pointer：{exc}",
-        ) from exc
-    finally:
         try:
-            temporary.unlink(missing_ok=True)
+            temp_path.unlink(missing_ok=True)
         except OSError:
             pass
+        raise ActiveTaskError(
+            "ACTIVE_TASK_WRITE_FAILED",
+            "无法原子更新 active-task.json。",
+        ) from exc
 
 
-def pointer_document(classification: dict[str, Any]) -> dict[str, str]:
+def _relative_task_dir(workspace: Path, raw: str) -> tuple[Path, str]:
+    candidate = Path(raw)
+    if not candidate.is_absolute() and ".." in candidate.parts:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_PATH_INVALID",
+            "task-dir 不能包含 ..。",
+        )
+    try:
+        resolved = (
+            candidate.resolve(strict=False)
+            if candidate.is_absolute()
+            else (workspace / candidate).resolve(strict=False)
+        )
+        task_root = (workspace / ".harness" / "tasks").resolve(strict=False)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_PATH_INVALID",
+            "task-dir 无法安全解析。",
+        ) from exc
+    try:
+        task_root.relative_to(workspace)
+        relative = resolved.relative_to(task_root)
+    except ValueError as exc:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_PATH_INVALID",
+            "task-dir 与任务根目录必须位于 workspace 内。",
+        ) from exc
+    normalized = (Path(".harness") / "tasks" / relative).as_posix()
+    return resolved, normalized
+
+
+def _task_from_pointer(workspace: Path, pointer: dict[str, Any]) -> dict[str, Any]:
+    if set(pointer) != POINTER_FIELDS:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_POINTER_INVALID",
+            "active-task.json 字段不符合 compact pointer。",
+        )
+    task_id = pointer.get("task_id")
+    raw_dir = pointer.get("task_dir")
+    updated_at = pointer.get("updated_at")
+    if not isinstance(task_id, str) or not task_id:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_POINTER_INVALID",
+            "pointer.task_id 无效。",
+        )
+    if not isinstance(raw_dir, str) or not raw_dir:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_POINTER_INVALID",
+            "pointer.task_dir 无效。",
+        )
+    if not isinstance(updated_at, str) or not updated_at:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_POINTER_INVALID",
+            "pointer.updated_at 无效。",
+        )
+    task_dir, normalized = _relative_task_dir(workspace, raw_dir)
+    if not task_dir.is_dir():
+        raise ActiveTaskError(
+            "ACTIVE_TASK_TARGET_MISSING",
+            f"任务目录不存在：{normalized}",
+        )
+    contract, contract_issues = load_contract(task_dir / "plan-contract.json")
+    errors = [issue for issue in contract_issues if issue.severity == "error"]
+    if errors:
+        raise ActiveTaskError(errors[0].code, errors[0].message)
+    if contract.get("task_id") != task_id:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_ID_MISMATCH",
+            "pointer.task_id 与 plan-contract.json 不一致。",
+        )
+
+    state_path = task_dir / "run-state.json"
+    lifecycle = "planning"
+    if state_path.exists():
+        state = _load_object(state_path, "run-state.json")
+        if state.get("task_id") != task_id:
+            raise ActiveTaskError(
+                "ACTIVE_TASK_ID_MISMATCH",
+                "run-state.json 与 pointer.task_id 不一致。",
+            )
+        lifecycle = state.get("lifecycle")
+        if lifecycle not in LIFECYCLES:
+            raise ActiveTaskError(
+                "ACTIVE_TASK_STATE_INVALID",
+                "run-state.lifecycle 无效。",
+            )
     return {
-        "task_id": str(classification["target_task_id"]),
-        "task_dir": str(classification["target_task_dir"]),
-        "run_state_path": "run-state.json",
-        "updated_at": rfc3339_now(),
+        "task_id": task_id,
+        "task_dir": normalized,
+        "lifecycle": lifecycle,
     }
 
 
-def activate_or_switch(
-    workspace_arg: str | Path,
-    task_dir_arg: str | Path,
-    mode: str,
-    expected_current_task_id: str | None = None,
-) -> dict[str, Any]:
-    workspace = Path(workspace_arg).resolve()
-    classification = classify_active_pointer(workspace, task_dir_arg)
-    state = str(classification["state"])
-    current_id = classification.get("current_task_id")
-
-    if mode not in {"activate", "switch"}:
-        raise ActiveTaskError(
-            "TASK_ACTIVE_POINTER_MODE_INVALID",
-            f"不支持的写入模式：{mode}",
-        )
-    if mode == "switch":
-        expected = (expected_current_task_id or "").strip()
-        if not expected:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_SWITCH_EXPECTATION_REQUIRED",
-                "显式 switch 必须提供 --expected-current-task-id。",
-            )
-        if not isinstance(current_id, str) or current_id != expected:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_SWITCH_CONFLICT",
-                "active pointer 已变化或无法确认 current task ID；拒绝切换。",
-            )
-
-    if state == "same-task":
-        result = dict(classification)
-        result["action"] = "reused"
-        return result
-
-    if mode == "activate":
-        if state == "different-nonterminal":
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_CONFLICT",
-                "active pointer 指向非终态任务；请恢复该任务或显式 switch。",
-            )
-        if state == "different-unknown":
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                "active pointer 状态无法证明；请修复状态或显式 switch。",
-            )
-        if state not in {"missing", "different-terminal"}:
-            raise ActiveTaskError(
-                "TASK_ACTIVE_POINTER_STATE_UNKNOWN",
-                f"不支持的 active pointer 分类：{state}",
-            )
-
+def classify(workspace: Path) -> dict[str, Any]:
     pointer_path = workspace / ".harness" / "active-task.json"
-    pointer = pointer_document(classification)
-    write_pointer_atomic(pointer_path, pointer)
-    result = dict(classification)
-    result["action"] = "created" if state == "missing" else "replaced"
-    result["pointer"] = pointer
-    return result
+    if not pointer_path.exists():
+        return {"status": "none", "task": None, "error": None}
+    try:
+        pointer = _load_object(pointer_path, "active-task.json")
+        task = _task_from_pointer(workspace, pointer)
+    except ActiveTaskError as exc:
+        return {
+            "status": "invalid",
+            "task": None,
+            "error": {"code": exc.code, "message": exc.message},
+        }
+    return {"status": "active", "task": task, "error": None}
 
 
-def print_result(result: dict[str, Any], output_format: str) -> None:
-    if output_format == "json":
-        print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
+def activate(
+    workspace: Path,
+    raw_task_dir: str,
+    *,
+    allow_switch: bool,
+    expected_task_id: str | None,
+) -> dict[str, Any]:
+    task_dir, normalized = _relative_task_dir(workspace, raw_task_dir)
+    issues = validate_task(task_dir, "approval")
+    errors = [issue for issue in issues if issue.severity == "error"]
+    if errors:
+        raise ActiveTaskError(errors[0].code, errors[0].message)
+    contract, _ = load_contract(task_dir / "plan-contract.json")
+    task_id = str(contract["task_id"])
+
+    current = classify(workspace)
+    if current["status"] == "invalid":
+        error = current["error"]
+        raise ActiveTaskError(
+            error["code"],
+            f"现有 pointer 无效，必须先处理：{error['message']}",
+        )
+    current_task = current.get("task")
+    switching_task = current_task and (
+        current_task["task_id"] != task_id
+        or current_task["task_dir"] != normalized
+    )
+    if switching_task:
+        if not allow_switch:
+            raise ActiveTaskError(
+                "ACTIVE_TASK_SWITCH_REQUIRED",
+                "当前 pointer 指向其它任务目录，切换必须显式使用 --switch。",
+            )
+        if expected_task_id != current_task["task_id"]:
+            raise ActiveTaskError(
+                "ACTIVE_TASK_EXPECTATION_MISMATCH",
+                "--expect-task-id 与当前任务不一致。",
+            )
+
+    pointer = {"task_id": task_id, "task_dir": normalized, "updated_at": _now()}
+    _write_atomic(workspace / ".harness" / "active-task.json", pointer)
+    return {"status": "active", "task": _task_from_pointer(workspace, pointer)}
+
+
+def clear(workspace: Path, expected_task_id: str | None) -> dict[str, Any]:
+    pointer_path = workspace / ".harness" / "active-task.json"
+    current = classify(workspace)
+    if current["status"] == "none":
+        return {"status": "none", "task": None}
+    if current["status"] == "invalid":
+        if expected_task_id:
+            pointer = _load_object(pointer_path, "active-task.json")
+            if pointer.get("task_id") != expected_task_id:
+                raise ActiveTaskError(
+                    "ACTIVE_TASK_EXPECTATION_MISMATCH",
+                    "--expect-task-id 与无效 pointer 中的 task_id 不一致。",
+                )
+        try:
+            pointer_path.unlink()
+        except OSError as exc:
+            raise ActiveTaskError(
+                "ACTIVE_TASK_WRITE_FAILED",
+                "无法删除无效的 active-task.json。",
+            ) from exc
+        return {"status": "cleared", "task": None}
+    task = current["task"]
+    if expected_task_id and expected_task_id != task["task_id"]:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_EXPECTATION_MISMATCH",
+            "--expect-task-id 与当前任务不一致。",
+        )
+    try:
+        pointer_path.unlink()
+    except OSError as exc:
+        raise ActiveTaskError(
+            "ACTIVE_TASK_WRITE_FAILED",
+            "无法删除 active-task.json。",
+        ) from exc
+    return {"status": "cleared", "task": task}
+
+
+def _print_result(result: dict[str, Any]) -> None:
+    if result["status"] == "none":
+        print("No active managed task.")
         return
-    print(f"state={result['state']} action={result.get('action', 'classified')}")
-    print(
-        "target="
-        f"{result['target_task_id']} current={result.get('current_task_id') or 'none'}"
-    )
-    print(f"reason={result['reason']}")
-
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description="安全分类、激活或显式切换 .harness/active-task.json。",
-    )
-    parser.add_argument("--workspace", default=".", help="workspace 根目录")
-    parser.add_argument("--task-dir", required=True, help="目标 managed task 目录")
-    parser.add_argument(
-        "--mode",
-        choices=("classify", "activate", "switch"),
-        default="classify",
-    )
-    parser.add_argument(
-        "--expected-current-task-id",
-        help="switch 的 compare-and-swap 预期 current task ID",
-    )
-    parser.add_argument("--format", choices=("text", "json"), default="text")
-    return parser
+    if result["status"] == "invalid":
+        error = result["error"]
+        print(f"INVALID [{error['code']}]: {error['message']}")
+        return
+    task = result.get("task")
+    if task:
+        print(
+            f"{result['status'].upper()}: {task['task_id']} "
+            f"({task['lifecycle']}) at {task['task_dir']}"
+        )
+    else:
+        print(result["status"].upper())
 
 
 def main() -> int:
-    args = build_parser().parse_args()
+    parser = argparse.ArgumentParser(description="读取或更新当前 managed task 指针")
+    parser.add_argument("--workspace", type=Path, default=Path.cwd())
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("status")
+    activate_parser = commands.add_parser("activate")
+    activate_parser.add_argument("--task-dir", required=True)
+    activate_parser.add_argument("--switch", action="store_true")
+    activate_parser.add_argument("--expect-task-id")
+    clear_parser = commands.add_parser("clear")
+    clear_parser.add_argument("--expect-task-id")
+    args = parser.parse_args()
+
     try:
-        if args.mode == "classify":
-            result = classify_active_pointer(args.workspace, args.task_dir)
-            result["action"] = "classified"
-        else:
-            result = activate_or_switch(
-                args.workspace,
+        workspace = _workspace(args.workspace)
+        if args.command == "status":
+            result = classify(workspace)
+        elif args.command == "activate":
+            result = activate(
+                workspace,
                 args.task_dir,
-                args.mode,
-                args.expected_current_task_id,
+                allow_switch=args.switch,
+                expected_task_id=args.expect_task_id,
             )
-    except ActiveTaskError as exc:
-        failure = {"code": exc.code, "message": exc.message, "result": "failed"}
-        if args.format == "json":
-            print(json.dumps(failure, ensure_ascii=False, indent=2, sort_keys=True))
         else:
-            print(str(exc))
-        return 2
-    print_result(result, args.format)
-    return 0
+            result = clear(workspace, args.expect_task_id)
+    except ActiveTaskError as exc:
+        print(f"FAIL [{exc.code}]: {exc.message}")
+        return 1
+    _print_result(result)
+    return 1 if result["status"] == "invalid" else 0
 
 
 if __name__ == "__main__":

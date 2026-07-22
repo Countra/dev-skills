@@ -1,97 +1,33 @@
 {
   "task_id": "<task-id>",
   "plan_revision": 1,
-  "lifecycle_route": "managed",
-  "plan_profile": "standard",
-  "goal": {
-    "id": "GOAL-01",
-    "summary": "<observable outcome>"
-  },
-  "requirements": [
-    {
-      "id": "REQ-01",
-      "priority": "must",
-      "summary": "<required behavior>"
-    }
-  ],
-  "acceptance_criteria": [
-    {
-      "id": "AC-01",
-      "requirement_ids": ["REQ-01"],
-      "summary": "<given / when / then outcome>"
-    }
-  ],
-  "nonfunctional_requirements": [],
-  "artifacts": [
-    {
-      "id": "ART-01",
-      "kind": "other",
-      "path": "artifacts/reviews/plan-review-brief.json",
-      "required": true,
-      "approval_included": true
-    },
-    {
-      "id": "ART-02",
-      "kind": "review",
-      "path": "artifacts/reviews/plan-review-attempt-1.json",
-      "required": true,
-      "approval_included": true
-    }
-  ],
+  "risk": "medium",
+  "scope": ["<approved path or module>"],
   "stages": [
     {
       "id": "STG-01",
       "title": "<stage title>",
       "depends_on": [],
-      "requirement_ids": ["REQ-01"],
-      "acceptance_ids": ["AC-01"],
-      "nonfunctional_ids": [],
-      "validation_ids": ["VAL-01"],
-      "allowed_changes": ["<approved path or module>"],
-      "forbidden_changes": ["<explicit boundary>"],
-      "entry_conditions": ["<entry condition>"],
-      "exit_conditions": ["<observable exit condition>"],
+      "scope": ["<approved path or module>"],
       "risk": "medium",
-      "commit_expectation": "final"
+      "validation_ids": ["VAL-01"],
+      "review": "same-context"
     }
   ],
   "validations": [
     {
       "id": "VAL-01",
-      "kind": "test",
-      "required": true,
-      "covers": ["AC-01"],
+      "stage_id": "STG-01",
       "command": "<deterministic command or tool>",
-      "evidence_path": "artifacts/validation/<evidence-file>"
+      "required": true,
+      "timeout_seconds": 300
     }
   ],
-  "research": {
-    "mode": "local-only",
-    "evidence_artifact_ids": [],
-    "unresolved": []
-  },
-  "dependency_selection": {
-    "mode": "none",
-    "necessity_result": "not-triggered",
-    "decision_ids": [],
-    "evidence_artifact_ids": [],
-    "decisions": []
-  },
-  "approval_policy": {
-    "implementation_requires_user_approval": true,
-    "commit_requires_explicit_authorization": true,
-    "external_write_requires_explicit_authorization": true,
-    "elevated_tool_requires_explicit_authorization": true
-  },
-  "reapproval_triggers": [
-    "approved scope or public behavior changes",
-    "stage graph or required validation changes",
-    "risk, dependency, external write, or authorization changes"
-  ],
-  "stop_conditions": [
-    "user requests pause",
-    "reapproval is required",
-    "blocking decision or unavailable required permission",
-    "required validation remains failing after repair attempts"
-  ]
+  "final_validation_ids": [],
+  "final_review": "same-context",
+  "permissions_requested": {
+    "commit": false,
+    "external_write": false,
+    "elevated_tool": false
+  }
 }

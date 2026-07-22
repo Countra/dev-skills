@@ -1,46 +1,76 @@
 ---
 name: complex-coding-planner
-description: 为复杂、长周期、高风险、多阶段、多仓库或恢复敏感的 coding 任务制定持久、可验证的实施方案。用于用户要求调研、规划、制定方案或准备 task bundle 时；按风险选择 lite/standard/full，生成 execution-plan.md、plan-contract.json 和条件 artifacts，完成研究、规范、生产者质量与正式 plan-review 审批门禁后停止。不得实现代码，正式审查交给 complex-coding-reviewer，批准后的执行交给 complex-coding-executor。
+description: 为复杂、长周期、高风险、多阶段或恢复敏感的编码任务制定可执行方案。用于用户要求深入调研、技术选型、架构设计、任务拆分、落盘计划或准备后续实施时；保留风险、验证、审查、批准和恢复边界，但以自然语言计划与 compact task contract 工作，不为普通局部任务制造 Harness 制品。
 ---
 
 # Complex Coding Planner
 
-此 skill 只负责生成可审批的任务意图和机器契约，不负责实施或运行状态。
+规划用于减少实现不确定性，不用于生产审计格式。优先依赖项目事实和工程判断，只把恢复与执行真正需要的内容结构化。
 
-## 核心规则
+## 任务路由
 
-- 先路由为 `direct`、`managed` 或 `blocked`；能自主消歧的问题不得过早询问用户。
-- managed 任务必须读取 `references/planning-workflow.md`；生成或校验字段时读取 `references/task-contract.md`。
-- 按影响面、不确定性、恢复跨度、可逆性、质量风险和授权选择 `lite`、`standard` 或 `full`；目标未稳定时先 `discovery-first`。
-- 只为 managed 任务创建 `.harness/tasks/`。每轮先读取 pointer-only active-task、稳定环境和已有 task bundle。
-- planner 独占 `execution-plan.md`、`plan-contract.json` 和 planning artifacts；批准后这些文件不可变，不写 current stage、progress、ledger 或 commit 状态。
-- 涉及变化事实或高风险未知时执行在线 Research Gate，优先官方/一手资料；同时完成 Standards Discovery 与 Development Quality gates。
-- 涉及依赖新增、升级、替换、技术选型或关键依赖保留时，必须读取 `references/dependency-selection.md` 并执行 Dependency Selection Gate；先证明必要性，再按项目适配、硬门槛、稳定版本、采用规模、更新新鲜度、维护活跃度和采用趋势选择，不以 stars、下载量或单一总分决定。
-- 计划必须使用稳定 GOAL/REQ/AC/NFR/STG/VAL/ART ID，形成验收、阶段和验证闭环，并通过 `scripts/harness_plan_check.py --task-dir <task-dir> --mode approval`。
-- 提交审批前完成 Plan Quality Gate 与 Producer Readiness Gate，再调用 `complex-coding-reviewer` 的 coordinator 执行
-  `plan-review`；`full` 派生 `strict` dispatch，`lite/standard` 派生 `conditional`。Planner 根据 finding 修复目标，但不得
-  执行语义审查或自行生成正式 verdict。
-- 所有 managed profile 都必须索引 approval-included 的 review brief 和 required canonical plan-review receipt。dispatch、
-  target/context 与 semantic result 作为 receipt 间接绑定的 supporting artifacts，不进入 plan artifact index，避免自引用。
-  approval checker 通过 Reviewer 公共 CLI 验证 dispatch policy/lifecycle、`managed-plan` scope、双 digest、coverage、gap、
-  lineage、passed verdict 和连续 supersedes；context 只能引用 plan、contract 与 approval-included planning artifacts。
-- approval checker 通过后调用 `scripts/harness_active_task.py --mode activate` 写 active pointer；非终态或未知任务冲突必须 fail closed，只有用户明确选择任务后才可 `--mode switch`。随后总结授权请求并停止，不得创建 run-state/ledger、实现代码或提交。
-- 用户批准后由 `complex-coding-executor` 生成 attestation、维护 run-state/ledger，并执行 review、验证和提交门禁。
-- 批准后 scope、Stage DAG、必需验证、风险、依赖或授权改变时进入 Plan Amendment Gate。
-- 同一仓库 Git 命令串行；长期进程必须在计划中声明 Process Manager Gate；实施批准不等于提交授权。
+- `direct`：目标明确、影响局部、当前会话可完成。只在对话中给出必要计划，不创建 `.harness` 文件。
+- `managed`：跨会话、多阶段、恢复敏感、高风险、涉及关键选型，或用户明确要求落盘。创建 compact task bundle。
+- `blocked`：仍缺少会改变范围、风险或授权的关键事实。先自主调查，只把无法消除的决策交给用户。
 
-## 文件
+不要按文件数、工具调用数或预计耗时机械升级任务。
 
-按需使用：
+## 核心流程
 
-- `templates/execution-plan.md`：不可变的人类审批意图。
-- `templates/plan-contract.json`：机器可验证契约。
-- `templates/active-task.json`：pointer-only active task。
-- `scripts/harness_active_task.py`：active pointer 四态分类、原子激活与显式 compare-and-swap 切换。
-- `templates/environment.md`：稳定 workspace 事实。
-- `templates/pending-decisions.md`：仅在 blocking 决策需要落盘时使用。
-- `templates/artifacts/dependency-selection.md`：依赖候选、证据 receipt、风险和回滚的详细记录；正式机器证据使用同名 JSON artifact。
-- `complex-coding-reviewer/scripts/review_dispatch.py`：冻结 plan-review 输入与 dispatch policy；不启动 Agent。
-- `complex-coding-reviewer/scripts/review_validate.py`：正式 plan-review receipt 的唯一 validator；缺少 Reviewer skill 时 approval 必须 fail closed。
+1. 阅读仓库规则、相关实现、调用方、测试、配置和 Git 状态。
+2. 明确目标、完成标准、范围、非目标、约束和仍会改变方案的未知项。
+3. 本地事实足够时停止调研。变化事实、关键依赖、平台差异、安全或高风险未知才查询官方和一手资料。
+4. 比较真正可行的方案，记录选择、主要理由、风险和回滚；不要为了格式制造候选。
+5. 按自然实施边界拆分阶段，为每个阶段指定范围、依赖、验证和审查模式。多阶段任务另设至少一个 required final validation，验证全部阶段汇合后的最终状态。
+6. 自检需求覆盖、可实施性、验证真实性、风险和授权。Managed 计划使用 `complex-coding-reviewer` 做 `plan-review`；高风险或用户要求时使用独立 Reviewer。
+7. 修复 blocking/major finding，运行 plan checker，激活任务指针，向用户给出聚焦方案并等待批准。
 
-保持本文件精炼；流程和字段细节只在对应 reference 中维护。
+用户批准前不得实现代码。实施批准不等于提交、外部写入或提权授权。
+
+## Managed Task Bundle
+
+只维护：
+
+- `execution-plan.md`：人类可读的批准意图。
+- `plan-contract.json`：阶段 DAG、范围、阶段及最终验证、审查模式和请求权限。
+- `.harness/active-task.json`：当前任务指针，由 `harness_active_task.py` 原子维护。
+- `run-state.json`：用户批准后由 Executor 创建；Planner 不写。
+
+不创建 research、standards、dependency receipt、traceability、review receipt 或 artifact index。调研结论、来源与关键依赖选择直接写入计划。
+
+运行：
+
+```text
+python skills/complex-coding-planner/scripts/harness_plan_check.py --task-dir <task-dir> --mode approval
+python skills/complex-coding-planner/scripts/harness_active_task.py --workspace <workspace> activate --task-dir <task-dir>
+```
+
+checker 只检查机器边界，不评价文风或代替语义审查。
+
+## 计划内容
+
+计划自然覆盖以下信息，不要求固定章节、矩阵或段落数量：
+
+- 目标与完成标准
+- 范围、非目标和约束
+- 影响实现的事实、调研结论和技术决策
+- 实施阶段及依赖
+- 验证与审查策略
+- 风险、回滚、待确认项和授权边界
+
+只为阶段和必要验证保留 `STG-*`、`VAL-*`，便于恢复和 Executor 精确引用。单阶段任务可由阶段验证覆盖最终状态；多阶段任务必须用 `final_validation_ids` 引用汇合后的集成验证。不要复制 contract 的全部字段到正文。
+
+## 工程判断
+
+- 优先项目现有规范、实现模式和健康依赖。
+- 新增或替换关键依赖时，检查稳定版本、采用规模、维护活跃度、更新时间、采用趋势和项目适配；只保留最终选择、主要理由与来源。
+- 设计模式、SOLID、低耦合高内聚是决策工具，不是逐项填写的清单。
+- 计划需要 dev server、watcher、Electron driver 或后台 worker 等长期进程时，明确由 `process-manager` 托管，并规划 readiness 与最终 cleanup；测试、构建和 lint 等有限命令只设置 deadline，不进入 Process Manager。
+- 调研与依赖规则见 [research-and-dependencies.md](references/research-and-dependencies.md)。
+- task bundle 与恢复边界见 [task-state.md](references/task-state.md)。
+
+## 用户输出
+
+先说明目标和关键决策，再给实施步骤、验证和主要风险。不要向用户展示 contract JSON、hash、provenance、空矩阵、完整 gate 状态或机械化“零 issue”结论。
+
+用户批准后停止规划，并交给 `complex-coding-executor`。

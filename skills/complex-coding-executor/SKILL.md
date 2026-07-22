@@ -1,63 +1,56 @@
 ---
 name: complex-coding-executor
-description: 执行由 complex-coding-planner 生成并获用户批准的复杂 coding task bundle。用于开始实现、继续或恢复 managed 任务、执行剩余 stages；只消费不可变 execution-plan.md、plan-contract.json 和 attestation，独占 run-state.json 与 ledger.jsonl，并通过 complex-coding-reviewer 的 target-bound receipt 强制执行阶段/最终审查、验证、Git/process、amendment、提交授权和交付门禁。
+description: 执行用户已批准的 complex-coding-planner managed 方案，并在多阶段或中断恢复场景中保持范围、验证、审查和授权边界。使用源码、Git 和真实验证作为事实来源，只维护 compact run-state.json；不生成 ledger、attestation、review receipt、逐命令证据或其它工作流 JSON。
 ---
 
 # Complex Coding Executor
 
-此 skill 只执行已经批准的 managed task bundle，是运行状态和执行证据的唯一 writer。
+持续完成已批准工作。状态文件只服务于恢复和防漂移，不代替代码阅读、工程判断或真实验证。
 
-## 启动条件
+## 启动与恢复
 
-- 每轮开始读取 pointer-only `.harness/active-task.json`、task contract、attestation、run-state/ledger 和稳定环境。
-- 开始任何编辑、验证、Git 写操作或长期进程操作前读取 `references/execution-workflow.md`。
-- 缺少当前契约必需文件、批准证明或权限，存在 blocker/reapproval，或 replay 无法确定状态时 fail closed。
-- 如果用户只是要求制定方案、补充规划、复查方案或等待审批，应使用 `complex-coding-planner`，不得用本 skill 直接实现。
-- 如果设置了 `HARNESS_DISABLED=1`，只做 direct/advisory 行为，不消费历史 active task。
+1. 读取 `.harness/active-task.json`、`execution-plan.md`、`plan-contract.json` 和已有 `run-state.json`。
+2. 查看仓库规则、`git status`、相关 diff、近期提交和用户已有修改。
+3. 运行 `harness_state.py status`。批准 digest 不匹配、存在 blocker 或需要重新批准时先停止。
+4. 用简短摘要说明当前阶段、已完成工作、下一步和风险，然后继续；不要复述整份计划。
 
-## 核心规则
+首次批准后运行 `approve --implementation`，同时记录 plan-review 模式和一句摘要。只有用户明确授权且该权限已列入 contract 请求时，才附加 `--commit`、`--external-write` 或 `--elevated-tool`；后续授权使用 `authorize`，未规划的新权限先重新批准。
 
-- `plan-contract.json` 是可执行约束，`execution-plan.md` 解释批准意图；不得从 prose 推断 stage、授权或状态。
-- 新 attestation 写入和 amendment 激活前由 `harness_attest_plan.py` 运行当时的 Planner approval checker；执行期运行 `scripts/harness_exec_check.py --mode preflight`，验证 attestation 不可变哈希、dependency runtime gate 和 state replay，不用未来 checker 追溯重判已批准计划。
-- 恢复或转移时运行 `--mode status|transition`；仅用 `--mode reconcile` 修复可由合法 ledger 唯一推导的 snapshot drift。
-- 每个 stage 按 contract 的依赖、范围、REQ/AC/NFR、VAL 和风险执行 entry、修改、验证、正式审查、修复与 exit。
-- standards index、`Standards Discovery Gate` 和 `Development Quality Gate` 是实现与验证输入；正式 verdict 必须使用 `complex-coding-reviewer` 的 `code-review` profile，Executor 不复制审查 rubric，也不自行声明通过。
-- `validation_recorded` 只接受绑定当前 attempt/target 的 closed provenance payload；只有 observed 且 exit code 0 的 task-local evidence 可以建立 passed gate，reported/not-run 只能作为受限 claim。
-- `review_recorded` 只接受 Reviewer 公共 CLI 校验后派生的 closed compact receipt；high-risk stage 与
-  `final-integration` 使用 `strict` dispatch，low/medium-risk stage 使用 `conditional`。Executor 只冻结输入、调用 Reviewer
-  coordinator 并消费结果，不生成 Agent prompt、provenance 或 verdict。target/context 变化后旧 receipt stale，brief 必须精确
-  覆盖 contract scope 并引用当前 validation evidence。
-- contract 的 dependency mode 非 `none` 时读取 `references/dependency-execution.md`：preflight 按 critical-runtime/runtime/dev-build 的 30/60/90 天上限校验批准证据和 stage 映射，涉及 manifest/lock 的阶段用生态原生命令生成 task-local runtime receipt；身份、版本策略、路径、hard gate 或 advisory 漂移不得静默放行。
-- 每个开始、attempt、验证、review、完成、阻塞、amendment 和 commit 都先追加合法 ledger event，再原子更新 run-state。
-- stage 完成后立即执行 transition；仍有 remaining stage 且无 stop/reapproval 时连续推进。
-- 失败动作必须记录 attempt、失败原因、影响和下一策略；不得静默重复同一失败动作。
-- 新事实影响 scope、Stage DAG、必需验证、风险、依赖或授权时写 research drift/amendment，设置 reapproval 后停止。
-- 用户批准实施不等于授权提交。只有 attestation 的 `authorizations.commit = true`，且用户批准摘要或后续消息明确要求提交，才能 `git commit`。
-- 同一仓库 Git 命令必须串行；禁止任何并发机制同时运行同仓库 Git。
-- 如果 `process-manager` skill 存在，所有服务、后台或需要挂起运行的长期进程都必须使用显式 context 的统一公共 CLI：先 `pm_manager.py ensure`，再 `pm_session.py open`，start 绑定 `sessionId`，长步骤前按需 renew，并在 `finally` close；记录 manager identity、session、config validation、processKey、ready、bounded logs 和 owner-empty cleanup，且不判断 OS/backend。finite command 直接运行。
-- 最终回复只能在所有 stage、required VAL、review、授权和 final checker 闭环后发送。
+## 执行循环
 
-## 文件和脚本
+1. 选择依赖已完成的下一阶段并运行 `start`。
+2. 阅读阶段范围内的调用方、实现、测试和配置，按仓库模式做最小而完整的修改。
+3. 运行针对性验证。失败后先诊断并改变策略；同一失败命令不得原样执行第三次。
+4. 用 `validate` 记录 required validation 的最近结果和简短摘要，不保存完整日志。
+5. 按 contract 调用 `complex-coding-reviewer`：低风险按需、medium same-context、high independent。
+6. 处理 blocking/major finding，重新运行受影响验证和审查，再用 `finish-stage` 收口。
+7. 所有阶段完成后，先记录 contract 指定的 final validation，再执行 final review 和 `complete`。
 
-- 执行工作流: `references/execution-workflow.md`
-- 依赖执行门禁: `references/dependency-execution.md`
-- 故障排查: `references/troubleshooting.md`
-- 契约定义: `../complex-coding-planner/references/task-contract.md`
-- 执行状态检查: `scripts/harness_exec_check.py`
-- 任务解析: `scripts/harness_task_resolver.py`
-- 依赖执行检查: `scripts/harness_dependency_check.py`
-- 审查回执门禁: `scripts/harness_review.py`、`../complex-coding-reviewer/scripts/review_dispatch.py`、
-  `../complex-coding-reviewer/scripts/review_validate.py`
-- 计划证明: `scripts/harness_attest_plan.py`
-- 进度 ledger: `scripts/harness_ledger_append.py`、`scripts/harness_ledger_summary.py`
+阶段边界由工作内容决定，不为小修改创建 attempt、receipt 或状态事件。批准范围内的内部实现调整直接继续；范围、公共接口、Stage DAG、必需验证、关键依赖、迁移、风险或授权发生实质变化时进入重新批准。
 
-## 禁止行为
+## 状态与事实
 
-- 不修改批准后的 plan、contract 或 approved artifacts。
-- 不跳过 review、验证、Stage Transition Gate 或 Resume Summary。
-- 不在 Executor 中维护正式 code-review checklist、重复实现 dispatch、代替 delegated reviewer 生成 verdict、伪造独立审查，
-  或用 stage receipt 替代 final receipt。
-- 不保留旧契约分支、active 状态镜像或 Markdown 状态解析。
-- 不把阶段完成、阶段提交完成或恢复点完成当作最终停止条件。
-- 不自动 stash、reset、rebase、覆盖用户改动或删除未知文件。
-- 不手写后台 shell 命令启动长期服务。
+- `plan-contract.json` 约束阶段 DAG、范围、阶段及最终验证和审查模式。
+- `run-state.json` 只保存批准 digest、授权、当前阶段、最近验证、审查摘要和 blocker。
+- Git、源码和实际测试输出是真实执行证据。状态与代码冲突时先调查，不靠写更多 JSON 解决。
+- Reviewer 只返回人类可读结果；Executor 将模式、结论和一句摘要写入 run-state，不保存 findings JSON。
+
+状态命令和恢复规则见 [execution-workflow.md](references/execution-workflow.md)，异常与命令安全见 [execution-safety.md](references/execution-safety.md)。
+
+## 验证与命令稳定性
+
+- 先运行受影响的测试、lint、typecheck 或 smoke；共享行为、跨模块契约和最终集成再运行完整套件。
+- 多阶段任务完成全部 stage 后使用 `validate --stage final` 记录最终集成验证；缺失或失败时不能执行 final review 或 `complete`。
+- 不把 reported/not-run 表述为验证通过。说明实际命令、结果和未覆盖风险即可。
+- 宿主 deadline 不可靠、命令有卡死历史或可能长时间静默时，使用 `harness_bounded_command.py`。
+- PowerShell 自动化使用 `-NoProfile -NonInteractive`；不要用 `Tee-Object` 保存测试日志，也不要用无界全系统进程扫描判断状态。
+- 长期服务、Electron driver、watcher 和 dev server 使用 `process-manager`；普通测试、构建和 lint 不进入 Process Manager。
+
+## 审查与交付
+
+- `none` 阶段无需形式审查；`same-context` 和 `independent` 必须按 contract 完成。
+- 独立 Reviewer 不可用且 contract 要求 independent 时 blocked，不降级后声称通过。
+- 任意 blocking/major 修复都会使旧语义结论失效；重新审查当前完整目标。minor/advisory 可进入交付摘要。
+- final review 对最终工作树执行。提交 hook 改写内容或提交后工作树不干净时，重新验证和审查，不生成 equivalence proof。
+- 用户未授权提交时不要提交；授权提交时遵守仓库规范并使用 `git commit -F`。
+- 最终答复聚焦改动、真实验证、审查结论和残余风险，不输出内部状态 JSON 或 gate 清单。

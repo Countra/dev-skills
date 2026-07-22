@@ -1,4 +1,5 @@
 # 本地运行产物
+.harness/active-task.json
 .harness/tasks/**/artifacts/
 .harness/tasks/**/logs/
 .harness/tasks/**/tmp/

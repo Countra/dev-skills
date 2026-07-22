@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-22
+
+### Breaking: Coding Harness 约定优先精简
+
+- `complex-coding-planner`、`complex-coding-executor` 与 `complex-coding-reviewer` 一次性切换为 compact workflow；旧 heavy task bundle 仅作为历史归档，不由新工具执行。
+- direct 任务不创建 Harness 制品；managed 任务只维护计划、compact contract、active pointer 与单一 run-state，取消 ledger、attestation、artifact graph 和审查回执链。
+- Reviewer 改为 instruction/reference-only，以 findings-first 人类文本返回结果；高风险审查仍使用隔离子 Agent，但不生成 receipt、dispatch、manifest 或 provenance JSON。
+- 生产 Python 收敛为 active pointer、contract、plan check、compact state 与 bounded command 六个脚本；权限、计划漂移、阶段依赖、必需验证和高风险审查继续失败关闭。
+- CI 在 Ubuntu 验证 compact 四文件生命周期，并在 Windows、Ubuntu、macOS 验证有限命令超时与进程树回收；不调用 Agent、访问网络或上传 Actions artifact。
+
+### Fixed: Process Manager 消费者契约
+
+- Planner 补回长期进程 ownership、readiness 与 cleanup 规划约定，Executor 补齐统一 session 生命周期和 `status`/`recommendedAction` 恢复路径。
+- Process Manager 静态检查改为按 Planner、Executor、Electron 文档和 Electron 运行支撑分别校验，不再引用已删除文件或跨消费者拼接补词。
+- 平台无关契约检查改为单独的 Ubuntu job，三平台 lifecycle 不再因同一个静态文档错误全部跳过。
+
+### Changed: 多阶段最终集成验证门禁
+
+- compact contract 增加 `final_validation_ids`；多阶段任务至少声明一个 required final validation，单阶段任务可继续由阶段验证覆盖最终状态。
+- Executor 复用现有 `validate --stage final` 记录最终集成结果，final review 与 complete 在验证缺失或失败时关闭门禁。
+- 最终验证重跑会使旧 final review 失效，重新批准会清除旧最终验证与审查摘要，不增加新的 Harness 制品。
+
 ## 2026-07-18
 
 ### Breaking: Reviewer 独立子 Agent 审查
