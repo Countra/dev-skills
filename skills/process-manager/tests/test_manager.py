@@ -385,51 +385,56 @@ class ManagerTests(unittest.TestCase):
     def test_persisted_finalization_is_serialized_per_run(self) -> None:
         with workspace_directory() as directory:
             workspace = Path(directory)
-            _, _, _, manager, _ = self.make_manager(workspace)
+            _, adapter, _, manager, _ = self.make_manager(workspace)
             service_path = workspace / "service.json"
             write_json(service_path, service_value(workspace))
             started = manager.start(service_path)
             with manager._lock:  # noqa: SLF001
                 manager._runs.pop(started["processKey"])  # noqa: SLF001
-            entered = threading.Event()
-            release = threading.Event()
-            calls = 0
+            try:
+                entered = threading.Event()
+                release = threading.Event()
+                calls = 0
 
-            def finalize_persisted(*args, **kwargs):  # noqa: ANN002,ANN003,ANN201
-                nonlocal calls
-                del args, kwargs
-                calls += 1
-                entered.set()
-                release.wait(2)
-                return OwnerFinalization(True, True, True, False, False, {}, None)
+                def finalize_persisted(*args, **kwargs):  # noqa: ANN002,ANN003,ANN201
+                    nonlocal calls
+                    del args, kwargs
+                    calls += 1
+                    entered.set()
+                    release.wait(2)
+                    return OwnerFinalization(True, True, True, False, False, {}, None)
 
-            results: list[dict[str, object]] = []
-            errors: list[BaseException] = []
+                results: list[dict[str, object]] = []
+                errors: list[BaseException] = []
 
-            def stop() -> None:
-                try:
-                    results.append(manager.stop(process_key=started["processKey"]))
-                except BaseException as exc:  # noqa: BLE001
-                    errors.append(exc)
+                def stop() -> None:
+                    try:
+                        results.append(manager.stop(process_key=started["processKey"]))
+                    except BaseException as exc:  # noqa: BLE001
+                        errors.append(exc)
 
-            with mock.patch.object(
-                manager._finalization.owner_finalizer,  # noqa: SLF001
-                "finalize_persisted",
-                side_effect=finalize_persisted,
-            ):
-                first = threading.Thread(target=stop)
-                second = threading.Thread(target=stop)
-                first.start()
-                self.assertTrue(entered.wait(1))
-                second.start()
-                time.sleep(0.05)
+                with mock.patch.object(
+                    manager._finalization.owner_finalizer,  # noqa: SLF001
+                    "finalize_persisted",
+                    side_effect=finalize_persisted,
+                ):
+                    first = threading.Thread(target=stop)
+                    second = threading.Thread(target=stop)
+                    first.start()
+                    self.assertTrue(entered.wait(1))
+                    second.start()
+                    time.sleep(0.05)
+                    self.assertEqual(calls, 1)
+                    release.set()
+                    first.join(timeout=2)
+                    second.join(timeout=2)
+                self.assertEqual(errors, [])
+                self.assertEqual(len(results), 2)
                 self.assertEqual(calls, 1)
-                release.set()
-                first.join(timeout=2)
-                second.join(timeout=2)
-            self.assertEqual(errors, [])
-            self.assertEqual(len(results), 2)
-            self.assertEqual(calls, 1)
+            finally:
+                if adapter.last_owner is not None:
+                    adapter.last_owner.close()
+                manager.shutdown()
 
     def test_new_manager_reconciles_old_persisted_owner_before_accepting_start(self) -> None:
         with workspace_directory() as directory:
@@ -440,22 +445,27 @@ class ManagerTests(unittest.TestCase):
             started = manager.start(service_path)
             with manager._lock:  # noqa: SLF001
                 manager._runs.pop(started["processKey"])  # noqa: SLF001
-            replacement = ProcessManager(
-                config,
-                adapter,
-                state,
-                "2" * 32,
-                operation_id="11111111111111111111111111111111",
-                session_sweeper=False,
-            )
-            persisted = state.get(key=started["processKey"])
-            self.assertEqual(persisted["status"], "manager_lost")
-            self.assertTrue(persisted["public"]["cleanupVerified"])
-            self.assertEqual(
-                replacement.reconciled_records["finalized"],
-                [started["processKey"]],
-            )
-            replacement.shutdown()
+            replacement = None
+            try:
+                replacement = ProcessManager(
+                    config,
+                    adapter,
+                    state,
+                    "2" * 32,
+                    operation_id="11111111111111111111111111111111",
+                    session_sweeper=False,
+                )
+                persisted = state.get(key=started["processKey"])
+                self.assertEqual(persisted["status"], "manager_lost")
+                self.assertTrue(persisted["public"]["cleanupVerified"])
+                self.assertEqual(
+                    replacement.reconciled_records["finalized"],
+                    [started["processKey"]],
+                )
+            finally:
+                if replacement is not None:
+                    replacement.shutdown()
+                manager.shutdown()
 
     def test_shutdown_waits_for_an_already_admitted_start(self) -> None:
         with workspace_directory() as directory:
