@@ -12,10 +12,11 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 EXIT_TIMEOUT = 124
 EXIT_CLEANUP_FAILED = 125
@@ -24,6 +25,9 @@ EXIT_CANCELLED = 130
 FORCE_WAIT_SECONDS = 5.0
 MAX_TIMEOUT_SECONDS = 86_400.0
 MAX_GRACE_SECONDS = 300.0
+DEFAULT_HEARTBEAT_SECONDS = 15.0
+MAX_HEARTBEAT_SECONDS = 300.0
+WAIT_POLL_SECONDS = 0.1
 
 
 @dataclass
@@ -34,6 +38,90 @@ class WindowsJobState:
     preassignment_processes: dict[int, Any]
 
 
+@dataclass(frozen=True)
+class PosixProcessIdentity:
+    """用于阻断 PID、PGID 与 session 数字复用。"""
+
+    pid: int
+    start_time: str
+    process_group_id: int
+    session_id: int
+
+
+@dataclass
+class PosixGroupTracker:
+    """记录本次 POSIX session 内已验证的进程身份。"""
+
+    process_group_id: int
+    session_id: int
+    members: dict[int, PosixProcessIdentity]
+    observed_empty: bool = False
+
+    def inspect(self, deadline: float) -> list[int]:
+        while True:
+            pids = _posix_group_pids(self.process_group_id, deadline)
+            if not pids:
+                self.observed_empty = True
+                return []
+            if self.observed_empty:
+                raise PosixInspectionError("进程组已为空后出现数字复用")
+            restart = False
+            for pid in pids:
+                try:
+                    identity = _posix_process_identity(pid)
+                except PosixInspectionError:
+                    # 进程可能在 ps 与身份读取之间正常退出；只对仍存在的 PID 失败关闭。
+                    refreshed = _posix_group_pids(
+                        self.process_group_id,
+                        deadline,
+                    )
+                    if pid not in refreshed:
+                        restart = True
+                        break
+                    raise
+                if (
+                    identity.process_group_id != self.process_group_id
+                    or identity.session_id != self.session_id
+                ):
+                    raise PosixInspectionError(
+                        "进程组成员身份不属于本次 session"
+                    )
+                previous = self.members.get(pid)
+                if previous is not None and previous != identity:
+                    raise PosixInspectionError("进程身份发生复用")
+                self.members[pid] = identity
+            if not restart:
+                return pids
+
+
+@dataclass
+class CancellationState:
+    """记录第一次可捕获取消，避免与 deadline 竞态漂移。"""
+
+    reason: str | None = None
+    requested_at: float | None = None
+
+    def request(self, reason: str) -> None:
+        if self.reason is None:
+            self.reason = reason
+            self.requested_at = time.monotonic()
+
+
+class StatusReporter:
+    """尽力输出状态；输出端关闭不能影响进程清理。"""
+
+    def __init__(self) -> None:
+        self.enabled = True
+
+    def emit(self, message: str) -> None:
+        if not self.enabled:
+            return
+        try:
+            print(message, file=sys.stderr, flush=True)
+        except (BrokenPipeError, OSError, ValueError):
+            self.enabled = False
+
+
 class BoundedCommandError(Exception):
     """命令保护参数或启动条件无效。"""
 
@@ -42,6 +130,10 @@ class BoundedCommandError(Exception):
         self.code = code
         self.message = message
         self.exit_code = exit_code
+
+
+class PosixInspectionError(Exception):
+    """POSIX 进程身份无法在 cleanup budget 内安全验证。"""
 
 
 def _timestamp() -> str:
@@ -77,7 +169,105 @@ def _result(
     }
 
 
-def _posix_group_pids(process_group_id: int) -> list[int]:
+class _MacProcBsdInfo(ctypes.Structure):
+    _fields_ = [
+        ("pbi_flags", ctypes.c_uint32),
+        ("pbi_status", ctypes.c_uint32),
+        ("pbi_xstatus", ctypes.c_uint32),
+        ("pbi_pid", ctypes.c_uint32),
+        ("pbi_ppid", ctypes.c_uint32),
+        ("pbi_uid", ctypes.c_uint32),
+        ("pbi_gid", ctypes.c_uint32),
+        ("pbi_ruid", ctypes.c_uint32),
+        ("pbi_rgid", ctypes.c_uint32),
+        ("pbi_svuid", ctypes.c_uint32),
+        ("pbi_svgid", ctypes.c_uint32),
+        ("rfu_1", ctypes.c_uint32),
+        ("pbi_comm", ctypes.c_char * 16),
+        ("pbi_name", ctypes.c_char * 32),
+        ("pbi_nfiles", ctypes.c_uint32),
+        ("pbi_pgid", ctypes.c_uint32),
+        ("pbi_pjobc", ctypes.c_uint32),
+        ("e_tdev", ctypes.c_uint32),
+        ("e_tpgid", ctypes.c_uint32),
+        ("pbi_nice", ctypes.c_int32),
+        ("pbi_start_tvsec", ctypes.c_uint64),
+        ("pbi_start_tvusec", ctypes.c_uint64),
+    ]
+
+
+def _posix_process_identity(pid: int) -> PosixProcessIdentity:
+    if sys.platform.startswith("linux"):
+        try:
+            text = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+            closing = text.rfind(")")
+            fields = text[closing + 2 :].split()
+            return PosixProcessIdentity(
+                pid=pid,
+                start_time=fields[19],
+                process_group_id=int(fields[2]),
+                session_id=int(fields[3]),
+            )
+        except (OSError, IndexError, ValueError) as exc:
+            raise PosixInspectionError("Linux 进程身份不可读取") from exc
+    if sys.platform == "darwin":
+        try:
+            library = ctypes.CDLL("/usr/lib/libproc.dylib", use_errno=True)
+            library.proc_pidinfo.argtypes = [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint64,
+                ctypes.c_void_p,
+                ctypes.c_int,
+            ]
+            library.proc_pidinfo.restype = ctypes.c_int
+            info = _MacProcBsdInfo()
+            read = library.proc_pidinfo(
+                pid,
+                3,
+                0,
+                ctypes.byref(info),
+                ctypes.sizeof(info),
+            )
+            session_id = os.getsid(pid)
+        except (AttributeError, OSError) as exc:
+            raise PosixInspectionError("macOS 进程身份不可读取") from exc
+        if (
+            read != ctypes.sizeof(info)
+            or info.pbi_pid != pid
+            or info.pbi_start_tvsec <= 0
+            or info.pbi_start_tvusec >= 1_000_000
+        ):
+            raise PosixInspectionError("macOS 进程身份不可读取")
+        return PosixProcessIdentity(
+            pid=pid,
+            start_time=str(
+                info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+            ),
+            process_group_id=int(info.pbi_pgid),
+            session_id=session_id,
+        )
+    raise PosixInspectionError(f"不支持的 POSIX 平台：{sys.platform}")
+
+
+def _create_posix_tracker(process: subprocess.Popen[Any]) -> PosixGroupTracker:
+    identity = _posix_process_identity(process.pid)
+    if (
+        identity.process_group_id != process.pid
+        or identity.session_id != process.pid
+    ):
+        raise PosixInspectionError("目标未建立独立 POSIX session")
+    return PosixGroupTracker(
+        process_group_id=identity.process_group_id,
+        session_id=identity.session_id,
+        members={identity.pid: identity},
+    )
+
+
+def _posix_group_pids(process_group_id: int, deadline: float) -> list[int]:
+    remaining_seconds = deadline - time.monotonic()
+    if remaining_seconds <= 0:
+        raise PosixInspectionError("POSIX 成员查询超过 cleanup deadline")
     try:
         completed = subprocess.run(
             ["ps", "-eo", "pid=,pgid=,stat="],
@@ -86,18 +276,13 @@ def _posix_group_pids(process_group_id: int) -> list[int]:
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=3,
+            stdin=subprocess.DEVNULL,
+            timeout=min(1.0, remaining_seconds),
         )
-    except (OSError, subprocess.SubprocessError):
-        try:
-            os.killpg(process_group_id, 0)
-        except ProcessLookupError:
-            return []
-        except PermissionError:
-            return [process_group_id]
-        return [process_group_id]
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PosixInspectionError("POSIX 成员查询失败") from exc
     if completed.returncode != 0:
-        return [process_group_id]
+        raise PosixInspectionError("POSIX 成员查询返回失败")
     matches: list[int] = []
     for line in completed.stdout.splitlines():
         fields = line.split()
@@ -369,14 +554,22 @@ def _terminate_windows_tree(
     )
     remaining: list[int] = []
     try:
+        break_sent = True
         try:
             process.send_signal(signal.CTRL_BREAK_EVENT)
         except (OSError, ValueError):
-            pass
-        remaining = _wait_until_stopped(
-            tracked,
-            time.monotonic() + grace_seconds,
-        )
+            break_sent = False
+        if break_sent:
+            remaining = _wait_until_stopped(
+                tracked,
+                time.monotonic() + grace_seconds,
+            )
+        else:
+            remaining = [
+                pid
+                for pid, handle in tracked.items()
+                if _windows_handle_running(handle)
+            ]
         if windows_job is not None:
             closed = _close_windows_job(windows_job)
             remaining = _wait_until_stopped(
@@ -412,36 +605,92 @@ def _terminate_windows_tree(
         _close_windows_process_handles(tracked)
 
 
+def _stop_direct_process(
+    process: subprocess.Popen[Any],
+    graceful_deadline: float,
+) -> bool:
+    """身份不足时仍精确回收直接子进程，但不据此声称整棵树已清空。"""
+
+    try:
+        if process.poll() is not None:
+            return True
+        process.terminate()
+        remaining_seconds = max(0.0, graceful_deadline - time.monotonic())
+        if remaining_seconds > 0:
+            try:
+                process.wait(timeout=remaining_seconds)
+                return True
+            except subprocess.TimeoutExpired:
+                pass
+        process.kill()
+        process.wait(timeout=FORCE_WAIT_SECONDS)
+        return True
+    except (OSError, subprocess.SubprocessError):
+        try:
+            return process.poll() is not None
+        except Exception:
+            return False
+
+
 def _terminate_posix_group(
     process: subprocess.Popen[Any],
     grace_seconds: float,
+    tracker: PosixGroupTracker | None = None,
 ) -> tuple[bool, list[int]]:
-    process_group_id = process.pid
+    grace_deadline = time.monotonic() + grace_seconds
+    try:
+        tracker = tracker or _create_posix_tracker(process)
+        remaining = tracker.inspect(grace_deadline)
+    except PosixInspectionError:
+        known = sorted(tracker.members) if tracker is not None else [process.pid]
+        if _stop_direct_process(process, grace_deadline):
+            known = [pid for pid in known if pid != process.pid]
+        return False, known
+    if not remaining:
+        return True, []
+    process_group_id = tracker.process_group_id
     try:
         os.killpg(process_group_id, signal.SIGTERM)
     except ProcessLookupError:
+        tracker.observed_empty = True
         return True, []
     except PermissionError:
-        return False, _posix_group_pids(process_group_id)
-    deadline = time.monotonic() + grace_seconds
+        _stop_direct_process(process, grace_deadline)
+        return False, remaining
     process.poll()
-    remaining = _posix_group_pids(process_group_id)
-    while remaining and time.monotonic() < deadline:
-        time.sleep(0.05)
+    while remaining and time.monotonic() < grace_deadline:
+        time.sleep(
+            min(0.05, max(0.0, grace_deadline - time.monotonic()))
+        )
         process.poll()
-        remaining = _posix_group_pids(process_group_id)
-    if remaining:
         try:
+            remaining = tracker.inspect(grace_deadline)
+        except PosixInspectionError:
+            _stop_direct_process(process, grace_deadline)
+            return False, remaining
+    if remaining:
+        force_deadline = time.monotonic() + FORCE_WAIT_SECONDS
+        try:
+            remaining = tracker.inspect(force_deadline)
+            if not remaining:
+                return True, []
             os.killpg(process_group_id, signal.SIGKILL)
         except ProcessLookupError:
+            tracker.observed_empty = True
             remaining = []
-        except PermissionError:
+        except (PermissionError, PosixInspectionError):
+            _stop_direct_process(process, force_deadline)
             return False, remaining
-        force_deadline = time.monotonic() + FORCE_WAIT_SECONDS
         while remaining and time.monotonic() < force_deadline:
-            time.sleep(0.05)
+            time.sleep(
+                min(0.05, max(0.0, force_deadline - time.monotonic()))
+            )
             process.poll()
-            remaining = _posix_group_pids(process_group_id)
+            try:
+                remaining = tracker.inspect(force_deadline)
+            except PosixInspectionError:
+                _stop_direct_process(process, force_deadline)
+                return False, remaining
     try:
         process.wait(timeout=0.1)
     except (OSError, subprocess.SubprocessError):
@@ -453,15 +702,19 @@ def terminate_process_tree(
     process: subprocess.Popen[Any],
     grace_seconds: float,
     windows_job: Any | None = None,
+    posix_tracker: PosixGroupTracker | None = None,
 ) -> tuple[bool, list[int]]:
     """按平台回收本次命令树，并返回仍存活的精确 PID。"""
 
     if os.name == "nt":
         return _terminate_windows_tree(process, grace_seconds, windows_job)
-    return _terminate_posix_group(process, grace_seconds)
+    return _terminate_posix_group(process, grace_seconds, posix_tracker)
 
 
-def remaining_process_tree_pids(process: subprocess.Popen[Any]) -> list[int]:
+def remaining_process_tree_pids(
+    process: subprocess.Popen[Any],
+    posix_tracker: PosixGroupTracker | None = None,
+) -> list[int]:
     """检查根进程退出后仍留在本次树中的子进程。"""
 
     if os.name == "nt":
@@ -470,13 +723,15 @@ def remaining_process_tree_pids(process: subprocess.Popen[Any]) -> list[int]:
             for pid in _windows_descendant_pids(process.pid)
             if _windows_process_running(pid)
         ]
-    return _posix_group_pids(process.pid)
+    tracker = posix_tracker or _create_posix_tracker(process)
+    return tracker.inspect(time.monotonic() + 1.0)
 
 
 def cleanup_completed_process_tree(
     process: subprocess.Popen[Any],
     grace_seconds: float,
     windows_job: Any | None,
+    posix_tracker: PosixGroupTracker | None = None,
 ) -> tuple[bool, list[int]]:
     """回收正常 root 退出后仍可能存活的子进程。"""
 
@@ -504,10 +759,133 @@ def cleanup_completed_process_tree(
             return closed and not remaining, remaining
         finally:
             _close_windows_process_handles(tracked)
-    remaining = remaining_process_tree_pids(process)
+    try:
+        remaining = remaining_process_tree_pids(process, posix_tracker)
+    except PosixInspectionError:
+        known = (
+            sorted(posix_tracker.members)
+            if posix_tracker is not None
+            else [process.pid]
+        )
+        return False, known
     if not remaining:
         return True, []
-    return terminate_process_tree(process, grace_seconds, windows_job)
+    return terminate_process_tree(
+        process,
+        grace_seconds,
+        windows_job,
+        posix_tracker,
+    )
+
+
+@contextmanager
+def _temporary_cancellation_handlers(
+    cancellation: CancellationState,
+) -> Iterator[None]:
+    previous: list[tuple[Any, Any]] = []
+
+    def request_cancel(signum: int, _frame: Any) -> None:
+        cancellation.request(signal.Signals(signum).name.lower())
+
+    candidates = [
+        getattr(signal, name, None)
+        for name in ("SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK")
+    ]
+    try:
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            try:
+                previous.append((candidate, signal.getsignal(candidate)))
+                signal.signal(candidate, request_cancel)
+            except (OSError, ValueError):
+                if previous and previous[-1][0] == candidate:
+                    previous.pop()
+        yield
+    finally:
+        for candidate, handler in reversed(previous):
+            try:
+                signal.signal(candidate, handler)
+            except (OSError, ValueError):
+                pass
+
+
+def _wait_for_terminal(
+    process: subprocess.Popen[Any],
+    *,
+    started_monotonic: float,
+    timeout_seconds: float,
+    heartbeat_seconds: float,
+    reporter: StatusReporter | None,
+    cancellation: CancellationState,
+) -> tuple[str, int | None]:
+    deadline = started_monotonic + timeout_seconds
+    next_heartbeat = started_monotonic + heartbeat_seconds
+    while True:
+        now = time.monotonic()
+        if (
+            cancellation.requested_at is not None
+            and cancellation.requested_at <= deadline
+        ):
+            return "cancelled", None
+        if now >= deadline:
+            return "timeout", None
+        exit_code = process.poll()
+        if exit_code is not None:
+            return "completed", exit_code
+        if reporter is not None and now >= next_heartbeat:
+            elapsed = max(0.0, now - started_monotonic)
+            remaining = max(0.0, deadline - now)
+            reporter.emit(
+                "bounded-command: heartbeat, "
+                f"pid={process.pid}, elapsed={elapsed:.1f}s, "
+                f"remaining={remaining:.1f}s"
+            )
+            while next_heartbeat <= now:
+                next_heartbeat += heartbeat_seconds
+        wake_at = min(deadline, next_heartbeat)
+        try:
+            time.sleep(
+                min(
+                    WAIT_POLL_SECONDS,
+                    max(0.001, wake_at - time.monotonic()),
+                )
+            )
+        except KeyboardInterrupt:
+            cancellation.request("sigint")
+
+
+def _cleanup_tree_safely(
+    process: subprocess.Popen[Any],
+    *,
+    grace_seconds: float,
+    windows_job: Any | None,
+    posix_tracker: PosixGroupTracker | None,
+    completed: bool,
+) -> tuple[bool, list[int]]:
+    try:
+        if completed:
+            return cleanup_completed_process_tree(
+                process,
+                grace_seconds,
+                windows_job,
+                posix_tracker,
+            )
+        return terminate_process_tree(
+            process,
+            grace_seconds,
+            windows_job,
+            posix_tracker,
+        )
+    except (Exception, KeyboardInterrupt):
+        if os.name == "nt" and windows_job is not None:
+            try:
+                _close_windows_job(windows_job)
+            except Exception:
+                pass
+        stopped = _stop_direct_process(process, time.monotonic())
+        running = not stopped
+        return False, [process.pid] if running else []
 
 
 def run_bounded_command(
@@ -516,77 +894,84 @@ def run_bounded_command(
     cwd: Path,
     timeout_seconds: float,
     grace_seconds: float,
+    heartbeat_seconds: float = DEFAULT_HEARTBEAT_SECONDS,
+    inherit_stdin: bool = False,
+    reporter: StatusReporter | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """运行一个无 shell 的有限命令并返回稳定结果。"""
 
     started_at = _timestamp()
     started_monotonic = time.monotonic()
-    popen_options: dict[str, Any] = {"cwd": str(cwd)}
+    if reporter is not None:
+        reporter.emit(
+            "bounded-command: starting, "
+            f"timeout={timeout_seconds:g}s"
+        )
+    popen_options: dict[str, Any] = {
+        "cwd": str(cwd),
+        "stdin": None if inherit_stdin else subprocess.DEVNULL,
+    }
     if os.name == "nt":
         popen_options["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
         popen_options["start_new_session"] = True
-    try:
-        process = subprocess.Popen(list(command), **popen_options)
-    except OSError as exc:
-        payload = _result(
-            started_at=started_at,
-            started_monotonic=started_monotonic,
-            result="failed",
-            exit_code=EXIT_LAUNCH_FAILED,
-            termination="launch-failed",
-            cleanup_verified=True,
-            pid=None,
-            cleanup_failure_pids=[],
-            error_code="RUN_STATE_COMMAND_LAUNCH_FAILED",
-            error=f"{type(exc).__name__}: 命令未启动。",
-        )
-        return EXIT_LAUNCH_FAILED, payload
+    cancellation = CancellationState()
     windows_job = None
-    if os.name == "nt":
+    posix_tracker = None
+    with _temporary_cancellation_handlers(cancellation):
         try:
-            windows_job = _create_windows_job(process)
+            process = subprocess.Popen(list(command), **popen_options)
+        except OSError as exc:
+            payload = _result(
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                result="failed",
+                exit_code=EXIT_LAUNCH_FAILED,
+                termination="launch-failed",
+                cleanup_verified=True,
+                pid=None,
+                cleanup_failure_pids=[],
+                error_code="RUN_STATE_COMMAND_LAUNCH_FAILED",
+                error=f"{type(exc).__name__}: 命令未启动。",
+            )
+            return EXIT_LAUNCH_FAILED, payload
+        if reporter is not None:
+            reporter.emit(
+                "bounded-command: started, "
+                f"pid={process.pid}, timeout={timeout_seconds:g}s"
+            )
+        setup_error: Exception | None = None
+        try:
+            if os.name == "nt":
+                windows_job = _create_windows_job(process)
+            else:
+                posix_tracker = _create_posix_tracker(process)
         except KeyboardInterrupt:
-            cleanup_verified, failure_pids = terminate_process_tree(
+            cancellation.request("sigint")
+        except Exception as exc:
+            setup_error = exc
+        if setup_error is not None:
+            cleanup_verified, failure_pids = _cleanup_tree_safely(
                 process,
-                grace_seconds,
-                None,
+                grace_seconds=grace_seconds,
+                windows_job=windows_job,
+                posix_tracker=posix_tracker,
+                completed=False,
             )
-            exit_code = EXIT_CANCELLED if cleanup_verified else EXIT_CLEANUP_FAILED
-            return exit_code, _result(
+            result_exit_code = (
+                EXIT_LAUNCH_FAILED
+                if cleanup_verified
+                else EXIT_CLEANUP_FAILED
+            )
+            return result_exit_code, _result(
                 started_at=started_at,
                 started_monotonic=started_monotonic,
                 result="failed",
-                exit_code=exit_code,
-                termination="cancelled" if cleanup_verified else "cleanup-failed",
-                cleanup_verified=cleanup_verified,
-                pid=process.pid,
-                cleanup_failure_pids=failure_pids,
-                error_code=(
-                    "RUN_STATE_COMMAND_CANCELLED"
-                    if cleanup_verified
-                    else "RUN_STATE_COMMAND_CLEANUP_FAILED"
-                ),
-                error=(
-                    "用户取消后已完成有界清理。"
-                    if cleanup_verified
-                    else "用户取消后仍有本次命令树进程存活。"
-                ),
-            )
-        except Exception:
-            cleanup_verified, failure_pids = terminate_process_tree(
-                process,
-                grace_seconds,
-                None,
-            )
-            exit_code = EXIT_LAUNCH_FAILED if cleanup_verified else EXIT_CLEANUP_FAILED
-            return exit_code, _result(
-                started_at=started_at,
-                started_monotonic=started_monotonic,
-                result="failed",
-                exit_code=exit_code,
+                exit_code=result_exit_code,
                 termination=(
-                    "launch-failed" if cleanup_verified else "cleanup-failed"
+                    "launch-failed"
+                    if cleanup_verified
+                    else "cleanup-failed"
                 ),
                 cleanup_verified=cleanup_verified,
                 pid=process.pid,
@@ -597,21 +982,62 @@ def run_bounded_command(
                     else "RUN_STATE_COMMAND_CLEANUP_FAILED"
                 ),
                 error=(
-                    "Windows 进程隔离初始化失败，已回收本次命令树。"
+                    "进程隔离初始化失败，已回收本次命令树。"
                     if cleanup_verified
-                    else "Windows 进程隔离初始化失败，且仍有本次命令树进程存活。"
+                    else "进程隔离初始化失败，且无法验证本次命令树已清空。"
                 ),
             )
-    try:
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        cleanup_verified, failure_pids = terminate_process_tree(
+        terminal, child_exit_code = _wait_for_terminal(
             process,
-            grace_seconds,
-            windows_job,
+            started_monotonic=started_monotonic,
+            timeout_seconds=timeout_seconds,
+            heartbeat_seconds=heartbeat_seconds,
+            reporter=reporter,
+            cancellation=cancellation,
+        )
+        if terminal == "completed":
+            cleanup_verified, failure_pids = _cleanup_tree_safely(
+                process,
+                grace_seconds=grace_seconds,
+                windows_job=windows_job,
+                posix_tracker=posix_tracker,
+                completed=True,
+            )
+            if not cleanup_verified:
+                return EXIT_CLEANUP_FAILED, _result(
+                    started_at=started_at,
+                    started_monotonic=started_monotonic,
+                    result="failed",
+                    exit_code=EXIT_CLEANUP_FAILED,
+                    termination="cleanup-failed",
+                    cleanup_verified=False,
+                    pid=process.pid,
+                    cleanup_failure_pids=failure_pids,
+                    error_code="RUN_STATE_COMMAND_CLEANUP_FAILED",
+                    error="命令结束后仍有本次命令树进程存活。",
+                )
+            assert child_exit_code is not None
+            return child_exit_code, _result(
+                started_at=started_at,
+                started_monotonic=started_monotonic,
+                result="passed" if child_exit_code == 0 else "failed",
+                exit_code=child_exit_code,
+                termination="completed",
+                cleanup_verified=True,
+                pid=process.pid,
+                cleanup_failure_pids=[],
+                error_code=None,
+                error=None,
+            )
+        cleanup_verified, failure_pids = _cleanup_tree_safely(
+            process,
+            grace_seconds=grace_seconds,
+            windows_job=windows_job,
+            posix_tracker=posix_tracker,
+            completed=False,
         )
         if not cleanup_verified:
-            payload = _result(
+            return EXIT_CLEANUP_FAILED, _result(
                 started_at=started_at,
                 started_monotonic=started_monotonic,
                 result="failed",
@@ -621,82 +1047,35 @@ def run_bounded_command(
                 pid=process.pid,
                 cleanup_failure_pids=failure_pids,
                 error_code="RUN_STATE_COMMAND_CLEANUP_FAILED",
-                error="deadline 后仍有本次命令树进程存活。",
+                error=(
+                    "deadline 后仍有本次命令树进程存活。"
+                    if terminal == "timeout"
+                    else "用户取消后仍有本次命令树进程存活。"
+                ),
             )
-            return EXIT_CLEANUP_FAILED, payload
-        payload = _result(
+        result_exit_code = (
+            EXIT_TIMEOUT if terminal == "timeout" else EXIT_CANCELLED
+        )
+        return result_exit_code, _result(
             started_at=started_at,
             started_monotonic=started_monotonic,
             result="failed",
-            exit_code=EXIT_TIMEOUT,
-            termination="timeout",
+            exit_code=result_exit_code,
+            termination=terminal,
             cleanup_verified=True,
             pid=process.pid,
             cleanup_failure_pids=[],
-            error_code="RUN_STATE_COMMAND_TIMEOUT",
-            error="命令超过 deadline，已完成有界清理。",
-        )
-        return EXIT_TIMEOUT, payload
-    except KeyboardInterrupt:
-        cleanup_verified, failure_pids = terminate_process_tree(
-            process,
-            grace_seconds,
-            windows_job,
-        )
-        exit_code = EXIT_CANCELLED if cleanup_verified else EXIT_CLEANUP_FAILED
-        payload = _result(
-            started_at=started_at,
-            started_monotonic=started_monotonic,
-            result="failed",
-            exit_code=exit_code,
-            termination="cancelled" if cleanup_verified else "cleanup-failed",
-            cleanup_verified=cleanup_verified,
-            pid=process.pid,
-            cleanup_failure_pids=failure_pids,
             error_code=(
-                "RUN_STATE_COMMAND_CANCELLED"
-                if cleanup_verified
-                else "RUN_STATE_COMMAND_CLEANUP_FAILED"
+                "RUN_STATE_COMMAND_TIMEOUT"
+                if terminal == "timeout"
+                else "RUN_STATE_COMMAND_CANCELLED"
             ),
             error=(
-                "用户取消后已完成有界清理。"
-                if cleanup_verified
-                else "用户取消后仍有本次命令树进程存活。"
+                "命令超过 deadline，已完成有界清理。"
+                if terminal == "timeout"
+                else "用户取消后已完成有界清理。"
             ),
         )
-        return exit_code, payload
-    cleanup_verified, failure_pids = cleanup_completed_process_tree(
-        process,
-        grace_seconds,
-        windows_job,
-    )
-    if not cleanup_verified:
-        payload = _result(
-            started_at=started_at,
-            started_monotonic=started_monotonic,
-            result="failed",
-            exit_code=EXIT_CLEANUP_FAILED,
-            termination="cleanup-failed",
-            cleanup_verified=False,
-            pid=process.pid,
-            cleanup_failure_pids=failure_pids,
-            error_code="RUN_STATE_COMMAND_CLEANUP_FAILED",
-            error="命令结束后仍有本次命令树进程存活。",
-        )
-        return EXIT_CLEANUP_FAILED, payload
-    payload = _result(
-        started_at=started_at,
-        started_monotonic=started_monotonic,
-        result="passed" if exit_code == 0 else "failed",
-        exit_code=exit_code,
-        termination="completed",
-        cleanup_verified=True,
-        pid=process.pid,
-        cleanup_failure_pids=[],
-        error_code=None,
-        error=None,
-    )
-    return exit_code, payload
 
 
 def _bounded_seconds(value: str, *, maximum: float, option: str) -> float:
@@ -729,11 +1108,25 @@ def _grace_seconds(value: str) -> float:
     )
 
 
+def _heartbeat_seconds(value: str) -> float:
+    return _bounded_seconds(
+        value,
+        maximum=MAX_HEARTBEAT_SECONDS,
+        option="--heartbeat-seconds",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="在 deadline 内运行一个有限命令")
     parser.add_argument("--cwd", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=_timeout_seconds, required=True)
     parser.add_argument("--grace-seconds", type=_grace_seconds, default=5.0)
+    parser.add_argument(
+        "--heartbeat-seconds",
+        type=_heartbeat_seconds,
+        default=DEFAULT_HEARTBEAT_SECONDS,
+    )
+    parser.add_argument("--inherit-stdin", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     command = list(args.command)
@@ -766,11 +1159,15 @@ def main() -> int:
                 "-- 后必须提供 program 和参数。",
                 EXIT_LAUNCH_FAILED,
             )
+        reporter = StatusReporter()
         exit_code, payload = run_bounded_command(
             command,
             cwd=cwd,
             timeout_seconds=args.timeout_seconds,
             grace_seconds=args.grace_seconds,
+            heartbeat_seconds=args.heartbeat_seconds,
+            inherit_stdin=args.inherit_stdin,
+            reporter=reporter,
         )
     except BoundedCommandError as exc:
         print(f"FAIL [{exc.code}]: {exc.message}", file=sys.stderr)
@@ -781,11 +1178,10 @@ def main() -> int:
     cleanup = "verified" if payload["cleanup_verified"] else "failed"
     remaining = payload["cleanup_failure_pids"]
     suffix = f", remaining-pids={','.join(map(str, remaining))}" if remaining else ""
-    print(
+    reporter.emit(
         "bounded-command: "
         f"{payload['termination']}, exit={payload['exit_code']}, "
-        f"duration={payload['duration_ms']}ms, cleanup={cleanup}{suffix}",
-        file=sys.stderr,
+        f"duration={payload['duration_ms']}ms, cleanup={cleanup}{suffix}"
     )
     return exit_code
 
