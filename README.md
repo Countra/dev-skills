@@ -50,7 +50,7 @@
 - required validation 或 contract 指定的 review 缺失时不能完成阶段；多阶段任务还必须通过最终集成 validation，高风险要求 independent。
 - 计划 digest 漂移时停止并重新批准，不生成 amendment 或 revision archive 制品。
 - 失败后改变策略，只重跑受影响检查；同一失败命令不得原样执行第三次。
-- 有卡死风险的有限命令使用跨平台 `harness_bounded_command.py`；长期服务仍交给 Process Manager。
+- 有卡死风险的有限命令使用跨平台 `harness_bounded_command.py`，具备启动提示、周期心跳、非交互 stdin、统一取消和进程树回收；长期服务仍交给 Process Manager。
 - Reviewer 结果只以一句摘要记录在 run-state，不保存 findings JSON。
 - 提交、外部写入和提权分别要求明确授权；授权提交使用 `git commit -F`。
 - CI 在 Ubuntu 运行核心单测和四文件联动测试，并在 Windows、Ubuntu、macOS 验证 bounded-command；不创建 Agent 或上传 artifact。

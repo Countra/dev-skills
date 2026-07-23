@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-07-23
+
+### Changed: 有限命令黑洞防护
+
+- Planner 与 Executor 将系统 provider、进程枚举、包管理器、测试、构建及已有卡死历史的命令路由到可靠宿主 deadline 或 bounded helper，并禁止无界全系统 CIM/WMI 扫描。
+- bounded helper 增加启动提示、周期 heartbeat、默认非交互 stdin 和显式交互开关；Ctrl+C、SIGTERM、SIGHUP、timeout 与 Windows break 统一进入有界清理。
+- Windows 保留 Job Object 与受控 handle；Linux/macOS 增加 PID、启动时间、PGID、SID 身份校验和成员查询 deadline，身份不明时失败关闭且不发送进程组信号。
+- CI 继续在 Windows、Ubuntu、macOS 运行同一 bounded-command suite；不上传 Actions artifact。
+
 ## 2026-07-22
 
 ### Breaking: Coding Harness 约定优先精简

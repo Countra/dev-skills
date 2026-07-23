@@ -29,4 +29,17 @@ Get-CimInstance Win32_Process | Where-Object { $*.Name -match '^(node|pnpm|cmd)\
 - `124`、`125`、`126`、`130` 都记录为失败。
 - 引号、管道、重定向、命令连接、变量展开或 shell eval flag 必须在计划检查阶段拒绝；复杂逻辑先写入受版本控制的脚本。
 
+## CASE-CMD-03 静默与取消
+
+输入为可能长期无输出、等待 stdin 或在取消后留下子进程的有限命令。
+
+预期行为：
+
+- helper 在启动前后立即输出状态，并按默认 15 秒间隔输出不含 argv 或秘密的 heartbeat。
+- stdin 默认非交互；只有明确需要时才显式使用 `--inherit-stdin`，仍保留同一 deadline。
+- Ctrl+C、SIGTERM、SIGHUP、Windows break 和 wall timeout 统一进入有界进程树清理。
+- 清理失败返回 `125` 并覆盖 timeout/cancel；否则 deadline 返回 `124`、取消返回 `130`。
+- POSIX 只在 PID、启动时间、PGID 和 SID 可验证时发送 group signal；身份不明时停止直接子进程并以 `125` 失败关闭。
+- heartbeat 或最终摘要的 stderr 已关闭时继续等待和清理，不改变目标退出结果。
+
 这些用例验证 Skill 约定和调用形状，不声称能拦截绕过 Skill 的宿主 tool call。

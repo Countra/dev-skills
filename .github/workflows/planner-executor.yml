@@ -63,6 +63,7 @@ jobs:
     env:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
     steps:
       - name: Checkout candidate tree
         uses: actions/checkout@v4
@@ -72,5 +73,5 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run bounded command tests
+      - name: Run bounded command observation and cleanup tests
         run: python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p "test_bounded_command.py" -v

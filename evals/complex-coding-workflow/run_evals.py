@@ -216,6 +216,16 @@ def _assert_static_contract() -> None:
     )
     if any(term not in executor_text + executor_safety_text for term in executor_command_terms):
         raise EvalFailure("Executor bounded command routing convention is missing")
+    executor_observation_terms = (
+        "--heartbeat-seconds",
+        "--inherit-stdin",
+        "SIGTERM",
+        "SIGHUP",
+        "PID、启动时间、PGID 和 SID",
+        "身份不可验证",
+    )
+    if any(term not in executor_safety_text for term in executor_observation_terms):
+        raise EvalFailure("Executor bounded observation convention is missing")
     command_case_terms = (
         "Get-CimInstance Win32_Process",
         "Get-Process -Id <pid>",
@@ -225,6 +235,9 @@ def _assert_static_contract() -> None:
         "125",
         "126",
         "130",
+        "heartbeat",
+        "默认非交互",
+        "stderr 已关闭",
     )
     if any(term not in command_safety_cases for term in command_case_terms):
         raise EvalFailure("Command safety semantic cases are incomplete")
