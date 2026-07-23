@@ -416,6 +416,9 @@ class BoundedCommandTest(unittest.TestCase):
         self.assertEqual(124, completed.returncode, completed.stderr)
         child_pid = int(pid_file.read_text(encoding="utf-8"))
         self.addCleanup(self._force_stop, child_pid)
+        deadline = time.monotonic() + 3
+        while self._is_running(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
         self.assertFalse(self._is_running(child_pid))
 
     @unittest.skipUnless(os.name == "nt", "仅 Windows 验证原生 CTRL_BREAK")
@@ -455,6 +458,9 @@ class BoundedCommandTest(unittest.TestCase):
         _, stderr = wrapper.communicate(timeout=15)
         self.assertEqual(130, wrapper.returncode, stderr)
         self.assertIn("bounded-command: cancelled", stderr)
+        deadline = time.monotonic() + 3
+        while self._is_running(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
         self.assertFalse(self._is_running(child_pid))
 
     def test_normal_parent_exit_does_not_leave_child(self) -> None:
