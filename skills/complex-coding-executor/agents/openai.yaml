@@ -1,4 +1,4 @@
 interface:
   display_name: "Complex Coding Executor"
   short_description: "执行并恢复已批准的多阶段编码任务"
-  default_prompt: "使用 $complex-coding-executor 从 compact task bundle 和 Git 事实恢复当前阶段，持续实现、验证和审查，不生成多余工作流制品。"
+  default_prompt: "使用 $complex-coding-executor 从 compact task bundle 和 Git 事实恢复当前阶段，持续实现、验证和审查；对可能卡死的有限命令使用有 deadline、heartbeat 和进程树回收的执行入口，不生成多余工作流制品。"

@@ -178,6 +178,39 @@ class CompactPlanCheckTest(unittest.TestCase):
                     self.codes(validate_contract(contract)),
                 )
 
+    def test_validation_command_rejects_shell_syntax_and_ambiguous_spacing(self) -> None:
+        commands = (
+            "python  -m unittest",
+            "python\t-m unittest",
+            "python -c \"print('unsafe')\"",
+            "python -m unittest | Tee-Object result.txt",
+            "python -m unittest > result.txt",
+            "pwsh -NoProfile -Command Get-Date",
+            r"C:\PowerShell\pwsh.exe -NoProfile -Command Get-Date",
+            "sh -lc true",
+            "python -c pass",
+            "node -e process.exit(0)",
+            "python $SCRIPT",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                contract = compact_contract()
+                contract["validations"][0]["command"] = command
+                self.assertIn(
+                    "PLAN_VALIDATION_COMMAND_UNSAFE",
+                    self.codes(validate_contract(contract)),
+                )
+
+    def test_validation_command_keeps_program_wildcard_literal(self) -> None:
+        contract = compact_contract()
+        contract["validations"][0]["command"] = (
+            "python -m unittest discover -s tests -p test_*.py -v"
+        )
+        self.assertNotIn(
+            "PLAN_VALIDATION_COMMAND_UNSAFE",
+            self.codes(validate_contract(contract)),
+        )
+
     def test_high_risk_requires_independent_review(self) -> None:
         contract = compact_contract(risk="high")
         contract["stages"][0]["review"] = "same-context"

@@ -2,18 +2,32 @@
 
 ## 有限命令
 
-测试、构建、lint、类型检查和诊断应有 deadline。宿主工具不能可靠终止、命令有卡死历史或可能长时间静默时使用：
+快速、确定范围的文件和 Git 读取可使用宿主短 deadline。测试、构建、lint、类型检查、包管理器、系统 provider、进程枚举、已有卡死历史或可能长时间静默的诊断，若宿主不能证明会按时回收受支持的进程边界，必须实际使用：
 
 ```text
 python harness_bounded_command.py \
   --cwd <absolute-workspace> \
   --timeout-seconds <seconds> \
   --grace-seconds 5 \
+  --heartbeat-seconds 15 \
   -- <program> <args...>
 ```
 
 helper 不默认启用 shell。确需管道时显式调用 `pwsh -NoProfile -NonInteractive -Command` 或 `sh -lc`。
 单条命令 deadline 最长 24 小时，优雅退出窗口最长 5 分钟；更长的持续进程应交给 Process Manager。
+目标 stdin 默认连接到空设备，避免隐藏 prompt 无限等待；只有明确的交互任务才使用 `--inherit-stdin`，且不能移除 deadline。
+
+helper 会立即输出 starting/started 状态，并按默认 15 秒间隔输出 root PID、elapsed 和 remaining；状态不包含 argv、环境或秘密，也不捕获目标 stdout/stderr。状态输出端关闭只会停用后续提示，不改变目标退出码或清理流程。
+
+contract validation 不使用 shell 表达式。`command` 只允许单个 ASCII 空格分隔的 program/args；引号、管道、重定向、命令连接和变量展开必须先写成受版本控制的脚本。Executor 将 `timeout_seconds` 传给 helper，默认 grace 为 5 秒；helper 的 `124/125/126/130` 都是 validation 失败。
+
+宿主初始观察窗口不超过 10 秒。命令转为可恢复 session 后可以继续轮询，但使用启动时固定的绝对 deadline，任何新输出或轮询都不能重置预算。宿主兜底至少覆盖：
+
+```text
+10 秒 spawn budget + helper timeout + cleanup grace + 5 秒 force wait + 10 秒 margin
+```
+
+Skill 无法拦截绕过规则的任意宿主 tool call；这里的保证只覆盖实际通过 helper 启动的命令。
 
 退出码：
 
@@ -22,7 +36,21 @@ helper 不默认启用 shell。确需管道时显式调用 `pwsh -NoProfile -Non
 - `126`：命令无法启动
 - `130`：用户取消且清理成功
 
-Windows 使用 Job Object 与受控进程 handle；Linux/macOS 使用独立 process group。只回收本次命令树，不做全系统名称匹配，不自动提权。
+Ctrl+C、SIGTERM、POSIX SIGHUP 和可用的 Windows break 信号统一进入同一有界清理。清理失败 `125` 优先于 timeout/cancel；deadline 先到返回 `124`，取消先到返回 `130`。
+
+Windows 使用 Job Object 与受控进程 handle；Linux/macOS 使用独立 process group，并以 PID、启动时间、PGID 和 SID 校验身份。成员查询受 cleanup deadline 限制；身份不可验证或进程组曾为空后重新出现时不发送 group signal，返回 `125`。此时仍精确停止直接子进程，但不谎称整棵树已清空。
+
+只回收本次命令树，不做全系统名称匹配，不自动提权。主动 `setsid`、double-fork、daemonize、Windows breakaway、不可捕获的 SIGKILL、系统崩溃或断电不在保证范围；需要脱离前台的目标必须改用 foreground 模式或 Process Manager。
+
+## 进程诊断
+
+先读取当前 tool session、已知 PID 或 Process Manager ownership。只需存活状态时使用 `Get-Process -Id <pid>`；确需 Windows CommandLine 时使用 provider-side filter 和 operation timeout：
+
+```text
+Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = <pid>" -Property ProcessId,Name,CommandLine -OperationTimeoutSec 10
+```
+
+该查询仍需由 helper 包住 `pwsh -NoProfile -NonInteractive -Command ...` 并设置较短 wall deadline。不要运行 `Get-CimInstance Win32_Process | Where-Object ...` 全量枚举；PowerShell pipeline 当前对象是 `$_`，不是 `$*`。没有 PID 或 ownership 时先缩窄证据，不通过全系统名称扫描猜测。
 
 ## 失败收敛
 
