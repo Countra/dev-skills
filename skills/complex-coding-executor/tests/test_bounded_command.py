@@ -43,15 +43,14 @@ class BoundedCommandTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name).resolve()
 
-    def run_cli(
+    def cli_arguments(
         self,
         *command: str,
         timeout_seconds: str = "5",
         grace_seconds: str = "1",
         heartbeat_seconds: str = "15",
         inherit_stdin: bool = False,
-        input_text: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
+    ) -> list[str]:
         arguments = [
             sys.executable,
             "-u",
@@ -71,8 +70,25 @@ class BoundedCommandTest(unittest.TestCase):
         if inherit_stdin:
             arguments.append("--inherit-stdin")
         arguments.extend(["--", *command])
+        return arguments
+
+    def run_cli(
+        self,
+        *command: str,
+        timeout_seconds: str = "5",
+        grace_seconds: str = "1",
+        heartbeat_seconds: str = "15",
+        inherit_stdin: bool = False,
+        input_text: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
-            arguments,
+            self.cli_arguments(
+                *command,
+                timeout_seconds=timeout_seconds,
+                grace_seconds=grace_seconds,
+                heartbeat_seconds=heartbeat_seconds,
+                inherit_stdin=inherit_stdin,
+            ),
             check=False,
             capture_output=True,
             text=True,
@@ -368,6 +384,77 @@ class BoundedCommandTest(unittest.TestCase):
         deadline = time.monotonic() + 3
         while self._is_running(child_pid) and time.monotonic() < deadline:
             time.sleep(0.05)
+        self.assertFalse(self._is_running(child_pid))
+
+    @unittest.skipUnless(os.name == "nt", "仅 Windows 验证原生 Job fallback")
+    def test_windows_no_console_fallback_reclaims_child(self) -> None:
+        pid_file = self.root / "no-console-child.pid"
+        child_code = (
+            "import pathlib,subprocess,sys,time;"
+            "child=subprocess.Popen([sys.executable,'-c',"
+            "'import time; time.sleep(60)']);"
+            "pathlib.Path(sys.argv[1]).write_text("
+            "str(child.pid),encoding='utf-8');"
+            "time.sleep(60)"
+        )
+        completed = subprocess.run(
+            self.cli_arguments(
+                sys.executable,
+                "-c",
+                child_code,
+                str(pid_file),
+                timeout_seconds="2",
+                grace_seconds="1",
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            timeout=20,
+        )
+        self.assertEqual(124, completed.returncode, completed.stderr)
+        child_pid = int(pid_file.read_text(encoding="utf-8"))
+        self.addCleanup(self._force_stop, child_pid)
+        self.assertFalse(self._is_running(child_pid))
+
+    @unittest.skipUnless(os.name == "nt", "仅 Windows 验证原生 CTRL_BREAK")
+    def test_windows_ctrl_break_cancels_and_reclaims_child(self) -> None:
+        pid_file = self.root / "ctrl-break-child.pid"
+        child_code = (
+            "import pathlib,subprocess,sys,time;"
+            "child=subprocess.Popen([sys.executable,'-c',"
+            "'import time; time.sleep(60)']);"
+            "pathlib.Path(sys.argv[1]).write_text("
+            "str(child.pid),encoding='utf-8');"
+            "time.sleep(60)"
+        )
+        wrapper = subprocess.Popen(
+            self.cli_arguments(
+                sys.executable,
+                "-c",
+                child_code,
+                str(pid_file),
+                timeout_seconds="10",
+                grace_seconds="1",
+            ),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+        )
+        self.addCleanup(self._force_stop, wrapper.pid)
+        deadline = time.monotonic() + 5
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(pid_file.exists())
+        child_pid = int(pid_file.read_text(encoding="utf-8"))
+        self.addCleanup(self._force_stop, child_pid)
+        wrapper.send_signal(signal.CTRL_BREAK_EVENT)
+        _, stderr = wrapper.communicate(timeout=15)
+        self.assertEqual(130, wrapper.returncode, stderr)
+        self.assertIn("bounded-command: cancelled", stderr)
         self.assertFalse(self._is_running(child_pid))
 
     def test_normal_parent_exit_does_not_leave_child(self) -> None:
