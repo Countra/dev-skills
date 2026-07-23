@@ -48,6 +48,21 @@ VALIDATION_FIELDS = {
 }
 PERMISSION_FIELDS = {"commit", "external_write", "elevated_tool"}
 MAX_VALIDATION_TIMEOUT_SECONDS = 86_400
+UNSAFE_COMMAND_CHARACTERS = frozenset(
+    {"'", '"', "|", ";", "&", "<", ">", "`", "$"}
+)
+INLINE_EVAL_FLAGS = {
+    "bash": {"-c", "-lc"},
+    "cmd": {"/c", "/k"},
+    "node": {"--eval", "--print", "-e", "-p"},
+    "powershell": {"-c", "-command"},
+    "pwsh": {"-c", "-command"},
+    "py": {"-c"},
+    "python": {"-c"},
+    "python3": {"-c"},
+    "sh": {"-c", "-lc"},
+    "zsh": {"-c", "-lc"},
+}
 
 
 @dataclass(frozen=True)
@@ -99,6 +114,38 @@ def _strings(
     if len(result) != len(set(result)):
         _issue(issues, "error", "PLAN_CONTRACT_DUPLICATE", f"{path} 包含重复值。")
     return result
+
+
+def _validation_command(value: Any, path: str, issues: list[ContractIssue]) -> str:
+    """校验无需 shell 即可稳定拆分的 validation 命令。"""
+
+    command = _text(value, path, issues)
+    if not command or not isinstance(value, str):
+        return command
+    tokens = command.split(" ")
+    has_unsafe_spacing = (
+        value != command
+        or any(character.isspace() and character != " " for character in value)
+        or any(not token for token in tokens)
+    )
+    has_unsafe_character = any(
+        character in UNSAFE_COMMAND_CHARACTERS for character in command
+    )
+    program = tokens[0].replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if program.endswith(".exe"):
+        program = program[:-4]
+    invokes_inline_eval = any(
+        token.lower() in INLINE_EVAL_FLAGS.get(program, set())
+        for token in tokens[1:]
+    )
+    if has_unsafe_spacing or has_unsafe_character or invokes_inline_eval:
+        _issue(
+            issues,
+            "error",
+            "PLAN_VALIDATION_COMMAND_UNSAFE",
+            f"{path} 必须使用单个 ASCII 空格分隔的无 shell program/args；复杂逻辑请放入受版本控制的脚本。",
+        )
+    return command
 
 
 def _exact_fields(
@@ -428,7 +475,7 @@ def validate_contract(value: Any) -> list[ContractIssue]:
                 "PLAN_VALIDATION_STAGE_UNKNOWN",
                 f"{validation_id} 引用了未知阶段 {stage_id}。",
             )
-        _text(raw_validation.get("command"), f"{path}.command", issues)
+        _validation_command(raw_validation.get("command"), f"{path}.command", issues)
         if not isinstance(raw_validation.get("required"), bool):
             _issue(
                 issues,

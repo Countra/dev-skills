@@ -17,6 +17,9 @@ ROOT = Path(__file__).resolve().parents[2]
 PLANNER = ROOT / "skills" / "complex-coding-planner"
 EXECUTOR = ROOT / "skills" / "complex-coding-executor"
 REVIEWER = ROOT / "skills" / "complex-coding-reviewer"
+COMMAND_SAFETY_CASES = (
+    ROOT / "evals" / "complex-coding-workflow" / "command-safety-cases.md"
+)
 PLAN_CHECK = PLANNER / "scripts" / "harness_plan_check.py"
 ACTIVE_TASK = PLANNER / "scripts" / "harness_active_task.py"
 STATE = EXECUTOR / "scripts" / "harness_state.py"
@@ -159,10 +162,14 @@ def _assert_static_contract() -> None:
         )
 
     planner_text = (PLANNER / "SKILL.md").read_text(encoding="utf-8")
+    planner_research_text = (
+        PLANNER / "references" / "research-and-dependencies.md"
+    ).read_text(encoding="utf-8")
     executor_text = (EXECUTOR / "SKILL.md").read_text(encoding="utf-8")
     executor_safety_text = (
         EXECUTOR / "references" / "execution-safety.md"
     ).read_text(encoding="utf-8")
+    command_safety_cases = COMMAND_SAFETY_CASES.read_text(encoding="utf-8")
     reviewer_text = (REVIEWER / "SKILL.md").read_text(encoding="utf-8")
     if "direct" not in planner_text or "不创建 `.harness` 文件" not in planner_text:
         raise EvalFailure("Planner direct zero-artifact convention is missing")
@@ -189,6 +196,38 @@ def _assert_static_contract() -> None:
     )
     if any(term not in executor_safety_text for term in executor_process_terms):
         raise EvalFailure("Executor process recovery convention is missing")
+    planner_command_terms = (
+        "系统 provider",
+        "进程枚举",
+        "`harness_bounded_command.py`",
+        "不原样第三次执行",
+    )
+    planner_command_text = planner_text + planner_research_text
+    if any(term not in planner_command_text for term in planner_command_terms):
+        raise EvalFailure("Planner bounded research convention is missing")
+    executor_command_terms = (
+        "作为最外层 program",
+        "`timeout_seconds`",
+        "不超过 10 秒",
+        "轮询不能重置预算",
+        "provider-side filter",
+        "`$_`",
+        "`$*`",
+    )
+    if any(term not in executor_text + executor_safety_text for term in executor_command_terms):
+        raise EvalFailure("Executor bounded command routing convention is missing")
+    command_case_terms = (
+        "Get-CimInstance Win32_Process",
+        "Get-Process -Id <pid>",
+        "OperationTimeoutSec 10",
+        "harness_bounded_command.py",
+        "124",
+        "125",
+        "126",
+        "130",
+    )
+    if any(term not in command_safety_cases for term in command_case_terms):
+        raise EvalFailure("Command safety semantic cases are incomplete")
     for phrase in ("findings-first", "路径和行号", "不要向用户输出 JSON"):
         if phrase not in reviewer_text:
             raise EvalFailure(f"Reviewer human-output rule missing: {phrase}")

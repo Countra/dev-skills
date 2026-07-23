@@ -1,0 +1,180 @@
+{
+  "task_id": "finite-command-black-hole-resilience",
+  "plan_revision": 6,
+  "risk": "high",
+  "scope": [
+    ".github/workflows/planner-executor.yml",
+    "CHANGELOG.md",
+    "README.md",
+    "evals/complex-coding-workflow",
+    "evals/process-manager",
+    "skills/complex-coding-executor",
+    "skills/complex-coding-planner"
+  ],
+  "stages": [
+    {
+      "id": "STG-01",
+      "title": "收紧命令路由与诊断策略",
+      "depends_on": [],
+      "scope": [
+        "evals/complex-coding-workflow",
+        "skills/complex-coding-executor/SKILL.md",
+        "skills/complex-coding-executor/references",
+        "skills/complex-coding-planner"
+      ],
+      "risk": "medium",
+      "validation_ids": [
+        "VAL-01"
+      ],
+      "review": "same-context"
+    },
+    {
+      "id": "STG-02",
+      "title": "增强有界执行器的观察与取消闭环",
+      "depends_on": [
+        "STG-01"
+      ],
+      "scope": [
+        "skills/complex-coding-executor/scripts/harness_bounded_command.py",
+        "skills/complex-coding-executor/tests/test_bounded_command.py"
+      ],
+      "risk": "high",
+      "validation_ids": [
+        "VAL-02"
+      ],
+      "review": "independent"
+    },
+    {
+      "id": "STG-03",
+      "title": "联动评估、三平台验证与文档收口",
+      "depends_on": [
+        "STG-02"
+      ],
+      "scope": [
+        ".github/workflows/planner-executor.yml",
+        "CHANGELOG.md",
+        "README.md",
+        "evals/complex-coding-workflow",
+        "evals/process-manager",
+        "skills/complex-coding-executor",
+        "skills/complex-coding-planner"
+      ],
+      "risk": "medium",
+      "validation_ids": [
+        "VAL-03",
+        "VAL-04",
+        "VAL-05",
+        "VAL-06",
+        "VAL-07",
+        "VAL-08",
+        "VAL-09",
+        "VAL-10"
+      ],
+      "review": "same-context"
+    }
+  ],
+  "validations": [
+    {
+      "id": "VAL-01",
+      "stage_id": "STG-01",
+      "command": "python -u -X utf8 -B evals/complex-coding-workflow/run_evals.py",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-02",
+      "stage_id": "STG-02",
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_bounded_command.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-03",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-planner/tests -p test_*.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-04",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-reviewer/tests -p test_*.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-05",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_compact_state.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-06",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B evals/complex-coding-workflow/run_evals.py",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-07",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B -m unittest discover -s evals/process-manager -p test_consumer_contract.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-08",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-planner",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-09",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-reviewer",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-10",
+      "stage_id": "STG-03",
+      "command": "python -u -X utf8 -B skills/skill-evaluation-lab/scripts/se_check.py --workspace . --candidate skills/complex-coding-executor",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-FINAL-BOUND",
+      "stage_id": "final",
+      "command": "python -u -X utf8 -B -m unittest discover -s skills/complex-coding-executor/tests -p test_bounded_command.py -v",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-FINAL-EVAL",
+      "stage_id": "final",
+      "command": "python -u -X utf8 -B evals/complex-coding-workflow/run_evals.py",
+      "required": true,
+      "timeout_seconds": 300
+    },
+    {
+      "id": "VAL-FINAL-DIFF",
+      "stage_id": "final",
+      "command": "git diff --check",
+      "required": true,
+      "timeout_seconds": 60
+    }
+  ],
+  "final_validation_ids": [
+    "VAL-FINAL-BOUND",
+    "VAL-FINAL-EVAL",
+    "VAL-FINAL-DIFF"
+  ],
+  "final_review": "independent",
+  "permissions_requested": {
+    "commit": true,
+    "external_write": false,
+    "elevated_tool": false
+  }
+}
